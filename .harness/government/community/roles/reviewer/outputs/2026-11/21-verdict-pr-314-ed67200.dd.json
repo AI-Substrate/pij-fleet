@@ -1,0 +1,63 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdb9-5149-7fd3-a093-3ae1d9072a24",
+				"date": "2026-11-21",
+				"head": "ed6720039f5c9d8c0f56d783f06194aeeace866c",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:314",
+				"writer": "pij-complex-alpaca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Existing non-blocking D-F260-4: record negative terminal expiry decisions to avoid repeated sweep transactions; new findings: none"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib -- reviewer_f260_ an_older_copy_expiring the_same_id_held_for_two_recipients --nocapture --then test -p pij-store --test queue native_",
+					"exit_code": 0,
+					"log": "pr314-r2-rust-witnesses.log: 5 daemon and 3 store passed; both unchanged R1 blocking witnesses now GREEN; cap preserves all 65 preaccepted rows"
+				},
+				{
+					"command": "python3 exact-source SQLite guard controls (M8 and M9 independently)",
+					"exit_code": 0,
+					"log": "pr314-r2-sql-controls.log: both mutations killed; recipient/origin isolation, running-to-failed eligibility, and actual-index query plans passed; distinct from author Rust mutation runs"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/issues/comments/7061425500 --jq .body",
+					"exit_code": 0,
+					"log": "Author retained isolated M1-M9/T1 patches and run summaries, including original-head assertion RED controls; M8/M9 both fail store and daemon regressions"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14703643649/zip",
+					"exit_code": 0,
+					"log": "Exact-head successful job 136820493329, run 44895613825: 2798 JUnit cases, no failures"
+				},
+				{
+					"command": "just pr-freeze 314",
+					"exit_code": 0,
+					"log": "Final recheck: exact ed67200 head, FINAL/CLEAN, latest checks green, main/head schema 49, no added migration"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer/314 — round 2 of 2 (C34)\n\nHead: `ed6720039f5c9d8c0f56d783f06194aeeace866c`.\n\n**Verdict: PASS WITH NOTES.** R314-001 and R314-002 are closed. No new blocking finding.\n\n**R314-001 is closed by the inspected repair.** Expiry now ends this row's hold and decides notice eligibility in one write transaction. Its sibling predicate is `(kind, origin, key)`, covering pending, running, and unexpired held copies. `kind` is `delivery:<recipient>` on these validated rows, so another recipient cannot suppress this recipient's notice. A different origin cannot suppress it either. The fake mirrors the predicate. An expired original cannot be recovered merely because a sibling still has time left.\n\n**R314-002 is closed by the inspected repair.** The recovery guard includes `live.kind = jobs.kind`, restoring the queue's actual dedupe scope and enabling the existing live-key index. The second recipient's renewal is no longer blocked by the first recipient's independent message.\n\nThe running-then-failed case is correct: while the sibling is pending/running, expiry is not owed; after it becomes terminally failed, a later sweep can owe the notice. Ending the original hold is not undone by the earlier suppression. Independent exact-source SQL controls exercised queued, running, terminal failure, held sibling, other recipient, and other origin. All passed. Isolated SQL mutations M8 (remove kind scope) and M9 (disable sibling suppression) each failed the relevant oracle. The author's separately retained Rust M8/M9 runs and original-head RED controls are corroborated in PR comment `7061425500`; mutation numbering/retained-evidence note N2 is resolved.\n\nThe cap/cost corrections resolve N1 without discarding accepted bodies: 64 is the new-send brake, not a reconciliation/storage ceiling. Reconciliation retains already-accepted rows. Renewal performs one queue transaction, plus H queued-outcome commits and one renewal-edge commit under the native lock. No new loop, timer, process launch, or sweep. The existing 60-second sweep reads park facts in its 24-hour window. The new sibling check seeks `jobs_by_dedupe(kind, origin, key)`; recovery seeks `jobs_dedupe_live` on the same key. The remaining repeat-negative-expiry cost is explicitly recorded as non-blocking D-F260-4, not hidden behind the 64-row claim.\n\nHolding remains a POLICY change with a two-hour policy window; the lease, pre-F260 exclusion, and new-send cap remain BRAKES. The close/revive-within-one-sweep and no-per-sender-fairness limitations are stated. No new review finding is being made out of those accepted limits.\n\nThe merge is additive. The only conflict, `docs/difficulties.md`, retains both F260 rows and main's D-F258-4 row. Changes from #311 and #315 are main convergence, not an unreviewed new F260 design. `just pr-freeze 314` reports FINAL/CLEAN at the exact head, with main and head at schema 49 and no migration added by this PR.\n\n## Evidence\n\nExact-head CI run `44895613825`, successful rust-test job `136820493329`, upload-log-selected JUnit artifact `14703643649`: 2,798 cases, no failures. The two new daemon closure regressions, store sibling/recipient regression, and original exactly-once/restart controls are present and passed. Both TS checks and Rust lint also passed.\n\nIndependent exact-source SQLite controls and query plans are retained as `pr314-r2-sql-controls.log`. They show both guard mutations caught, recipient/origin expiry scope preserved, running-failure eligibility restored, and indexed lookups.\n\nIndependent Rust rerun: `just shared-build -- test -p pij-daemon --lib -- reviewer_f260_ an_older_copy_expiring the_same_id_held_for_two_recipients --nocapture --then test -p pij-store --test queue native_`: exit 0, 5 daemon and 3 store tests passed. The two original blocking witnesses are unchanged and now GREEN. The cap witness now expects all 65 preaccepted rows to remain held, matching the corrected contract rather than imposing a new discard policy. The committed daemon/store closure regressions passed alongside them.\n\nThe reviewer's M8/M9 runs are exact-source SQL guard mutations, not claimed as additional Rust mutation builds; the author's isolated Rust mutant logs and patches were checked separately. Together with the independent real-service rerun, this proves the repaired guards and their integration without an exhaustive extra mutation round.\n\nEvidence retained: `pr314-r2-witnesses.rs`, `pr314-r2-rust-witnesses.log`, `pr314-r2-sql-controls.log`, and `pr314-r2-junit.zip`. Only reviewer-owned temporary source archives are removed.\n\nNo live seat was lapsed, renewed, restarted, or bounced. Product worktrees remain read-only; local probes use owned source archives, the resolved shared cargo target, shared-build's lock, niceness 19, and four jobs. Local full harness checks are not claimed green; CI is the exact-head broad proof under C25.\n\n**Notes owed:** existing, non-blocking D-F260-4 negative-expiry sweep cost. **New:** none.\n\n**Harness improvement:** both R1 findings now have committed regression oracles, independently demonstrated RED on the old code and GREEN on the new code, with per-mutant receipts retained.\n"
+		}
+	]
+}
