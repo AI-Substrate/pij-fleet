@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before reviewing the governance canary's runtime-model source, OMP footer parsing, or any check that skips on a helper Err.",
+				"tags": [
+					"canary",
+					"model-state",
+					"fail-closed",
+					"c33"
+				],
+				"title": "Canary model evidence: native first, footer cross-check fails closed"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#306 (F249) and #308 (F256). The canary takes the runtime model from the seat's native transcript (unisphere model.current, basis native) and uses the pane footer as a fallback. Both are same-user self-reports. Under C33 the canary catches accidental misattribution only; it is not proof against a seat lying on purpose. Say that explicitly in any verdict.\n\nTraps to check:\n- Option/unknown mapping. Unisphere's pending_switch is None when it can't order the switch against the last call (pending_known=false). Count \"model.pending_switch\" in status.unknown as pending, never as none (S306-N1).\n- The record misses switches. Unisphere counts only default-role model_change, while OMP also switches for its smol, slow, temporary, fallback and prewalk roles. The OMP footer agreement check (omp_model_shows against the native selector's own catalog row) is the only guard against those switches.\n- `if let Ok(false)` is a fail-open. A helper Err (omp models down, its 5 s timeout, no catalog row) must refuse, not skip the check (S306-003, fixed in #308 as RuntimeModel::Unchecked). Grep for that pattern in any guard.\n- observe_bind copies the native_session_id argument straight into its facts. Comparing the two is tautological, so removing that comparison loses nothing. Check that a freshness guard reads something it observed, not its own argument.\n- Refusals return before service.mutation.lock() and go only to the caller's HTTP envelope. catalog_error carries omp's trimmed stderr, which is not size-capped. That exposure already existed on the resolve path.\n\nOpen: N306-R2-01, a provider switch that keeps the same display name, sits upstream as F257.\n"
+		}
+	]
+}
