@@ -2742,7 +2742,10 @@
 					"harness_session": "7e16c5c7-d3e8-485f-9c6d-b87655f79c00",
 					"instance_key": "316",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #316 merged (b88e1df93715)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-anonymous-mongoose",
+					"to": "2026-11-21T11:40:06.046Z",
 					"why": "#316 F264+F267 step 1 round 1"
 				},
 				{
