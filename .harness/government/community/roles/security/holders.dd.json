@@ -1086,6 +1086,16 @@
 					"seat": "pij-causal-leopon",
 					"to": "2026-11-21T08:07:33.122Z",
 					"why": "#312 F258 B1 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T08:32:56.217Z",
+					"harness": "copilot",
+					"harness_session": "6e5818de-4b05-4465-946a-596b5927c48c",
+					"instance_key": "313",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-neat-gull",
+					"why": "#313 F258 D1 round 1"
 				}
 			]
 		}
