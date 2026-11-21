@@ -94,3 +94,4 @@
 | — | pij-overseas-eel | copilot | 1cc7bdd2-6ced-4485-aaee-7b318980cf71 | JordansacStudio.localdomain | 303 | 2026-11-21T00:43:54.698Z | 2026-11-21T00:50:11.619Z | pij-steady-otter | pij-far-jackal | verdict on #303 (F252 fleet-map standalone) | PR #303 merged (9fc162c53ee2) |
 | — | pij-uncertain-antelope | copilot | 38b34967-a1dc-40f0-9c4f-972eed197195 | JordansacStudio.localdomain | 302 | 2026-11-21T00:51:51.762Z | 2026-11-21T01:02:04.970Z | pij-steady-otter | pij-far-jackal | verdict on #302 (F251) | PR #302 merged (098f22976cb4) |
 | — | pij-sufficient-angelfish | copilot | 3f997bcc-d475-49a2-8481-d6e2701bccf2 | JordansacStudio.localdomain | 304 | 2026-11-21T01:16:52.739Z | — | pij-steady-otter | — | verdict on #304 (#42 OMP worktree spawn) | — |
+| — | pij-overseas-eel | copilot | 1cc7bdd2-6ced-4485-aaee-7b318980cf71 | JordansacStudio.localdomain | 305 | 2026-11-21T01:23:21.095Z | — | pij-steady-otter | — | verdict on #305 (F253) | — |
