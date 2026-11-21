@@ -1,0 +1,37 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdb9-5195-72f3-88f1-a4d1a6204a2e",
+				"date": "2026-11-21",
+				"head": "ed6720039f5c9d8c0f56d783f06194aeeace866c",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:314",
+				"writer": "pij-considerable-tapir",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"new: msg_id is not bound to its sender seat. A same-machine seat reusing another seat's msg_id can collapse its delivery (existing) and, since R314-001, suppress its F260 expiry notice. Same-user trust model; possible follow-up: dedupe on (origin, sender seat, msg_id)."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict: #314 (F260) round 2 at ed6720039f5c9d8c0f56d783f06194aeeace866c\n\nResult: PASS WITH NOTES. I read the round-2 code delta 2ad9e18..9b1eedcd (crates/store/src/queue.rs `recover_held_native_deliveries` and `expire_native_hold`; delivery/mod.rs only made two constants `pub(crate)`) and scanned the full 2ad9e18..ed67200 delta for public hygiene. The main merge (#311, #315) has no security-relevant interaction with F260. CI at this head: check (22), check (24), rust-lint, rust-test and delivers SUCCESS (one earlier delivers run CANCELLED and superseded); merge state CLEAN. Static review: no build or tests run by me.\n\n## Ask 1: can the new sibling check let one sender's copy suppress another sender's expiry notice?\nThe sibling check matches `other.kind = ?1`, where kind is `delivery:<recipient>`, so it stays within one recipient. It also matches `dedupe_origin`, the sender's machine, and `dedupe_key`, the msg_id. The sender seat is not part of the key, so ordinary traffic cannot trigger it: distinct sends carry distinct sender-generated UUIDv7 ids, and a collision between two honest senders is negligible. It does trigger when a seat on the same machine deliberately reuses another seat's msg_id, which senders may supply on the wire (`request.msg_id`). The original's expiry then goes silent while the reused copy is live or held, and the copy's own notice goes to the copy's sender, not the original's. That widens a class that already exists: a msg_id is not bound to its sender seat. The same reuse already lets such a seat make a real send read `AlreadyDelivered`. It needs a same-user local actor, which is inside the existing trust model, so it does not block. It is recorded under new below.\n\n## Ask 2: can it hide a real loss?\nNot between honest senders. When the sibling check says no notice is owed, `notify_one` returns before writing the audit record, so the sweep re-evaluates on its next pass (D-F260-4). Suppose the sibling is still running and later fails:\n- a terminal park tells its own sender through its own park notice;\n- a held copy that expires tells its sender through its own expiry notice;\n- once no sibling is live, the original's notice becomes owed again on the next sweep, within the 24 h lookback.\n\nThe worst honest case is a duplicate notice to the same sender, not a silent loss. Past the 24 h lookback the original's notice is no longer re-evaluated. The 2 h hold makes that reachable only if a sibling copy stays live for more than 22 h, which I did not try to prove impossible.\nR314-002's `live.kind = jobs.kind` narrows recovery's live-copy guard to the same recipient, which is a correctness fix with no security effect.\n\n## Round-1 asks\nUnchanged by the delta:\n- delivery to the claiming incarnation is still bound to `native_session`, `pid` and `proc_start` by `inbox_recipient`;\n- notices still carry only ids;\n- renewal still requires the incarnation match;\n- the 64 cap now counts only new sends, which is still a brake (removing it holds more).\n\nMy round-1 notes N1 and N2 are now recorded in the PR body.\n\n## Hygiene\nClean. No home paths, usernames, tokens or tenant strings in added lines. No lockfile, `.npmrc`, `package.json` or `Cargo.toml` changes.\n\n## Notes owed\n- new: msg_id is not bound to its sender seat (only to the sender's machine through dedupe_origin). A same-machine seat that reuses another seat's msg_id can collapse its delivery (existing) and, since R314-001, also suppress its F260 expiry notice. A possible follow-up is binding dedupe to (origin, sender seat, msg_id). This is not a regression of round-1 scope.\n"
+		}
+	]
+}
