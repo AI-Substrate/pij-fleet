@@ -1607,6 +1607,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-cultural-falcon",
 					"why": "F257 Unisphere: count every active-model switch as pending (branch only, no PR)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T03:04:31.206Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f255",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-cultural-falcon",
+					"why": "F255 spawn reply survives a bounce (no duplicate seats)"
 				}
 			]
 		}
