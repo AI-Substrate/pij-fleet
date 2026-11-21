@@ -1,0 +1,65 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdbd-27e3-76b3-8724-1cba1cfa8ba3",
+				"date": "2026-11-21",
+				"head": "3bdad4b1b470f9cacd3ffb932e7585e1d5b6a39b",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:316",
+				"writer": "pij-anonymous-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N1: name FIFO eviction and boot replay-cache limits; spine skips settled recovery but does not hydrate replay-cache records",
+				"N2: pre-existing unbiased stop/work selects remain, especially pane observer; F267 follow-up candidate, not a proven latency cause",
+				"N3: revive prechecks can retain a previous holder label; prestarted HTTP/control phases measure remaining join-wait time"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 316; git diff --check",
+					"exit_code": 0,
+					"log": "FINAL at full 3bdad4b head; CI 5/5; clean unchanged detached checkout"
+				},
+				{
+					"command": "CI run 44895940372, successful job 136821485409, artifact 14704131265",
+					"exit_code": 0,
+					"log": "2794 cases, zero failures; eight focused handoff/cache/dispatch/bounce/daemon-stop cases passed"
+				},
+				{
+					"command": "Exact-function Tokio probes built through just shared-build and run at nice 19",
+					"exit_code": 0,
+					"log": "15 positive checks, 2 declared-limit observations pass; 5 mutants killed; gone/no_wait 0/32, stale rewatch one report"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "9 failed sensors; local dependencies/ambient Biome and daemon_log; native, SDK, inventory, smoke passed; no full local gate pass claimed"
+				},
+				{
+					"command": "PIJ_SHARED_TARGET=$(bash harness/scripts/cargo-target.sh) just shared-build -- test --locked -p pij-cli --test daemon_log -- --nocapture",
+					"exit_code": 0,
+					"log": "Focused overlapping log suite rerun: 5 passed, 0 failed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: PASS WITH NOTES\n\nPR #316, round 1 of at most 2 (C34), exact head 3bdad4b1b470f9cacd3ffb932e7585e1d5b6a39b. The two #309 handoff remainders are closed within the explicitly bounded settled-record window. No new blocking regression found. This is not a permanent exactly-once guarantee across eviction/restart.\n\n## Prior failure orderings and mutation proof\n\nThe copied, unmodified answer_launch and SpawnWaits code ran with repository-pinned Tokio and recording row/bind/response dependencies. Product files were not edited.\n\n- Gone caller before a held row completes, then no-wait answer and bind: zero false answers in 32 synchronized trials. Reverting the selector to unbiased produces 17/32 false answers and fails.\n- Recovery-unbound -> bind/report -> stale unbound rewatch -> bind -> abandon: one report and no re-armed entry. Ignoring the settled record produces two reports and fails.\n- Dispatched unbound -> binding while settled -> stale rewatch: remains settled. Disabling the settled binding update fails.\n- Answered bound before its binding callback -> stale rewatch: remains settled. Removing answered-settlement recording fails.\n- The still-unbound, lost-dispatch rewatch control continues to pass. Removing eviction fails the 256-record bound.\n\nFifteen positive control/regression checks passed, two limit-observation checks passed, and all five mutants were killed. These are executable exact-function wiring/state-machine receipts with faked effects, not a production bounce.\n\n## Settled record: correct within its bound, with explicit limits\n\nRemoval and settled-record insertion happen while entries is locked. All dual-lock paths take entries before settled; there is no reverse lock order. The record preserves known binding monotonically. Bound callbacks check the launch's own seat and pane before upgrading a settled record. Answers other than dispatched record a bound fact even if the registration callback has not arrived. These close the original snapshot gap.\n\nThe cache is a **brake**: it withholds rewatching a known settled-bound launch; removing it permits more watches. It is bounded storage, not a permanent deduplication ledger.\n\n**N1 (limit/documentation): eviction and boot guarantees must stay narrow.** The eviction probe proves that a current bound row still withholds the watch after eviction, but an evicted key with a stale unbound snapshot can re-arm and report again. FIFO means first recording of a distinct key, not last settlement/binding activity: updating an old dispatched record to bound does not move it to the back, and one later distinct settlement can evict it (`spawn_waits.rs:143-156`). The normal short replay path benefits from the bound row and recent record, but \"never re-arms\" is conditional on those witnesses.\n\nAt boot, the spine prevents already-answered/reported rows from being recovered as unsettled (`spawn_waits.rs:579-589`). It does not rebuild this cache or provide an on-demand replay lookup on cache miss. Thus the spine stands in for boot recovery, not for every post-restart stale-snapshot replay. I accept the declared small, in-memory brake under C34, with these limits named rather than claiming lifetime exactly-once behaviour.\n\nThe approximately 25 KB estimate counts Launch payload structs only. Strings, map storage and the FIFO add overhead; the entry count is bounded, not the total storage literally 25 KB.\n\n## Other selects and shutdown logging\n\nThe biased gone-first selection is correct in the shared spawn/revive answer path. No other production WaitGuard answer-settlement path uses a competing select. The supervisor and common tick loop already use stop-first biased selection.\n\n**N2 (existing F267 follow-up): not every cancellation-versus-work select is biased.** The pane observer (`pane_observer.rs:311`) can select a due observation instead of an already-ready stop; serve's accept/drain selectors and fan-in's event/sleep selectors also remain unbiased. These are pre-existing and do not reopen the fixed F264 caller-gone handoff, but the observer can add shutdown work. Record it as a source-level latency candidate, not a proven culprit.\n\nphase is a transparent await-and-return wrapper: stop signals, worker join ordering, flush/close deadlines, and error propagation are preserved. Main logs the total on both success and error. The merge conflict resolution retains main's lapse-follower abort/join and adds the corresponding phase wrapper; no lost join or extra wait dependency was found.\n\n**N3 (diagnostic precision): holder labels and elapsed times have qualifications.** set_launching runs in launch_owned, but revive acquires the same lock earlier and awaits prechecks (`http/revive.rs:458-486`). A timeout during those prechecks can therefore print the previous launch's label. Name the current revive when acquiring its guard, or clearly identify this as last-recorded rather than guaranteed-current holder information.\n\nHTTP drain is signalled and tmux control release is spawned before their phase wrappers are polled (`lib.rs:390-444`). Their logged elapsed values are remaining join-wait time, not necessarily the whole operation's elapsed time. This is useful for locating the blocked await, but it should not be treated as a complete per-operation cost receipt.\n\nThe pane-observer detach_all loop is serial source evidence only; no live stop was run to diagnose F267 and no claim that it caused a measured 20-30 second delay is made.\n\n## Cost, validation and scope\n\nNo new periodic poll, timer or OS-process launch site. New work is bounded cache lookup/update on bindings and settlements and about two log lines per shutdown phase. The existing binding wait remains 50 ms per outstanding waiter. No deployment or live before/after measurement is claimed.\n\nExact-head CI run 44895940372 passed. Successful rust-test job 136821485409 identifies artifact 14704131265: 2,794 cases, zero failures; all eight focused handoff, cache, lost-dispatch, bounce and daemon-stop cases passed. The artifact was selected by the successful upload ID, not by name.\n\nSource probes were built through just shared-build in the canonical target, niceness 19, four jobs, and run at niceness 19. git diff --check passed and the detached product checkout stayed unchanged.\n\nharness boot is not ready without node_modules; nothing was restored under C25. harness checks ran and exited 1 on nine sensors: missing local dependencies/ambient Biome plus the daemon_log Rust suite. Because that suite overlaps this PR's logging, it was inspected and rerun, not dismissed: `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-cli --test daemon_log -- --nocapture` passed all five tests. Native contracts, SDK, route inventory and smoke also passed in the full inventory. No local full-gate pass is claimed.\n\nHarness improvement / magicWand: retain the focused old failure orderings and add an explicit cache-eviction/old-binding-upgrade case. Distinguish recovery-ledger authority, replay-cache coverage, and remaining join-wait timing in diagnostics.\n"
+		}
+	]
+}
