@@ -59,9 +59,11 @@ pub fn require_recovery_authority(shared: bool) -> Result<()> {
 /// bound it now is, once, through the ordinary claim after the lease renews.
 pub const NATIVE_HOLD_SECS: u64 = 2 * 60 * 60;
 
-/// F260: at most this many bodies are held for one recipient. A send that
-/// finds the recipient's holds full is refused, as every such send was before
-/// F260: a brake, since removing it only holds more.
+/// F260: a SEND finds at most this many bodies held for one recipient; the
+/// next is refused, as every such send was before F260: a brake, since
+/// removing it only holds more. Bodies already queued when the lease lapses
+/// were accepted before it and are all held, so held rows per recipient are
+/// bounded by max(this, the queue at the lapse), never discarded to fit.
 pub const NATIVE_HOLD_LIMIT: u64 = 64;
 
 /// Build the canonical sender receipt and recipient-observable parking fact.

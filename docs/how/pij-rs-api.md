@@ -692,11 +692,16 @@ recipient's seat; the ordinary claim then delivers it, once. A held copy of a
 message already delivered or already live is never returned. A send also tells
 the lapse edge when it finds the lapse first, so its renewal always returns it.
 
-This is **policy**: such bodies used to die. Two brakes bound it. A recipient
-holds at most `NATIVE_HOLD_LIMIT` (64) bodies; the next send is refused, as
-before. Rows parked before F260 carry no hold (`not_before` 0) and are never
-returned by a renewal (their senders were told to resend); the manual
-`pij inbox` pull still recovers them.
+This is **policy**: such bodies used to die. Two brakes bound it. A send that
+finds `NATIVE_HOLD_LIMIT` (64) bodies already held for its recipient is
+refused, as before. Bodies already queued when the lease lapses were accepted
+before it and are all held, never discarded to fit, so held rows per recipient
+are bounded by the larger of 64 and the queue at the lapse. Rows parked before
+F260 carry no hold (`not_before` 0) and are never returned by a renewal (their
+senders were told to resend); the manual `pij inbox` pull still recovers them.
+An expiry notice is owed only while no other copy of the message (a same-id
+resend) is still queued or held for the recipient; a copy of the same id for
+another recipient never blocks a recovery.
 
 The sender hears twice at most. At the park, an FYI from `pij-bg`
 (`park-notice-<job_id>`) says the body is HELD, not refused, and must not be

@@ -1642,6 +1642,92 @@ async fn native_holds_recover_once_within_the_hold_and_never_after_it_or_before_
     );
 }
 
+/// F260 review R1: a held body's expiry is owed only when no other copy of
+/// the same message (a same-id resend) is still queued or held for this
+/// recipient, so the sender is never told "NOT delivered" while a copy is on
+/// its way. And a copy of the same id queued for ANOTHER recipient never
+/// blocks this recipient's recovery.
+#[tokio::test]
+async fn native_hold_expiry_and_recovery_see_only_this_recipients_copies() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.unwrap();
+    let queue = SqliteQueue::new(pool.clone(), 300, 1_024).unwrap();
+    let spine = pij_store::SqliteSpine::new(pool.clone());
+    let reader = SeatId::from("pij-reader");
+    let kind = String::from("delivery:pij-reader");
+    let evidence = pij_core::ports::ParkingEvidence {
+        outcome: pij_core::model::DeliveryFailure::NativeReceiverUnavailable,
+        reason: "native-extension-unavailable",
+        at: 42,
+    };
+    let park = |id| {
+        let (queue, reader, evidence, spine) = (&queue, &reader, &evidence, &spine);
+        async move {
+            assert!(
+                queue
+                    .park_delivery(id, reader, 0, evidence, spine)
+                    .await
+                    .unwrap()
+                    .0
+                    .is_some()
+            );
+        }
+    };
+
+    // The first copy is held; the sender resends it under the same id.
+    let first = queue
+        .enqueue(extension_body_job(&kind, reader.as_str(), "same-id"))
+        .await
+        .unwrap();
+    park(first).await;
+    let second = queue
+        .enqueue(extension_body_job(&kind, reader.as_str(), "same-id"))
+        .await
+        .unwrap();
+    assert_ne!(first, second);
+    assert!(
+        !queue.expire_native_hold(first, &reader).await.unwrap(),
+        "a queued copy is on its way"
+    );
+    park(second).await;
+    assert!(
+        !queue.expire_native_hold(first, &reader).await.unwrap(),
+        "a held copy is on its way"
+    );
+    assert!(
+        queue.expire_native_hold(second, &reader).await.unwrap(),
+        "the last copy to end its hold owes the notice"
+    );
+    assert!(
+        queue
+            .recover_held_native_deliveries(&reader)
+            .await
+            .unwrap()
+            .is_empty(),
+        "both holds ended"
+    );
+
+    // The same id queued for another recipient is that recipient's message.
+    let held = queue
+        .enqueue(extension_body_job(&kind, reader.as_str(), "shared-id"))
+        .await
+        .unwrap();
+    park(held).await;
+    queue
+        .enqueue(extension_body_job(
+            "delivery:pij-other",
+            "pij-other",
+            "shared-id",
+        ))
+        .await
+        .unwrap();
+    let recovered = queue.recover_held_native_deliveries(&reader).await.unwrap();
+    assert_eq!(
+        recovered.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        [held]
+    );
+}
+
 #[tokio::test]
 async fn delivery_enqueue_returns_the_persisted_not_before_after_backoff() {
     let fresh = FreshStore::new();

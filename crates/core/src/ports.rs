@@ -633,9 +633,10 @@ pub trait Queue: Send + Sync {
     }
 
     /// F260: end the hold on one parked body at once, so it is never recovered.
-    /// True when the body is still parked undelivered (its sender is owed an
-    /// expiry notice); false when it was recovered, delivered, or is not this
-    /// recipient's native park.
+    /// True when its sender is owed an expiry notice: the message is not
+    /// delivered, and no other copy of it (a same-id resend) is still queued,
+    /// running or held for this recipient. False when it was recovered,
+    /// delivered, has a copy still on its way, or is not this recipient's park.
     ///
     /// This default REFUSES, so no expiry notice is sent for a body that might
     /// still be delivered.

@@ -1230,19 +1230,37 @@ impl Queue for FakeQueue {
             return Ok(false);
         };
         let job = parked.job.clone();
-        if state
-            .delivered
-            .iter()
-            .any(|(seat, machine, msg, _)| delivered_job(&job, seat, machine, msg))
-        {
-            return Ok(false);
-        }
         let now = state.now;
         state
             .held_until
             .entry(id.0)
             .and_modify(|until| *until = (*until).min(now));
-        Ok(true)
+        let same = |other: &Job| {
+            other.kind == job.kind
+                && other.dedupe_key == job.dedupe_key
+                && other.dedupe_origin == job.dedupe_origin
+        };
+        let sibling = state
+            .live
+            .iter()
+            .any(|(other, row)| *other != id && same(row))
+            || state
+                .claimed
+                .iter()
+                .any(|(other, (row, _))| *other != id.0 && same(row))
+            || state.parked.iter().any(|row| {
+                row.job_id != id
+                    && same(&row.job)
+                    && state
+                        .held_until
+                        .get(&row.job_id.0)
+                        .is_some_and(|until| *until > now)
+            });
+        let delivered = state
+            .delivered
+            .iter()
+            .any(|(seat, machine, msg, _)| delivered_job(&job, seat, machine, msg));
+        Ok(!delivered && !sibling)
     }
 
     async fn live_payloads(&self, kinds: &[String]) -> Result<Vec<String>> {

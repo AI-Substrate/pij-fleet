@@ -3349,6 +3349,146 @@ async fn an_expired_hold_tells_the_sender_once_and_only_its_resend_is_delivered(
     clock.abort();
 }
 
+/// R314-001: an older held copy whose hold ends while a same-id copy is still
+/// on its way tells its sender nothing (the message is not "never delivered"),
+/// and the message is delivered exactly once.
+#[tokio::test(start_paused = true)]
+async fn an_older_copy_expiring_while_a_same_id_copy_delivers_tells_nothing() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = hold_services(&store, pij_core::delivery::NATIVE_HOLD_SECS).await;
+    let (seat, identity) = contract_identity();
+    let (sender, sender_identity) = native_sender(seat.folder.as_str());
+    services.registry.put(seat.clone()).await.unwrap();
+    services.registry.put(sender.clone()).await.unwrap();
+    let notifier = services.clone();
+    let (delivery, queue, spine) = (
+        services.delivery.clone(),
+        services.queue.clone(),
+        services.spine.clone(),
+    );
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    let request = heartbeat_request(&seat.id, &identity);
+    progress_heartbeat(&client, addr, &request).await;
+    tokio::time::advance(Duration::from_secs(61)).await;
+    delivery
+        .heartbeat_native_receiver(&sender.id, &sender_identity, 1, 1, None)
+        .await
+        .unwrap();
+    let msg = body_msg(sender.id.as_str(), &seat.id, "f260-same-id");
+    for _ in 0..2 {
+        let held = delivery.accept(msg.clone()).await.unwrap();
+        assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }));
+    }
+    // The older copy's hold has ended (it was sent earlier); the newer one's
+    // has not. The sweep reads the older park once its hold is over.
+    let older = parked_fact(&spine, "f260-same-id").await;
+    let mut payload: Value = serde_json::from_str(&older.payload).unwrap();
+    let older_job = payload["jobId"].as_i64().unwrap();
+    let pool = pij_store::open(&store.path()).await.unwrap();
+    sqlx::query("UPDATE jobs SET not_before = 1 WHERE id = ?1")
+        .bind(older_job)
+        .execute(&pool)
+        .await
+        .unwrap();
+    payload["heldUntil"] = 1.into();
+    let older = pij_core::model::Event {
+        payload: payload.to_string(),
+        ..older
+    };
+    // The receiver renews: the newer copy is queued again.
+    progress_heartbeat(&client, addr, &request).await;
+    crate::park_notice::notify(&notifier, &older).await.unwrap();
+    assert!(
+        queue
+            .peek(&[delivery_kind(&sender.id)])
+            .await
+            .unwrap()
+            .is_none(),
+        "no NOT-delivered notice while a copy is on its way"
+    );
+    let claims = native_http_claims(&client, addr, &seat.id, &identity).await;
+    assert_eq!(claims.len(), 1, "{claims:?}");
+    assert_eq!(claims[0].message.msg_id, "f260-same-id");
+    delivery
+        .acknowledge_inbox(&seat.id, claims[0].job_id, &identity, None)
+        .await
+        .unwrap();
+    crate::park_notice::notify(&notifier, &older).await.unwrap();
+    assert!(
+        native_http_claims(&client, addr, &seat.id, &identity)
+            .await
+            .is_empty()
+            && queue
+                .peek(&[delivery_kind(&sender.id)])
+                .await
+                .unwrap()
+                .is_none(),
+        "delivered once, and never called undelivered"
+    );
+    server.abort();
+    clock.abort();
+}
+
+/// R314-002: one sender's message id sent to two lapsed recipients is two
+/// messages. Each renewal returns its own recipient's copy, whatever the
+/// other recipient's copy is doing, and each is delivered once.
+#[tokio::test(start_paused = true)]
+async fn the_same_id_held_for_two_recipients_reaches_each_once_on_renewal() {
+    let clock = manual_receiver_clock();
+    let store = FreshStore::new();
+    let services = hold_services(&store, pij_core::delivery::NATIVE_HOLD_SECS).await;
+    let (first, first_identity) = contract_identity();
+    let (second, second_identity) = native_sender(first.folder.as_str());
+    services.registry.put(first.clone()).await.unwrap();
+    services.registry.put(second.clone()).await.unwrap();
+    let delivery = services.delivery.clone();
+    let (addr, server) = spawn(router_with_config(services, config("native-key", &[]))).await;
+    let client = reqwest::Client::new();
+    let requests = [
+        heartbeat_request(&first.id, &first_identity),
+        heartbeat_request(&second.id, &second_identity),
+    ];
+    for request in &requests {
+        progress_heartbeat(&client, addr, request).await;
+    }
+    tokio::time::advance(Duration::from_secs(61)).await;
+    for to in [&first.id, &second.id] {
+        let held = delivery
+            .accept(body_msg("pij-peer", to, "f260-shared-id"))
+            .await
+            .unwrap();
+        assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }));
+    }
+    for request in &requests {
+        progress_heartbeat(&client, addr, request).await;
+    }
+    for (seat, identity) in [(&first, &first_identity), (&second, &second_identity)] {
+        let claims = native_http_claims(&client, addr, &seat.id, identity).await;
+        assert_eq!(
+            claims
+                .iter()
+                .map(|claim| claim.message.msg_id.as_str())
+                .collect::<Vec<_>>(),
+            ["f260-shared-id"],
+            "{}",
+            seat.id
+        );
+        delivery
+            .acknowledge_inbox(&seat.id, claims[0].job_id, identity, None)
+            .await
+            .unwrap();
+        assert!(
+            native_http_claims(&client, addr, &seat.id, identity)
+                .await
+                .is_empty()
+        );
+    }
+    server.abort();
+    clock.abort();
+}
+
 /// F260: a recipient closed (or retired) while it holds a body can never
 /// renew: the next sweep ends the hold and tells the sender, without waiting
 /// out the hold.

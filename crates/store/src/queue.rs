@@ -803,6 +803,7 @@ impl Queue for SqliteQueue {
                    AND outcome = 'undelivered:native-receiver-unavailable' \
                    AND not_before > unixepoch() \
                    AND NOT EXISTS (SELECT 1 FROM jobs live WHERE live.id != jobs.id \
+                       AND live.kind = jobs.kind \
                        AND live.state IN ('pending', 'running') AND live.dedupe_key = jobs.dedupe_key \
                        AND live.dedupe_origin = jobs.dedupe_origin) \
                    AND NOT EXISTS (SELECT 1 FROM delivered_messages \
@@ -853,26 +854,57 @@ impl Queue for SqliteQueue {
         let recipient = recipient.clone();
         owned_write(async move {
             let mut tx = begin_write(&pool).await?;
-            // Ending the hold and deciding the notice is one statement: a body
-            // recovered first is pending (no notice); one expired first is
+            // Ending the hold and deciding the notice share one transaction: a
+            // body recovered first is pending (no notice); one expired first is
             // never recovered (`not_before > unixepoch()` fails from now on).
-            let expired = sqlx::query(
+            let Some(row) = sqlx::query(
                 "UPDATE jobs SET not_before = min(not_before, unixepoch()) \
                  WHERE id = ?1 AND serial_key = ?2 AND kind = 'delivery:' || serial_key \
                    AND state = 'failed' AND outcome = 'undelivered:native-receiver-unavailable' \
-                   AND NOT EXISTS (SELECT 1 FROM delivered_messages \
-                       WHERE recipient = jobs.serial_key AND msg_id = jobs.dedupe_key \
-                       AND sender_machine = jobs.dedupe_origin) \
-                 RETURNING id",
+                 RETURNING kind, serial_key, dedupe_key, dedupe_origin",
             )
             .bind(id)
             .bind(recipient.as_str())
             .fetch_optional(&mut *tx)
             .await
             .map_err(adapter_error)?
-            .is_some();
+            else {
+                tx.commit().await.map_err(adapter_error)?;
+                return Ok(false);
+            };
+            // Owed only if this message is not delivered and no other copy of
+            // it (a same-id resend) is still queued, running or held for this
+            // recipient: that copy may still arrive, and is told on its own.
+            let owed: bool = sqlx::query_scalar(
+                "SELECT NOT EXISTS (SELECT 1 FROM delivered_messages \
+                     WHERE recipient = ?2 AND msg_id = ?3 AND sender_machine = ?4) \
+                   AND NOT EXISTS (SELECT 1 FROM jobs other \
+                     WHERE other.id != ?5 AND other.kind = ?1 \
+                       AND other.dedupe_key = ?3 AND other.dedupe_origin = ?4 \
+                       AND (other.state IN ('pending', 'running') \
+                         OR (other.state = 'failed' \
+                           AND other.outcome = 'undelivered:native-receiver-unavailable' \
+                           AND other.not_before > unixepoch())))",
+            )
+            .bind(row.try_get::<&str, _>("kind").map_err(adapter_error)?)
+            .bind(
+                row.try_get::<&str, _>("serial_key")
+                    .map_err(adapter_error)?,
+            )
+            .bind(
+                row.try_get::<&str, _>("dedupe_key")
+                    .map_err(adapter_error)?,
+            )
+            .bind(
+                row.try_get::<&str, _>("dedupe_origin")
+                    .map_err(adapter_error)?,
+            )
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
             tx.commit().await.map_err(adapter_error)?;
-            Ok(expired)
+            Ok(owed)
         })
         .await
     }
