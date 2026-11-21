@@ -835,6 +835,42 @@ sender with no live seat — missing, tombstoned, remote or `pij-bg` — gets no
 notice and no error. On first deploy the boot sweep also notifies parks from the
 preceding 24 hours.
 
+**A long-retired recipient's queued work ends** (F276). Nothing claims the
+jobs of a seat that is gone: its extension or harness is dead, and the pointer
+drain does not cover OMP and Pi seats or Copilot bodies. Every park-notice
+sweep (the 60-second cadence above, no new timer) fails, oldest first and at
+most `RETIRE_PER_SWEEP` (64) per sweep, the pending and running
+`delivery:<seat>` and `delivery-control:<seat>` jobs of seats tombstoned more
+than seven days ago (`RETIRED_RECIPIENT_AFTER_MS`), as
+`undelivered:recipient-retired`. Each is an ordinary park: `delivery.outcome`
+and `delivery.parked` commit with it, and the sender is told once as above
+("Resend it to a live seat, or revive the target first"), only while the
+sender is a live seat. A dead sender, or `pij-bg`, is told nothing. The
+**policy** is that the recipient is tombstoned. The **brakes** only spare:
+
+- a tombstone seven days old or younger: a revive in that window keeps the
+  jobs, and its drain delivers them (F193; holdings stay open, F227);
+- a revive in progress (`SpawnWaits::reviving`, in memory): from the request's
+  first wait (for its dead pane to close, or for the spawn lock) until its
+  launch has written the seat's row or failed. Once the lock is held, the
+  intent moves into the spawn hold, which the launch task owns (B332-01), so a
+  cancelled request never ends it early. A request cancelled before it holds
+  the lock launched nothing, so it ends there;
+- any read that fails: the roster read skips retirement for that sweep, and
+  the store reads each tombstone again in the retiring transaction, so a
+  revive that lifted it after the roster read keeps every job.
+
+Two orderings are not covered. A revive that **arrives** after a sweep read the
+revive set, but before its retiring commit, can find the work already retired:
+that retirement was decided while no revive was in progress. And a daemon that
+**exits** between a revive's pane launch and its row write loses the in-memory
+intent. A stop waits for that row (R309-01), so this takes a hard kill or a
+stop that outlasts its bound. The next daemon then sees a seat that is still
+tombstoned and has no revive in progress.
+
+A job whose payload is not a message is failed too, with no park facts: it
+names no sender to tell.
+
 From the same Copilot pane/session, `pij inbox --json` uses the normal identity
 ladder and registry host tuple. While the receiver lease is live it refuses
 without claiming or parking anything: HTTP 409, `ok:false`, `error:"refused"`,

@@ -34,7 +34,7 @@
 //! ([`SpawnWaits::stop`]), no spawn starts, and the stop waits for each launch
 //! already past its check to write its row.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -172,6 +172,11 @@ pub struct SpawnWaits {
     /// F264: what the holder of `launches` is launching, for a stop that
     /// gives up waiting on it.
     launching: Mutex<Option<String>>,
+    /// F276: seats with a revive in progress, counted per request: from the
+    /// request's first wait until its launch has written the seat's row or
+    /// failed (B332-01: the launch task owns that end, not the request). The
+    /// retirement of a long-dead seat's queue spares every seat here.
+    reviving: Mutex<HashMap<SeatId, usize>>,
 }
 
 impl SpawnWaits {
@@ -185,6 +190,7 @@ impl SpawnWaits {
             stopping: AtomicBool::new(false),
             launches: Arc::new(tokio::sync::Mutex::new(())),
             launching: Mutex::new(None),
+            reviving: Mutex::new(HashMap::new()),
         }
     }
 
@@ -194,6 +200,7 @@ impl SpawnWaits {
         SpawnHold {
             _guard: Arc::clone(&self.launches).lock_owned().await,
             waits: Arc::clone(self),
+            _revive: None,
         }
     }
 
@@ -204,6 +211,33 @@ impl SpawnWaits {
             .lock()
             .expect("spawn waits launching")
             .clone()
+    }
+
+    /// F276: `seat` is being revived until the returned guard drops. Taken
+    /// before a revive's first wait, so a revive that is only waiting (for
+    /// its dead pane to close, or for the spawn lock) already counts. Once
+    /// the spawn lock is held, [`SpawnHold::carry`] hands it to the launch.
+    pub fn reviving(self: &Arc<Self>, seat: &SeatId) -> ReviveIntent {
+        *self
+            .reviving
+            .lock()
+            .expect("spawn waits reviving")
+            .entry(seat.clone())
+            .or_default() += 1;
+        ReviveIntent {
+            waits: Arc::clone(self),
+            seat: seat.clone(),
+        }
+    }
+
+    /// F276: the seats a revive request is working on now.
+    pub fn revives(&self) -> HashSet<SeatId> {
+        self.reviving
+            .lock()
+            .expect("spawn waits reviving")
+            .keys()
+            .cloned()
+            .collect()
     }
 
     /// The daemon is stopping (F255): no spawn starts from now on, and this
@@ -410,12 +444,33 @@ impl SpawnWaits {
     }
 }
 
+/// F276: one revive request's claim that its seat is being revived; the seat
+/// stops counting when the last such guard drops.
+pub struct ReviveIntent {
+    waits: Arc<SpawnWaits>,
+    seat: SeatId,
+}
+
+impl Drop for ReviveIntent {
+    fn drop(&mut self) {
+        let mut reviving = self.waits.reviving.lock().expect("spawn waits reviving");
+        if let Some(count) = reviving.get_mut(&self.seat) {
+            *count -= 1;
+            if *count == 0 {
+                reviving.remove(&self.seat);
+            }
+        }
+    }
+}
+
 /// The spawn lock, held (F267 step 2): what the holder launches is named
 /// only through it, and cleared when it is released, before the lock is, so
 /// a stop that gives up waiting never names an earlier holder's launch.
 pub struct SpawnHold {
     _guard: tokio::sync::OwnedMutexGuard<()>,
     waits: Arc<SpawnWaits>,
+    /// F276 (B332-01): a revive's intent, ended with this hold.
+    _revive: Option<ReviveIntent>,
 }
 
 impl SpawnHold {
@@ -425,6 +480,15 @@ impl SpawnHold {
     pub fn name(&self, what: String) {
         let named = pij_core::render::is_one_line(&what).then_some(what);
         *self.waits.launching.lock().expect("spawn waits launching") = named;
+    }
+
+    /// F276 (B332-01): keep a revive's intent for as long as this hold. The
+    /// launch task owns the hold until the seat's row is written, or until
+    /// the launch fails (a return or a panic unwinds it), whether or not the
+    /// request that asked for the revive is still waiting. So the seat stays
+    /// spared until it is either live again or definitely not coming back.
+    pub fn carry(&mut self, intent: ReviveIntent) {
+        self._revive = Some(intent);
     }
 }
 
@@ -664,6 +728,50 @@ mod tests {
     fn bind(waits: &SpawnWaits, spawn_id: &str) {
         let launch = launch(spawn_id);
         waits.bound(spawn_id, &launch.seat, launch.pane.as_deref());
+    }
+
+    /// F276: a seat counts as being revived while any revive request for it
+    /// is in progress, not only the first: two requests, one ends, the seat
+    /// is still spared until the other ends too.
+    #[test]
+    fn a_seat_is_reviving_until_its_last_revive_request_ends() {
+        let (waits, _) = waits();
+        let seat = SeatId::from("pij-reviving");
+        let first = waits.reviving(&seat);
+        let second = waits.reviving(&seat);
+        drop(first);
+        assert!(
+            waits.revives().contains(&seat),
+            "the second request runs on"
+        );
+        drop(second);
+        assert!(waits.revives().is_empty());
+    }
+
+    /// F276 (B332-01): a revive intent carried by the spawn hold ends with
+    /// the hold, wherever the hold went. A launch task that panics before its
+    /// row (it will never write it) unwinds the hold, which ends the intent
+    /// and frees the lock; until then the intent stands.
+    #[tokio::test]
+    async fn a_carried_revive_intent_ends_when_its_launch_panics() {
+        let (waits, _) = waits();
+        let seat = SeatId::from("pij-reviving");
+        let mut hold = waits.hold().await;
+        hold.carry(waits.reviving(&seat));
+        let (fail, failing) = tokio::sync::oneshot::channel::<()>();
+        let launch = tokio::spawn(async move {
+            let _hold = hold;
+            let _ = failing.await;
+            panic!("the launch fails before its row");
+        });
+        tokio::task::yield_now().await;
+        assert!(waits.revives().contains(&seat), "the launch owns it");
+        fail.send(()).unwrap();
+        assert!(launch.await.unwrap_err().is_panic());
+        assert!(waits.revives().is_empty());
+        tokio::time::timeout(Duration::from_secs(1), waits.hold())
+            .await
+            .expect("the lock is free again");
     }
 
     /// R253-001: the seat binds while the request watches, then the request

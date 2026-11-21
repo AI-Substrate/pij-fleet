@@ -175,6 +175,7 @@ const PARKED_OUTCOMES = new Set([
 	"undelivered:native-receiver-unavailable",
 	"undelivered:hold-limit",
 	"undelivered:staged-unsent",
+	"undelivered:recipient-retired",
 ]);
 
 /** How much of an arriving body the announcement shows. */

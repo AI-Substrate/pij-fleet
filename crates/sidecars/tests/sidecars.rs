@@ -142,6 +142,18 @@ impl Queue for FailFirstClaim {
     async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
         self.inner.retry(job, delay).await
     }
+    async fn retire_recipient_jobs(
+        &self,
+        recipients: &[SeatId],
+        tombstoned_before_ms: u64,
+        limit: usize,
+        at: u64,
+        spine: &dyn pij_core::ports::Spine,
+    ) -> Result<Vec<pij_core::model::Event>> {
+        self.inner
+            .retire_recipient_jobs(recipients, tombstoned_before_ms, limit, at, spine)
+            .await
+    }
     async fn record_delivery_deferral(
         &self,
         job: JobId,
@@ -767,6 +779,18 @@ impl Queue for RefuseFirstDelivery {
     }
     async fn retry(&self, job: JobId, delay: Duration) -> Result<()> {
         self.inner.retry(job, delay).await
+    }
+    async fn retire_recipient_jobs(
+        &self,
+        recipients: &[SeatId],
+        tombstoned_before_ms: u64,
+        limit: usize,
+        at: u64,
+        spine: &dyn pij_core::ports::Spine,
+    ) -> Result<Vec<pij_core::model::Event>> {
+        self.inner
+            .retire_recipient_jobs(recipients, tombstoned_before_ms, limit, at, spine)
+            .await
     }
     async fn record_delivery_deferral(
         &self,

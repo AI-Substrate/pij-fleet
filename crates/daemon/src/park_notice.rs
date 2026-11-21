@@ -40,7 +40,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use pij_core::BG_ACTOR;
 use pij_core::cold_wake::refusal;
-use pij_core::delivery::{HOLD_LIMIT_EVENT_KIND, HoldExpiry};
+use pij_core::delivery::{
+    HOLD_LIMIT_EVENT_KIND, HoldExpiry, RETIRE_PER_SWEEP, RETIRED_RECIPIENT_AFTER_MS,
+};
 use pij_core::error::Result;
 use pij_core::events::EventFilter;
 use pij_core::model::{
@@ -226,8 +228,14 @@ impl Owed {
 }
 
 fn body(parked: &Parked) -> String {
+    // F276: a retired recipient does not recover by waiting.
+    let next = if parked.outcome == DeliveryFailure::RecipientRetired {
+        "Resend it to a live seat, or revive the target first"
+    } else {
+        "Resend after the target recovers"
+    };
     format!(
-        "[pij] message {} to {} was not delivered ({}: {}). Resend after the target recovers.",
+        "[pij] message {} to {} was not delivered ({}: {}). {next}.",
         parked.message_id,
         parked.recipient,
         parked.outcome.as_str(),
@@ -516,21 +524,72 @@ async fn notify_logged(services: &Services, event: &Event) -> bool {
     }
 }
 
+/// F276: fail, at most [`RETIRE_PER_SWEEP`] at a time, the open queue jobs of
+/// seats tombstoned more than [`RETIRED_RECIPIENT_AFTER_MS`] ago that no
+/// revive is working on, as `undelivered:recipient-retired`. Nothing else
+/// ever ends them: the extension or harness that would claim them is gone.
+/// Their `delivery.parked` facts reach this follower like any park, and
+/// [`notify`] tells a sender only while it is a live seat.
+///
+/// The POLICY is that the recipient is tombstoned. The BRAKES only spare:
+/// a tombstone no older than the cutoff (removing it retires the same jobs
+/// sooner), a revive in progress (removing it retires a reviving seat's
+/// jobs), and any failed read (the roster here, or the store's own re-read
+/// of the tombstone in the retiring transaction): nothing retires on a read
+/// that did not succeed.
+async fn retire_long_dead(services: &Services, seats: &[SeatDescriptor], now: u64) -> bool {
+    let cutoff = now.saturating_sub(RETIRED_RECIPIENT_AFTER_MS);
+    let reviving = services.spawn_waits.revives();
+    let retired: Vec<SeatId> = seats
+        .iter()
+        .filter(|seat| seat.tombstoned_at.is_some_and(|at| at < cutoff))
+        .filter(|seat| !reviving.contains(&seat.id))
+        .map(|seat| seat.id.clone())
+        .collect();
+    if retired.is_empty() {
+        return true;
+    }
+    let queue = services.queue.clone();
+    let spine = services.event_bus.raw_spine();
+    let committed = services
+        .event_bus
+        .publish_committed_batch(async move {
+            let events = queue
+                .retire_recipient_jobs(&retired, cutoff, RETIRE_PER_SWEEP, now, spine.as_ref())
+                .await?;
+            Ok((events, ()))
+        })
+        .await;
+    match committed {
+        Ok(()) => true,
+        Err(error) => {
+            eprintln!("pij-rs park notice sweep: retiring long-dead seats' jobs: {error}");
+            false
+        }
+    }
+}
+
 /// Notify every live seat's parks from the last [`LOOKBACK_MS`], a page at a
-/// time. Returns whether every notice settled.
-async fn sweep(services: &Services) -> bool {
+/// time, after retiring long-dead seats' queued jobs (F276). The roster is the
+/// live seats plus the retired seats the queue in use still owes a row
+/// (F259a, [`crate::pointer::live_or_owed`]), so a retired seat with nothing
+/// open costs this sweep nothing. Returns whether everything settled.
+pub(crate) async fn sweep(services: &Services) -> bool {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_millis() as u64);
     let since = now.saturating_sub(LOOKBACK_MS);
-    let seats = match services.registry.list(Default::default()).await {
-        Ok(seats) => seats,
-        Err(error) => {
-            eprintln!("pij-rs park notice sweep: {error}");
-            return false;
-        }
-    };
-    let mut settled = true;
+    let seats =
+        match crate::pointer::live_or_owed(services.registry.as_ref(), services.queue.as_ref())
+            .await
+        {
+            Ok(seats) => seats,
+            Err(error) => {
+                eprintln!("pij-rs park notice sweep: {error}");
+                return false;
+            }
+        };
+    let mut settled = retire_long_dead(services, &seats, now).await;
     let owing = seats
         .iter()
         .filter(|seat| seat.tombstoned_at.is_none())
@@ -1369,5 +1428,314 @@ mod tests {
             "no notice to the local namesake"
         );
         assert!(notice_fyis(&pool).await.is_empty());
+    }
+
+    const DEAD_SENDER: &str = "pij-park-dead-sender";
+    const DAY_MS: u64 = 24 * 60 * 60 * 1_000;
+
+    /// TARGET retired `days` ago: tombstoned, then its tombstone aged.
+    async fn retire_target(services: &Services, store: &FreshStore, days: u64) {
+        services
+            .registry
+            .tombstone(&TARGET.into(), "test: retired")
+            .await
+            .unwrap();
+        sqlx::query("UPDATE seats SET tombstoned_at = ?2 WHERE id = ?1")
+            .bind(TARGET)
+            .bind((now_ms() - days * DAY_MS) as i64)
+            .execute(&pool(store).await)
+            .await
+            .unwrap();
+    }
+
+    /// TARGET's delivery jobs, oldest first, as `(sender, state, outcome)`.
+    async fn target_jobs(store: &FreshStore) -> Vec<(String, String, Option<String>)> {
+        sqlx::query_as(
+            "SELECT json_extract(payload, '$.from'), state, outcome FROM jobs \
+             WHERE kind = 'delivery:' || ?1 ORDER BY id",
+        )
+        .bind(TARGET)
+        .fetch_all(&pool(store).await)
+        .await
+        .unwrap()
+    }
+
+    fn retired(sender: &str) -> (String, String, Option<String>) {
+        (
+            sender.to_string(),
+            "failed".to_string(),
+            Some(DeliveryFailure::RecipientRetired.as_str().to_string()),
+        )
+    }
+
+    fn open(sender: &str) -> (String, String, Option<String>) {
+        (sender.to_string(), "pending".to_string(), None)
+    }
+
+    async fn notices_to(services: &Services, seat: &str) -> usize {
+        services
+            .event_bus
+            .matching_since(
+                &seat.into(),
+                &SpineWindow::new(NOTICE_KIND, 0, Seq(0), SpineWindow::MAX_LIMIT).unwrap(),
+            )
+            .await
+            .unwrap()
+            .len()
+    }
+
+    /// F276: a recipient retired more than seven days ago has its queued jobs
+    /// failed as `undelivered:recipient-retired`. A live sender is told,
+    /// through the park-notice path; a dead sender is not.
+    #[tokio::test]
+    async fn a_long_dead_recipients_jobs_are_retired_and_only_a_live_sender_is_told() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        services
+            .registry
+            .put(SeatDescriptor::new(DEAD_SENDER, Harness::Omp, "/abs/tree"))
+            .await
+            .unwrap();
+        // The dead sender's job is the older, so its park is followed first:
+        // once the live sender's notice is visible, the dead one is decided.
+        for sender in [DEAD_SENDER, SENDER] {
+            services
+                .delivery
+                .send(
+                    sender.into(),
+                    TARGET.into(),
+                    "for a seat that never returns",
+                )
+                .await
+                .unwrap();
+        }
+        services
+            .registry
+            .tombstone(&DEAD_SENDER.into(), "test: sender gone")
+            .await
+            .unwrap();
+        retire_target(&services, &store, 8).await;
+
+        assert!(sweep(&services).await);
+        assert_eq!(
+            target_jobs(&store).await,
+            [retired(DEAD_SENDER), retired(SENDER)]
+        );
+        assert!(until(async || notices_to(&services, SENDER).await == 1).await);
+        // The live follower hands every published park to `notify`, the dead
+        // sender's too: it must tell no one.
+        let dead_parks = services
+            .event_bus
+            .matching_since(
+                &DEAD_SENDER.into(),
+                &SpineWindow::new(PARKED_KIND, 0, Seq(0), SpineWindow::MAX_LIMIT).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(dead_parks.len(), 1, "the dead sender's job was parked");
+        for park in &dead_parks {
+            notify(&services, park).await.unwrap();
+        }
+        assert_eq!(notices_to(&services, DEAD_SENDER).await, 0);
+        let toward_dead: i64 = sqlx::query_scalar(
+            "SELECT (SELECT count(*) FROM jobs WHERE serial_key = ?1) \
+                  + (SELECT count(*) FROM fyis WHERE recipient = ?1)",
+        )
+        .bind(DEAD_SENDER)
+        .fetch_one(&pool(&store).await)
+        .await
+        .unwrap();
+        assert_eq!(toward_dead, 0, "nothing is sent or held for a dead sender");
+        // A later sweep retires nothing again and tells no one twice.
+        assert!(sweep(&services).await);
+        assert_eq!(notices_to(&services, SENDER).await, 1);
+        assert_eq!(notices_to(&services, DEAD_SENDER).await, 0);
+    }
+
+    /// F276 brake: a tombstone seven days old or younger keeps every job, for
+    /// a revive (and F193's drain) to deliver.
+    #[tokio::test]
+    async fn a_recipient_dead_seven_days_or_less_keeps_its_jobs() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        services
+            .delivery
+            .send(SENDER.into(), TARGET.into(), "wait for the revive")
+            .await
+            .unwrap();
+        retire_target(&services, &store, 6).await;
+        assert!(sweep(&services).await);
+        assert_eq!(target_jobs(&store).await, [open(SENDER)]);
+        assert_eq!(notices_to(&services, SENDER).await, 0);
+    }
+
+    /// F276 brake: a seat a revive request is working on keeps its jobs, even
+    /// past the seven days; once the request ends, the next sweep retires them.
+    #[tokio::test]
+    async fn a_seat_being_revived_keeps_its_jobs() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        services
+            .delivery
+            .send(SENDER.into(), TARGET.into(), "the revive takes it")
+            .await
+            .unwrap();
+        retire_target(&services, &store, 30).await;
+        let reviving = services.spawn_waits.reviving(&TARGET.into());
+        assert!(sweep(&services).await);
+        assert_eq!(target_jobs(&store).await, [open(SENDER)]);
+        drop(reviving);
+        assert!(sweep(&services).await);
+        assert_eq!(target_jobs(&store).await, [retired(SENDER)]);
+    }
+
+    /// F276 brake: the store reads the tombstone again when it retires. A
+    /// revive that lifted it after the sweep read the roster keeps every job.
+    #[tokio::test]
+    async fn a_revive_after_the_roster_read_keeps_the_jobs() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 1_024)).await;
+        services
+            .delivery
+            .send(SENDER.into(), TARGET.into(), "revived meanwhile")
+            .await
+            .unwrap();
+        retire_target(&services, &store, 30).await;
+        let roster = services.registry.list(Default::default()).await.unwrap();
+        sqlx::query("UPDATE seats SET tombstoned_at = NULL WHERE id = ?1")
+            .bind(TARGET)
+            .execute(&pool(&store).await)
+            .await
+            .unwrap();
+        assert!(retire_long_dead(&services, &roster, now_ms()).await);
+        assert_eq!(target_jobs(&store).await, [open(SENDER)]);
+    }
+
+    /// The roster as the store has it, except that listing it fails.
+    struct ListFails(Arc<dyn pij_core::ports::Registry>);
+
+    #[async_trait::async_trait]
+    impl pij_core::ports::Registry for ListFails {
+        async fn get(&self, seat: &SeatId) -> Result<Option<SeatDescriptor>> {
+            self.0.get(seat).await
+        }
+        async fn put(&self, descriptor: SeatDescriptor) -> Result<Seq> {
+            self.0.put(descriptor).await
+        }
+        async fn put_reporting(
+            &self,
+            descriptor: SeatDescriptor,
+        ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+            self.0.put_reporting(descriptor).await
+        }
+        async fn put_reporting_keeping_parent(
+            &self,
+            descriptor: SeatDescriptor,
+        ) -> Result<(Seq, pij_core::ports::PutBinding)> {
+            self.0.put_reporting_keeping_parent(descriptor).await
+        }
+        async fn list(&self, _filter: pij_core::ports::SeatFilter) -> Result<Vec<SeatDescriptor>> {
+            Err(pij_core::error::PijError::Adapter {
+                adapter: "test/registry".into(),
+                message: "the roster cannot be read".into(),
+            })
+        }
+        async fn list_live_with(&self, _also: &[SeatId]) -> Result<Vec<SeatDescriptor>> {
+            self.list(pij_core::ports::SeatFilter::default()).await
+        }
+        async fn tombstone(&self, seat: &SeatId, reason: &str) -> Result<Seq> {
+            self.0.tombstone(seat, reason).await
+        }
+        async fn tombstone_if_unchanged(
+            &self,
+            expected: SeatDescriptor,
+            reason: String,
+        ) -> Result<Seq> {
+            self.0.tombstone_if_unchanged(expected, reason).await
+        }
+        async fn set_activity(
+            &self,
+            seat: &SeatId,
+            state: pij_core::model::SystemState,
+            reason: Option<&str>,
+        ) -> Result<Option<Seq>> {
+            self.0.set_activity(seat, state, reason).await
+        }
+    }
+
+    /// F276 brake: a roster that cannot be read retires nothing.
+    #[tokio::test]
+    async fn a_failed_roster_read_retires_nothing() {
+        let store = FreshStore::new();
+        let mut services = boot(&config(&store, 1_024)).await;
+        services
+            .delivery
+            .send(SENDER.into(), TARGET.into(), "not on a failed read")
+            .await
+            .unwrap();
+        retire_target(&services, &store, 30).await;
+        services.registry = Arc::new(ListFails(services.registry.clone()));
+        assert!(!sweep(&services).await);
+        assert_eq!(target_jobs(&store).await, [open(SENDER)]);
+    }
+
+    /// F276: a pass retires at most RETIRE_PER_SWEEP jobs, oldest first; the
+    /// next pass takes the rest.
+    #[tokio::test]
+    async fn a_backlog_is_retired_a_bounded_batch_per_sweep() {
+        let store = FreshStore::new();
+        let services = boot(&config(&store, 4_096)).await;
+        for n in 0..=RETIRE_PER_SWEEP {
+            services
+                .delivery
+                .send(SENDER.into(), TARGET.into(), format!("backlog {n}"))
+                .await
+                .unwrap();
+        }
+        retire_target(&services, &store, 30).await;
+        assert!(sweep(&services).await);
+        let jobs = target_jobs(&store).await;
+        assert_eq!(jobs.len(), RETIRE_PER_SWEEP + 1);
+        assert!(jobs[..RETIRE_PER_SWEEP].iter().all(|job| job.1 == "failed"));
+        assert_eq!(
+            jobs[RETIRE_PER_SWEEP],
+            open(SENDER),
+            "the newest waits a sweep"
+        );
+        assert!(sweep(&services).await);
+        assert!(
+            target_jobs(&store)
+                .await
+                .iter()
+                .all(|job| job.1 == "failed")
+        );
+    }
+
+    /// F276 / B331-01: retirement finds a long-dead seat's work in the queue
+    /// actually in use. Here that is a fake queue beside the real registry and
+    /// spine, so the registry's own `jobs` table holds nothing for it.
+    #[tokio::test]
+    async fn a_long_dead_recipients_jobs_in_a_fake_queue_beside_a_real_registry_are_retired() {
+        let store = FreshStore::new();
+        let mut config = config(&store, 1_024);
+        config.adapters.queue = AdapterChoice::Fake;
+        let services = boot(&config).await;
+        services
+            .delivery
+            .send(SENDER.into(), TARGET.into(), "owed in the fake queue")
+            .await
+            .unwrap();
+        retire_target(&services, &store, 8).await;
+        assert!(sweep(&services).await);
+        assert!(
+            services
+                .queue
+                .peek(&[delivery_kind(&TARGET.into())])
+                .await
+                .unwrap()
+                .is_none(),
+            "the fake queue's open row is retired"
+        );
+        assert!(until(async || notices_to(&services, SENDER).await == 1).await);
     }
 }
