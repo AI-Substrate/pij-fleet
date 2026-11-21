@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fcca-9344-79c3-982a-8c3447d7e476",
+				"date": "2026-11-21",
+				"head": "6f4c3b9010109bf5532864e48dcaa59d97603050",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:312",
+				"writer": "pij-causal-leopon",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "security verdict, #312 at 6f4c3b9010109bf5532864e48dcaa59d97603050: PASS.\n\nSQL from input: none. LIST_SQL and LIST_BY_PANE_SQL are two compile-time constants. The only runtime choice is which constant to use, made by filter.pane.is_some(). The pane is still bound as ?4 and never interpolated. The only format!() in the touched store paths is PRAGMA user_version = SCHEMA_VERSION, a constant that predates this PR.\n\nVisibility: no change. When the pane is non-NULL, the old predicate (?4 IS NULL OR pane = ?4) reduces to exactly pane = ?4. The other four filters and ORDER BY id are unchanged. Probe on a read-only backup of the live store (3,252 rows, migration 0048's SQL applied to the copy): every distinct pane (1,741, including '' and two injection-shaped values) × every harness × the top 3 folders and parents (plus NULL) × live_only. 334,272 combinations, 0 row/order mismatches. The injection-shaped pane returned 0 rows, and the plan was SEARCH seats USING INDEX seats_by_pane (pane=?).\n\nCallers that pass a pane: whoami/identity resolution (http/identity.rs about :1454), the adopt take-over (:614) and registration pane holders (registration.rs:863). Each still re-checks seat.pane == pane in Rust, so a store fault cannot widen who matches.\n\nMissing index (BRAKE, not a policy): INDEXED BY with the index dropped fails with \"no such index: seats_by_pane\". All three callers map a list error to a refusal or internal error (whoami Resolved::Refusal, adopt internal, registration Runtime). Nothing falls back to a wider or different identity, so removing the index can only refuse. Acceptable.\n\nMigration: a single CREATE INDEX plus PRAGMA user_version = 48, run once by sqlx's tracked runner. An older binary on a v48 store refuses with StoreSchemaStale (found > expected), so it fails closed. The migration file and difficulties row contain no secrets, tokens, absolute home paths or credential reads. The PR diff vs main is 5 files; the merge brings in only main's content. No lockfile, launch or notes changes.\n\nDisclosure (operator error, not the PR): my first probe loop ran too many sqlite3 launches, so I stopped it. My cleanup then ran rm -rf /var/folders/*/*/T/tmp.*, which may have removed other seats' mktemp directories in the user temp dir. The live store was never written (copied via a read-only backup).\n"
+		}
+	]
+}
