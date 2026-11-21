@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before batching tmux commands or touching tap detach/teardown",
+				"tags": [
+					"tmux",
+					"f267",
+					"cost"
+				],
+				"title": "Batch tmux writes: 16 KiB imsg limit and exact failure attribution"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Batch tmux writes (F267 step 3, #330, #333): `TmuxPort::detach_pane_taps` detaches every tap in one read plus a few launches. The per-pane path took 4.7 s at about 145 panes, and the batch takes 29–49 ms.\n\n- **Size limit is tmux's 16 KiB message, not ARG_MAX.** The tmux 3.6a client packs a whole command's argv (each argument with its NUL) into one imsg of at most 16384 bytes and refuses a longer one with `command too long` before any of it runs. See client.c lines 370-397 and compat/imsg.h line 30. A 300-pane list was 17,098 bytes. Split any `;`-joined command list by counted bytes. `DETACH_COMMAND_MAX_BYTES` is 8 KiB, which fits about 130 panes with 3-4 digit pane ids; wider ids fit fewer.\n- **tmux stops a list at its first failing command.** An exited pane kept by remain-on-exit fails `pipe-pane` with \"target pane has exited\" while its pipe and marker stay listed.\n- **Attribution after a failed launch is exact only if every pane sent was attached at the read the list was built from.** Release panes that already read clear BEFORE sending (#333, mongoose B330-R2-01). Otherwise a clear, exited pane stops the list and the next live pane takes the blame. After a failed launch, remove the stop pane from the batch (or nobody, if a pane vanished) and never resend an identical command: at most one launch per pane.\n- **After a launch that succeeded, re-read and never resend.** The 2 s grace is checked between steps, so it is not a wall-time cap. Launch counts cover batch writes only; forked reads and the control client's start are extra.\n- **Release the control client only after the detach.** Do the detach in the same task, so its reads ride the client instead of forking.\n- **Test with real tmux.** Use control_mode.rs's wrapper launch log, `source-file` for hundreds of panes, and `on_tokio` (not `block_on`) because the adapter sleeps with tokio. Wait until each tap has captured bytes before detaching, because a tap's late `cat >>` can recreate its sink (D-F267-4).\n- **Shutdown phases.** `spawn_phase` uses an AbortOnDrop task, which aborts only at await points; work in spawn_blocking runs to its end.\n"
+		}
+	]
+}
