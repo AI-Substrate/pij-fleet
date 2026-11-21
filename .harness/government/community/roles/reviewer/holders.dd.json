@@ -2591,6 +2591,16 @@
 					"seat": "pij-smooth-wildebeest",
 					"to": "2026-11-21T01:30:15.835Z",
 					"why": "verdict on #305 (F253)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T01:34:13.725Z",
+					"harness": "copilot",
+					"harness_session": "63d76ab7-a598-4b62-bbdf-715075e9e469",
+					"instance_key": "306",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-secondary-starfish",
+					"why": "verdict on #306 (F249)"
 				}
 			]
 		}
