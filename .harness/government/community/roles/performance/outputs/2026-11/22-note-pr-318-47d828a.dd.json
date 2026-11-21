@@ -1,0 +1,50 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"head": "47d828a9c33b855b7ad58eb7da9ecdc84fdac0a0",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:318",
+				"writer": "pij-neat-dove",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Cause-attributed D/R/in-flight capture rates are unavailable in this build; require existing ping telemetry to expose them."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "pij-rs --json ping; /bin/ps -p 96429 -o pid=,etime=,lstart=,time=,%cpu=,rss=; /usr/bin/uptime",
+					"exit_code": 0,
+					"log": "Two consecutive 75.022283/75.033119s windows at 3c14199f51; captures 1520/1294, skips 15230/15456, backstops 337/247, daemon spawns +0/+0; complete endpoints in body."
+				},
+				{
+					"command": "just spawn-rate --seconds 20 --json",
+					"exit_code": 0,
+					"log": "Separate 20.0s AFTER sample: machine92.7 new PIDs/s; daemon children none observed (lower bound), PID96429."
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "8 dependency/tool failures; native/SDK/pij-skill pass; heavy Rust/route/smoke skipped; no builds or dependency installs."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "PR #318 / F266: deployed AFTER performance receipt\n\nTwo consecutive live windows measured 20.2606 and 17.2457 observer captures/s, with 90.9254% and 92.2746% skipped. All daemon launch counters stayed flat. Drain-caused versus repair-caused extra captures are NOT measurable from this build's counters; neither D nor R is guessed.\n\nIdentity and method\n\nDaemon PID 96429, deployed commit 3c14199f5150a24333fc227d7dca38d9ea072a65 (ping stamp 3c14199f51), process start November 21, 2026 14:50:26 UTC / November 22 00:50:26 UTC+10. PR #318 final head 47d828a9c33b855b7ad58eb7da9ecdc84fdac0a0, merged as 1de61eb38a4944da04603d55e21c80eda611ae29, is an ancestor of this deployed checkout. #321 is co-deployed.\n\nEach boundary reads pij-rs --json ping, /usr/bin/uptime and /bin/ps -p 96429 -o pid=,etime=,lstart=,time=,%cpu=,rss=. Three ping readings define two consecutive intervals; elapsed time is monotonic between completed ping reads. No input, induced drain, repair, bounce, build or direct production SQLite access. The busy-polling machine launch probe ran separately afterward; no thread-CPU probe overlapped these windows.\n\n| Boundary, November 21 UTC | A | B | C |\n| --- | --- | --- | --- |\n| Time | 14:53:30.161344 | 14:54:45.183908 | 14:56:00.217309 |\n| Daemon age, mm:ss | 03:04 | 04:19 | 05:34 |\n| Host uptime | 5d 12h48m | 5d 12h49m | 5d 12h50m |\n| Load, 1/5/15 min | 11.76 / 11.99 / 11.08 | 14.55 / 12.57 / 11.36 | 11.34 / 11.83 / 11.17 |\n| passes | 303 | 428 | 553 |\n| captures | 3723 | 5243 | 6537 |\n| skipped | 36780 | 52010 | 67466 |\n| backstop | 591 | 928 | 1175 |\n| active_us | 11702630 | 15222923 | 18634593 |\n| capture_bytes | 29077620 | 40923163 | 51810224 |\n| daemon spawns.total | 366 | 366 | 366 |\n| cumulative daemon CPU | 0:30.31 | 0:33.28 | 0:35.85 |\n| daemon RSS, KiB | 144992 | 144992 | 145056 |\n\n| Interval result | A -> B | B -> C |\n| --- | --- | --- |\n| Seconds | 75.022283 | 75.033119 |\n| passes delta | 125 | 125 |\n| captures delta | 1520 | 1294 |\n| skipped delta | 15230 | 15456 |\n| backstop delta, included in captures | 337 | 247 |\n| active_us delta | 3520293 | 3411670 |\n| capture_bytes delta | 11845543 | 10887061 |\n| captures/s | 20.2606 | 17.2457 |\n| Skip ratio | 90.9254% | 92.2746% |\n| Capture/replay decisions per pass | 134.0 | 134.0 |\n| Observer wall us/pass, NOT CPU | 28162.344 | 27293.360 |\n| Counted daemon launches/s | 0 | 0 |\n| Approximate daemon CPU, % of one core | 3.9588% | 3.4252% |\n\nSkip ratio is delta skipped / (delta skipped + delta captures). The unchanged nominal 600 ms observer tick produced 125 passes per window, approximately 1.666 passes/s. At the measured cohort, the added shared gate lookup scales to about 134 / 0.6 = 223.3 eligible-pane lookups/s nominal; no new loop or per-tick process launch was introduced.\n\nAll by_op spawn counters are identical at A, B and C. In particular tmux.control-client=1, tmux.pipe-pane attach=134 and tmux.set-options tap owner=134 remain flat. No counted attachment launch occurred in either window. These are existing launch-site counters, not a counter of repairs or capture causes.\n\nComparison, not causal attribution\n\n#313's earlier AFTER, PID 16325 / 8b437897e3, measured 53.9413 captures/s and 84.8028% skipped at 213 decisions/pass. Here the capture rate is 20.2606 / 17.2457 and the skip ratio is 90.9254% / 92.2746%. The cohort is now 134, not 213; a mid-window fleet read reported 134 seats/panes (111 Claude, 18 Copilot, 5 OMP), 130 idle and 4 working, with no unavailable seat reads. The historical #313 load was 76.95 / 65.61 / 69.67 -> 81.95 / 69.94 / 71.06, and daemon age 01:17 -> 02:17. Current load, age, demand and cohort differ. A fleet-wide death event and co-deployed #321 further prevent attributing this aggregate decrease or whole-daemon CPU to #318 alone.\n\nThe stronger internal result is that 15230 and 15456 of 16750 capture/replay decisions avoided capture in their respective windows. Captures not solely due to the backstop numbered 1183 and 1047; these include multiple reasons and are NOT attributable D or R counts.\n\nProof ceiling: ObserverCountsView (crates/daemon/src/pane_observer.rs:31-54) exposes passes, active_us, captures, capture_bytes, skipped and backstop only. Drain started/ended state remains per-pane internal gate state; it is not exported through ping. There are no drain-start, repair-invalidation, in-flight pane-time, failed-capture or cause-attributed counters here. Captures count successful observer reads, not injection-owned reads or failed attempts. Aggregate capture minus backstop cannot recover the missing causes. The final verdict's short-drain 2D+R model and longer in-flight per-tick capture path are source models, not measured event rates. Relaxed atomic snapshots also permit small endpoint/field skew.\n\nSeparate whole-machine launch receipt\n\njust spawn-rate --seconds 20 --json, November 21 UTC 14:56:17 -> 14:56:37: daemon PID 96429; measured 20.0 s; 92.7 new PIDs/s, 90.9 sampled/s, 191328 in-process polls. Attributed lower bounds: other 78.6/s, gone-before-seen 12.3/s; no daemon children observed. This is a separate sample, not proof of zero daemon launches in all time or a matched historical machine saving. Short-lived children can escape attribution. Other seats' cargo activity was visible; this seat launched no builds.\n\nValidation and harness feedback\n\nLive identity, stable counters and ancestry were verified; product checkout stayed clean. harness checks --quick ran after these measurements, exit 1: eight dependency/tool failures (missing local tsx/vitest, unavailable type surface and incompatible ambient Biome); native contracts, SDK and pij-skill passed, attribution warned, and heavy Rust/route/smoke stages were skipped to preserve the no-build/read-only assignment. No local green code gate is claimed and no dependencies were installed.\n\nmagicWand: export drain starts/ends, tracked repairs, in-flight pane-time and capture causes through the existing ping receipt, without a new loop. difficulties: aggregate telemetry cannot split D from R; unmatched fleet load/cohort/age limits causal comparisons; dependency-free measurement checkouts cannot run the full code gate. This note completes the requested aggregate AFTER observation while explicitly retaining the cause-attribution proof ceiling.\n"
+		}
+	]
+}
