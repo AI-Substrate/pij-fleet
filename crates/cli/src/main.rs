@@ -4466,7 +4466,13 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
             message: format!("could not read the caller directory: {error}"),
         })?,
     };
-    if matches!(harness, Harness::Pi | Harness::Omp) && is_linked_worktree(&cwd)? {
+    // #42: OMP starts in a linked worktree. OMP keys extension modules by name
+    // and the project's copy wins (OMP 18.16 `capability/extension-module.ts`
+    // `key: ext => ext.name`), so the worktree's `pij` loads and the
+    // machine-wide link is shadowed: one copy boots. Pi dedupes only by lexical
+    // path (`core/extensions/loader.js` `discoverAndLoadExtensions`), so both
+    // copies would load there; Pi is still refused, unchanged.
+    if matches!(harness, Harness::Pi) && is_linked_worktree(&cwd)? {
         return Err(PijError::Adapter {
             adapter: "spawn".to_string(),
             message: format!(
@@ -6893,6 +6899,74 @@ PEC notice";
         assert!(git_dir_is_linked(cwd, "/repo/main/.git/worktrees/linked"));
         assert!(!git_dir_is_linked(cwd, "/repo/main/.git"));
         assert!(!git_dir_is_linked(cwd, ".git"));
+    }
+
+    /// #42: an OMP seat starts in a linked worktree, so its tool cwd and every
+    /// relative path are the worktree's. OMP loads one `pij` extension by name,
+    /// the project's first, so the worktree's copy and the machine-wide link no
+    /// longer both boot. Pi has no such rule and is still refused there.
+    #[test]
+    fn omp_spawns_in_a_linked_worktree_and_pi_is_still_refused() {
+        let root = pij_testkit::fresh_dir("pij-spawn-linked-worktree");
+        let main = root.join("main");
+        let linked = root.join("linked");
+        std::fs::create_dir_all(&main).expect("main checkout");
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            let status = std::process::Command::new("/usr/bin/git")
+                .args(args)
+                .current_dir(cwd)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .expect("git");
+            assert!(status.status.success(), "git {args:?}: {status:?}");
+        };
+        git(&main, &["init", "-q"]);
+        git(
+            &main,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "root",
+            ],
+        );
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "--detach",
+                linked.to_str().unwrap(),
+            ],
+        );
+        let spawn = |harness: &str| {
+            let parsed = Cli::try_parse_from([
+                "pij-rs",
+                "spawn",
+                "--harness",
+                harness,
+                "--cwd",
+                linked.to_str().unwrap(),
+                "--session",
+                "fleet",
+            ])
+            .expect("spawn parses");
+            prepare_spawn_request(&parsed.command)
+        };
+        let request = spawn("omp")
+            .expect("OMP starts in its worktree")
+            .expect("spawn request");
+        assert_eq!(request.cwd, linked);
+        let refused = spawn("pi").expect_err("Pi still refused in a linked worktree");
+        assert!(refused.to_string().contains("linked worktree"), "{refused}");
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 }
 

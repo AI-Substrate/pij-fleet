@@ -60,8 +60,8 @@ close every plan against named PRD rows under the governance rules above.
 
 The worktree-primary construction path gives each stream one recorded branch and
 working tree based on an approved SHA. Create and verify it before spawn; run peer
-spawn from that cwd so descriptor and pane inherit it (claude/copilot; OMP and Pi refuse a linked
-worktree, see the peer route).
+spawn from that cwd so descriptor and pane inherit it (any harness but Pi, which refuses a linked
+worktree; see the peer route).
 
 A fence is descriptive ownership plus expected merge-risk metadata — a sensor
 that informs, never a gate that blocks. Work confined to the verified
