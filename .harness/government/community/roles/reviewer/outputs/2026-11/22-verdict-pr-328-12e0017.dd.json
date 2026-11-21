@@ -1,0 +1,68 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1ff32-b35e-7a82-b78e-87468a5323b2",
+				"date": "2026-11-22",
+				"head": "12e001701c4697d2b8925d6ebb73146dc0b2a3d3",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:328",
+				"writer": "pij-written-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N328-R1-01: log late lease-read failures while retaining the fail-closed brake; nonblocking diagnostic follow-up."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 328",
+					"exit_code": 0,
+					"log": "FINAL at 12e001701c4697d2b8925d6ebb73146dc0b2a3d3; clean exact-head checkout"
+				},
+				{
+					"command": "just shared-build -- clippy --locked -p pij-daemon --all-targets -- -D warnings --then test --locked -p pij-daemon --lib auth_recovery::tests -- --nocapture",
+					"exit_code": 0,
+					"log": "pr328-baseline.log: macOS clippy and 27/27 recovery tests passed"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib auth_recovery::tests::review -- --nocapture",
+					"exit_code": 0,
+					"log": "pr328-boundaries.log: 3/3 isolated real-store probes passed"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib auth_recovery::tests::a_lapse_at_boot_waits_one_lease_for_its_receiver -- --exact --nocapture",
+					"exit_code": 101,
+					"log": "pr328-no-boot-wait.log: expected mutant failure, decided before the wait"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib auth_recovery::tests::a_renewal_during_the_lapse_decision_spares_the_seat -- --exact --nocapture",
+					"exit_code": 101,
+					"log": "pr328-no-recheck.log: expected mutant failure at spared assertion"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr328-harness-checks.log: 8 dependency/ambient-tool failures, heavy stages skipped; separate exact-head CI proof under C25"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: PASS-WITH-NOTES\n\nPR #328, round 1, head 12e001701c4697d2b8925d6ebb73146dc0b2a3d3.\nAnswers 01a1ff32-b35e-7a82-b78e-87468a5323b2. Both F274 ordering gaps (a) and (b) are closed within the stated decision boundary. No blocking correctness finding.\n\n## Findings\n\n- Boot wait: `unheard_since_boot` derives one deadline from `native_started_at + extension_claim_lease_secs`, 60 seconds by default. The serial follower does not add a lease-length wait per seat: after the shared deadline, later calls return immediately. The sleep holds neither the native mutex nor a seat's recovery slot. A first accepted heartbeat installs the receiver entry, so subsequent calls return `None`; the already-running sleep is not woken early, and the lease is checked when it finishes. Two isolated real-SQLite seats shared exactly one deadline; the live-process seat restarted once and the exited-process seat was decided without a second grace period.\n- Latency qualification: this is a boot-sleep deadline, NOT a <=60-second end-to-end recovery ceiling. Another seat's decision can wait behind the serial follower, store/process/composer reads and control admission. Existing gap reconciliation also has its completion-based ten-second brake. No new periodic poll, task-per-seat fan-out or per-seat repeated wait is introduced.\n- Shutdown: `Daemon::shutdown` aborts and then joins `extension_lost` (lib.rs:405-406). An isolated follower with a pending 60-second boot sleep cancelled and joined inside a one-second observation bound, leaving no recovery event or control. This proves the cancellable follower path, not a live full-daemon shutdown timing measurement.\n- Late recheck: auth_recovery.rs:306-317 rechecks only a would-be `ExtensionLost` restart, after the process and composer reads, immediately before restart persistence. Renewal or read failure returns `None` before either a recovery record or control admission. No alternate restart branch bypasses it. Reports retain their outcomes. The native mutex is deliberately released before `record`/`accept_control`; a renewal after the final lease read remains the explicitly named linearization residual, not an atomic lease-through-queue guarantee.\n- POLICY vs BRAKES: the lapse remains the policy input. The fixed boot wait delays; the late lease check only spares. Removing either permits the same restart sooner or more often. Both are BRAKES.\n- Cost: one boot-window map lookup and at most one outstanding serial sleep at the shared deadline; up to two native lease guards per restart candidate, each including a registry read. The late guard is restart-only. No new process launch or periodic tick work. Separate performance output at this head carries the live cost receipts and its documentation qualifications.\n\nNonblocking N328-R1-01: keep the late check fail-closed, but log a failed lease read as the early check does. Its `unwrap_or(true)` currently makes a late registry failure indistinguishable from a healthy renewal (auth_recovery.rs:314). This is diagnostic follow-up, not an unclosed restart race.\n\n## Proof\n\nAll local Rust commands ran in an isolated archive of this exact head, through `just shared-build`, with the canonical shared target, niceness 19, four jobs and incremental compilation disabled. No production lapse, heartbeat, restart or bounce was induced.\n\n| Command / witness | Result |\n|---|---|\n| `just pr-freeze 328` | FINAL at the full head, CLEAN, five latest checks passed, no migration |\n| `just shared-build -- clippy --locked -p pij-daemon --all-targets -- -D warnings --then test --locked -p pij-daemon --lib auth_recovery::tests -- --nocapture` | macOS clippy passed; 27/27 recovery tests passed, including both new regressions and F261 attachment |\n| `just shared-build -- test --locked -p pij-daemon --lib auth_recovery::tests::review -- --nocapture` | 3/3 isolated probes passed: first heartbeat clears wait; two serial seats share one deadline; abort/join cancels boot sleep |\n| `just shared-build -- test --locked -p pij-daemon --lib auth_recovery::tests::a_lapse_at_boot_waits_one_lease_for_its_receiver -- --exact --nocapture` with only the boot wait removed | Mutant killed, cargo exit 101; `heard=true: decided before the wait` |\n| `just shared-build -- test --locked -p pij-daemon --lib auth_recovery::tests::a_renewal_during_the_lapse_decision_spares_the_seat -- --exact --nocapture` with only the late recheck removed | Mutant killed, cargo exit 101; intended `spared` assertion failed |\n| CI run 44929325713, successful rust-test job 136922278656, artifact 14717360742 | Exact-head JUnit independently parsed: all 27 recovery cases passed |\n| `harness boot` | Advisory `ready=false`: no local node_modules |\n| `harness checks --quick` | Exit 1: eight missing-dependency/ambient-tool failures; native contracts, SDK and skill checks passed; heavy stages skipped |\n\nC25: local TS readiness/full ship gate is not green and was not repaired with dependency links or installs. Exact-head CI is the separate TS/workspace proof. Baseline receipts and probe/mutant logs are retained as pr328-baseline.log, pr328-boundaries.log, pr328-no-boot-wait.log and pr328-no-recheck.log. Mutants are restored to byte-identical production source before cleanup; the detached product checkout stays clean.\n\nHarness magicWand: an isolated exact-head review-proof recipe should carry the archive, canonical shared target, guard mutants and named cleanup receipts. The probes established behavior that previously required reading the serial follower and shutdown owner together. Retain that proof as regression fixtures rather than only a prose deadline claim.\n\nHold reviewer/328 until merge; reviewer/329 remains queued next.\n"
+		}
+	]
+}
