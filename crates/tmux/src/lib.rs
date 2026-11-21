@@ -1627,7 +1627,13 @@ impl TmuxPort for TmuxAdapter {
                     }
                 }
             };
-            if state.is_some() {
+            // Only a pane still piped or still marked is sent (mongoose
+            // B330-R2-01): one already clear is released here, never sent, so
+            // every pane in a command was attached at the read it was built
+            // from, and a failed launch can be attributed exactly (below). A
+            // clear pane sent along, if it had exited, stopped the list and
+            // read clear after it, and the next live pane took its blame.
+            if state.is_some_and(|state| state.piped || state.marker.is_some()) {
                 pending.push((index, pane.as_str(), path));
             } else {
                 results[index] = Some(self.release_tap(pane, &path));
@@ -1670,11 +1676,14 @@ impl TmuxPort for TmuxAdapter {
                     .is_some_and(|state| state.piped || state.marker.is_some())
             };
             if let Err(error) = &launched {
-                // Where tmux stopped. A chunk pane gone since the last read is
-                // the likely stop, so nobody is blamed this round; otherwise the
-                // first chunk pane still attached is the one whose command
-                // failed. Either way that pane leaves `pending`, so no command
-                // is ever sent twice, and the panes after it go in the next one.
+                // Where tmux stopped. Every pane sent was attached at the read
+                // the command was built from, and a command that ran leaves its
+                // pane clear (pipe-pane and set-option -u act before they
+                // return), so the first chunk pane still attached is the one
+                // whose command failed. A chunk pane gone since that read is the
+                // likely stop instead, so nobody is blamed this round. Either
+                // way a pane leaves `pending`, so no command is sent twice, and
+                // the panes after the stop go in the next one.
                 let vanished = pending[..chunk]
                     .iter()
                     .any(|(_, pane, _)| before.contains_key(*pane) && !listed.contains_key(*pane));
