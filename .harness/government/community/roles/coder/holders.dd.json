@@ -1592,7 +1592,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f256",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #308 merged (6c94ffed00a8)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-21T03:00:50.783Z",
 					"why": "F256 canary refuses on catalog Err (fail-open fix), first in queue"
 				},
 				{

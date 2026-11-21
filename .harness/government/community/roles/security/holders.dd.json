@@ -1032,7 +1032,10 @@
 					"harness_session": "19683054-8a5d-47fa-a1f8-fdb10ddf79d0",
 					"instance_key": "308",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #308 merged (6c94ffed00a8)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-dynamic-alligator",
+					"to": "2026-11-21T03:00:50.783Z",
 					"why": "verdict on #308 (F256)"
 				}
 			]
