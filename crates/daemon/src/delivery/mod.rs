@@ -972,12 +972,16 @@ impl DeliveryService {
         Ok(())
     }
 
-    /// F260: end one held body's hold now, so it is never recovered. True
-    /// when its sender is owed an expiry notice (see [`Queue::expire_native_hold`]).
+    /// F260: end one held body's hold now, so it is never recovered, and
+    /// decide its sender's expiry notice (see [`Queue::expire_native_hold`]).
     ///
     /// # Errors
     /// Queue failures.
-    pub(crate) async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+    pub(crate) async fn expire_native_hold(
+        &self,
+        job: JobId,
+        recipient: &SeatId,
+    ) -> Result<pij_core::delivery::HoldExpiry> {
         let _guard = self.native_lock.lock().await;
         self.queue.expire_native_hold(job, recipient).await
     }
@@ -1266,15 +1270,19 @@ impl DeliveryService {
         Ok(Some(receipt))
     }
 
-    /// Whether a delivery of `msg_id` to `recipient` was ever admitted
+    /// Whether `pij-bg`'s delivery of `msg_id` to `recipient` was ever admitted
     /// (recorded as delivered, or queued in any state). FYIs are not consulted.
     ///
-    /// Daemon-local senders only (`pij-bg`): a local message's origin is `None`.
+    /// Daemon notices only: the sender is `pij-bg` and the origin local. Another
+    /// seat's message under the same id is never this notice (F270), so a seat
+    /// that sends `park-notice-<job>` first cannot make the real one look sent.
     ///
     /// # Errors
     /// Store failures.
     pub async fn admitted(&self, recipient: &SeatId, msg_id: &str) -> Result<bool> {
-        self.queue.admitted(recipient, msg_id, None).await
+        self.queue
+            .admitted(recipient, msg_id, None, &SeatId::from(pij_core::BG_ACTOR))
+            .await
     }
 
     /// How many FYIs wait for `seat`.
@@ -1572,6 +1580,7 @@ impl DeliveryService {
                                 &to,
                                 &msg.msg_id,
                                 msg.from_machine.as_deref(),
+                                &msg.from,
                                 DeliveryOrigin::InjectedToTransport,
                             )
                             .await?
@@ -1587,6 +1596,7 @@ impl DeliveryService {
                                             &to,
                                             &msg.msg_id,
                                             msg.from_machine.as_deref(),
+                                            &msg.from,
                                         )
                                         .await?;
                                     match self
@@ -1613,6 +1623,7 @@ impl DeliveryService {
                                             &to,
                                             &msg.msg_id,
                                             msg.from_machine.as_deref(),
+                                            &msg.from,
                                         )
                                         .await?;
                                     return Err(error);
@@ -1648,6 +1659,7 @@ impl DeliveryService {
                                     &to,
                                     &msg.msg_id,
                                     msg.from_machine.as_deref(),
+                                    &msg.from,
                                     DeliveryOrigin::TypedToPane,
                                 )
                                 .await?
@@ -1673,6 +1685,7 @@ impl DeliveryService {
                                                 &to,
                                                 &msg.msg_id,
                                                 msg.from_machine.as_deref(),
+                                                &msg.from,
                                             )
                                             .await?;
                                         // Keep admission evidence ahead of a worker's completion.
@@ -1723,6 +1736,7 @@ impl DeliveryService {
                                                 &to,
                                                 &msg.msg_id,
                                                 msg.from_machine.as_deref(),
+                                                &msg.from,
                                             )
                                             .await?;
                                         return Err(error);

@@ -280,41 +280,49 @@ pub struct RoleRequest {
 
 /// Boot recovery's evidence that delivery already took a stranded claim:
 /// a ledger row, a `delivery:<holder>` job in any state, or a held FYI under
-/// its msg_id. Every probe is an indexed SEARCH (performance P001 on #129):
-/// the ledger's unique key, `jobs_by_dedupe` and the FYI primary key.
+/// its msg_id, each the requester's own (F270: another seat's message under
+/// the same id is not this request). Every probe is an indexed SEARCH
+/// (performance P001 on #129): the ledger's unique key, `jobs_by_dedupe` and
+/// the FYI primary key.
 const RECOVER_TAKEN_SQL: &str = "UPDATE role_requests SET state = 'delivered', delivered_at = ?1 \
      WHERE state = 'delivering' AND holder IS NOT NULL AND ( \
        EXISTS (SELECT 1 FROM delivered_messages AS ledger \
          WHERE ledger.recipient = role_requests.holder AND ledger.sender_machine = '' \
-         AND ledger.msg_id = role_requests.id) \
+         AND ledger.msg_id = role_requests.id \
+         AND ledger.sender_seat IN (role_requests.requester, '')) \
        OR EXISTS (SELECT 1 FROM jobs \
          WHERE jobs.kind = 'delivery:' || role_requests.holder \
-         AND jobs.dedupe_origin = '' AND jobs.dedupe_key = role_requests.id) \
+         AND jobs.dedupe_origin = '' AND jobs.dedupe_key = role_requests.id \
+         AND jobs.dedupe_sender = role_requests.requester) \
        OR EXISTS (SELECT 1 FROM fyis \
          WHERE fyis.origin = '' AND fyis.id = role_requests.id \
          AND fyis.recipient = role_requests.holder))";
 
-/// Has delivery taken local message `?2` for recipient `?1`? The evidence of
-/// [`RECOVER_TAKEN_SQL`], for one recipient and msg_id (review of #133).
+/// Has delivery taken local message `?2` from `?3` for recipient `?1`? The
+/// evidence of [`RECOVER_TAKEN_SQL`], for one recipient and msg_id (review of
+/// #133).
 const ADMITTED_SQL: &str = "SELECT \
        EXISTS (SELECT 1 FROM delivered_messages AS ledger \
-         WHERE ledger.recipient = ?1 AND ledger.sender_machine = '' AND ledger.msg_id = ?2) \
+         WHERE ledger.recipient = ?1 AND ledger.sender_machine = '' AND ledger.msg_id = ?2 \
+         AND ledger.sender_seat IN (?3, '')) \
        OR EXISTS (SELECT 1 FROM jobs \
-         WHERE jobs.kind = 'delivery:' || ?1 AND jobs.dedupe_origin = '' AND jobs.dedupe_key = ?2) \
+         WHERE jobs.kind = 'delivery:' || ?1 AND jobs.dedupe_origin = '' AND jobs.dedupe_key = ?2 \
+         AND jobs.dedupe_sender = ?3) \
        OR EXISTS (SELECT 1 FROM fyis \
          WHERE fyis.origin = '' AND fyis.id = ?2 AND fyis.recipient = ?1)";
 
-/// When local message `?2` reached recipient `?1`'s session, in ms (plan 214,
-/// F73): its delivery ledger row; else its acknowledged delivery job (the
-/// ledger keeps only each recipient's latest rows; `outcome IS NULL` is a
-/// real `ack_delivery`, not a refusal acked done); else its FYI, once
+/// When local message `?2` from `?3` reached recipient `?1`'s session, in ms
+/// (plan 214, F73): its delivery ledger row; else its acknowledged delivery
+/// job (the ledger keeps only each recipient's latest rows; `outcome IS NULL`
+/// is a real `ack_delivery`, not a refusal acked done); else its FYI, once
 /// delivered. NULL while it is still held. Each probe is an indexed SEARCH.
 const REACHED_SQL: &str = "SELECT COALESCE( \
        (SELECT ledger.delivered_at * 1000 FROM delivered_messages AS ledger \
-         WHERE ledger.recipient = ?1 AND ledger.sender_machine = '' AND ledger.msg_id = ?2), \
+         WHERE ledger.recipient = ?1 AND ledger.sender_machine = '' AND ledger.msg_id = ?2 \
+         AND ledger.sender_seat IN (?3, '')), \
        (SELECT max(jobs.acked_at) * 1000 FROM jobs \
          WHERE jobs.kind = 'delivery:' || ?1 AND jobs.dedupe_origin = '' AND jobs.dedupe_key = ?2 \
-         AND jobs.state = 'done' AND jobs.outcome IS NULL), \
+         AND jobs.dedupe_sender = ?3 AND jobs.state = 'done' AND jobs.outcome IS NULL), \
        (SELECT fyis.settled_at_ms FROM fyis \
          WHERE fyis.origin = '' AND fyis.id = ?2 AND fyis.recipient = ?1 \
          AND fyis.state = 'delivered'))";
@@ -785,27 +793,41 @@ impl SqliteOrchestration {
         .await
     }
 
-    /// When local message `msg_id` reached `recipient`'s session, in ms, or
-    /// `None` while it is still held (plan 214, F73): see [`REACHED_SQL`].
-    pub async fn message_reached_at(&self, recipient: &str, msg_id: &str) -> Result<Option<u64>> {
+    /// When local message `msg_id` from `sender` reached `recipient`'s
+    /// session, in ms, or `None` while it is still held (plan 214, F73): see
+    /// [`REACHED_SQL`].
+    pub async fn message_reached_at(
+        &self,
+        recipient: &str,
+        msg_id: &str,
+        sender: &str,
+    ) -> Result<Option<u64>> {
         require_current_schema(&self.pool).await?;
         let at: Option<i64> = sqlx::query_scalar(REACHED_SQL)
             .bind(recipient)
             .bind(msg_id)
+            .bind(sender)
             .fetch_one(&self.pool)
             .await
             .map_err(adapter_error)?;
         at.map(|at| sql_u64(at, "reached_at")).transpose()
     }
 
-    /// Did delivery already take local message `msg_id` for `recipient`? The
-    /// same evidence boot recovery uses: a ledger row, a `delivery:<recipient>`
-    /// job in any state, or a held FYI, each an indexed SEARCH.
-    pub async fn limit_notification_admitted(&self, recipient: &str, msg_id: &str) -> Result<bool> {
+    /// Did delivery already take local message `msg_id` from `sender` for
+    /// `recipient`? The same evidence boot recovery uses: a ledger row, a
+    /// `delivery:<recipient>` job in any state, or a held FYI, each an indexed
+    /// SEARCH.
+    pub async fn limit_notification_admitted(
+        &self,
+        recipient: &str,
+        msg_id: &str,
+        sender: &str,
+    ) -> Result<bool> {
         require_current_schema(&self.pool).await?;
         sqlx::query_scalar::<_, bool>(ADMITTED_SQL)
             .bind(recipient)
             .bind(msg_id)
+            .bind(sender)
             .fetch_one(&self.pool)
             .await
             .map_err(adapter_error)
