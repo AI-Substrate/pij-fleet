@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before pricing all reads in a reaper or collecting PR315 deployed AFTER",
+				"tags": [
+					"cost",
+					"sqlite",
+					"proof",
+					"baseline"
+				],
+				"title": "PR315 R2: whole-reaper cost guard closed"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# PR315 R2 closes the complete-caller cost guard\n\nAt 7d79009c5a1ad190f9c34ec717c32d37e2653511, R315-P1/R315-F001 is closed:\nboth reaper roster reads use live_only. Its fresh after-count has unchanged\nmeaning; main always discarded tombstoned rows before counting too.\n\nThe ListSpy test over the real store records [true,true,true] across dry\nand non-dry runs and checks their live counts. L4, restoring the final\ngeneric query, fails with [true,true,false]. Together with the store's\nruntime indexed-query refusal test, it guards the complete caller rather\nthan only an exported SQL constant.\n\nSame 3279-row/212-live copy, independent paired CPU medians:\nmain12.759ms, R1 6.789ms, R2 0.709ms; observer0.852->0.360ms.\nTwo roster lists materialize424 live descriptors per non-dry sweep,\nnot6558 historical ones; per-live-seat checks remain separately priced.\nRaw/reproducer: Copilot session43dfc7b1-1b7e-463d-af0d-4f4aae11d8bf,\nfiles/pr315-r2-query-cost.json and pr315-r2-query-cost.py.\nCommitted tombstone/revive timings dominated by commit are not a proof of\nzero index maintenance; retain R1's live-upsert delete/reinsert clarification.\n\nThe D1 baseline on PID16325/build8b437897e3 still stands for post-deploy\nAFTER: SQLite4.366784 CPU seconds per60.009666s on November21,2026.\nDo not use the older pre-D1 daemon as an exclusive PR315 comparator.\nAFTER remains owed; final-round verdict has no remaining blocker.\n\nmagicWand fulfilled: the requested whole-reaper list guard is now a real\nregression test. difficulties: C25 keeps local TS proof CI-only; preserve\nthe failed combined smoke receipt alongside its successful standalone\nrerun rather than silently calling the original full gate green.\n"
+		}
+	]
+}
