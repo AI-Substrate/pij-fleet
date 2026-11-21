@@ -661,30 +661,57 @@ async fn a_lapse_told_before_the_follower_attached_is_restarted_once() {
     assert!(queued[0].contains("\"restart\""), "{queued:?}");
 }
 
-/// B311-01: a lapse overwritten in a one-slot broadcast ring before the
-/// follower read it is decided after the gap: one restart. The follower is
-/// held on the other seat's lock while the ring overflows.
-#[tokio::test]
-async fn a_lapse_overwritten_in_the_broadcast_ring_is_restarted_once() {
-    let mut fleet = fleet(SystemState::Idle, None).await;
-    running(&mut fleet);
-    native(&fleet, true).await;
+/// A follower reconciling at most once per `interval`, attached and
+/// reconciled, whose ring (one slot) then loses the coder's lapse: the
+/// follower is held on the other seat's lock while the ring overflows, then
+/// let go. Returns the follower.
+async fn overflowed(fleet: &mut Fleet, interval: Duration) -> tokio::task::JoinHandle<()> {
+    running(fleet);
+    native(fleet, true).await;
     let spine = fleet.services.event_bus.raw_spine();
     fleet.services.event_bus = Arc::new(crate::events::EventBus::new(spine, 1).unwrap());
     let other = fleet.services.auth_recovery.slot(&SeatId::from(OTHER));
     let held = other.lock().await;
-    let follower = tokio::spawn(super::follow_lapses(fleet.services.clone()));
+    let follower = tokio::spawn(super::follow_lapses_every(fleet.services.clone(), interval));
     tokio::time::sleep(Duration::from_millis(50)).await;
-    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(OTHER)).await;
+    edge(fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(OTHER)).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    edge(fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
     for _ in 0..3 {
-        edge(&fleet, "test.noise", None).await;
+        edge(fleet, "test.noise", None).await;
     }
     drop(held);
+    follower
+}
+
+/// B311-01: a lapse overwritten in a one-slot broadcast ring before the
+/// follower read it is decided after the gap: one restart.
+#[tokio::test]
+async fn a_lapse_overwritten_in_the_broadcast_ring_is_restarted_once() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    let follower = overflowed(&mut fleet, Duration::ZERO).await;
     let queued = controls_soon(&fleet).await;
     follower.abort();
     assert_eq!(queued.len(), 1, "one restart control is queued");
+}
+
+/// F268: a gap sooner than the least interval after the last reconcile
+/// waits out the rest of it, then reconciles: the lapse is still decided,
+/// once, but a gap storm costs at most one reconcile per interval.
+#[tokio::test]
+async fn a_gap_soon_after_a_reconcile_waits_out_the_interval_then_decides() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    let interval = Duration::from_millis(1_500);
+    let started = tokio::time::Instant::now();
+    let follower = overflowed(&mut fleet, interval).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(
+        started.elapsed() < interval && controls(&fleet).await.is_empty(),
+        "no reconcile inside the interval"
+    );
+    let queued = controls_soon(&fleet).await;
+    follower.abort();
+    assert_eq!(queued.len(), 1, "decided after it");
 }
 
 /// B311-01: a lapse its receiver renewed before the reconcile read it is
@@ -745,6 +772,54 @@ async fn a_lapse_an_earlier_daemon_decided_is_not_decided_again() {
         .unwrap();
     super::reconcile(&fleet.services).await;
     assert!(controls(&fleet).await.is_empty(), "never decided twice");
+}
+
+/// F268: a lapse decided as `told` (its parent was told inside the window,
+/// before this lapse) writes nothing acting, but is marked decided, so the
+/// next reconcile does not decide it again.
+#[tokio::test]
+async fn a_lapse_decided_with_nothing_to_do_is_not_decided_again() {
+    let mut fleet = fleet(SystemState::Idle, None).await;
+    running(&mut fleet);
+    native(&fleet, false).await;
+    let recently = super::now_ms() - 10 * MINUTE;
+    fleet
+        .services
+        .event_bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: recently,
+            kind: super::AUTH_RECOVERY_KIND.to_string(),
+            seat: Some(SeatId::from(SEAT)),
+            payload: serde_json::json!({
+                "action": "notify",
+                "at": recently,
+                "pid": FIRST.pid,
+                "proc_start": FIRST.proc_start,
+                "kind": "authorization",
+                "msg_id": null,
+            })
+            .to_string(),
+        })
+        .await
+        .unwrap();
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    super::reconcile(&fleet.services).await;
+    super::reconcile(&fleet.services).await;
+    let held: Vec<String> = fleet
+        .services
+        .spine
+        .tail(Some(&SeatId::from(SEAT)), pij_core::model::Seq(0))
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == super::LAPSE_HELD_KIND)
+        .map(|event| event.payload)
+        .collect();
+    assert_eq!(held.len(), 1, "decided once: {held:?}");
+    assert!(held[0].contains("\"told\""), "{held:?}");
+    assert!(controls(&fleet).await.is_empty());
 }
 
 /// N311-01: a lapse renewed before the follower decides it is spared. The
