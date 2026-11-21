@@ -625,6 +625,16 @@
 					"seat": "pij-precious-sparrow",
 					"to": "2026-11-21T08:07:33.122Z",
 					"why": "#312 F258 B1 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T08:32:58.332Z",
+					"harness": "copilot",
+					"harness_session": "35b40689-8aea-4172-8a1d-cac1e5e60df5",
+					"instance_key": "313",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-like-guppy",
+					"why": "#313 F258 D1 round 1"
 				}
 			]
 		}
