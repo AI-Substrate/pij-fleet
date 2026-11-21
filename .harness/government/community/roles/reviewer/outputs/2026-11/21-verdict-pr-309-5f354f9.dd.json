@@ -1,0 +1,66 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fce5-2384-7003-b180-627617fe0c5f",
+				"date": "2026-11-21",
+				"head": "5f354f9ecfca6d08f31b4e4be2cfe5ba97df51f6",
+				"kind": "verdict",
+				"link": "https://docs.rs/tokio/latest/tokio/macro.select.html",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:309",
+				"writer": "pij-anonymous-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R309-01 remaining: an already-gone no-wait caller can settle dispatched and suppress its parent handoff",
+				"R309-03 remaining: a stale unbound row can re-arm a terminal-bound launch and report it twice",
+				"new: name and surface the stalled-launch residual when the five-second stop-lock join times out"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 309; git show --remerge-diff HEAD; git diff --check",
+					"exit_code": 0,
+					"log": "FINAL at full 5f354f9 head, CI 5/5, clean merge and unchanged product checkout"
+				},
+				{
+					"command": "CI run 44875974068, successful job 136760656399, artifact 14695709267",
+					"exit_code": 0,
+					"log": "2768 cases, zero failures; eight focused R2 ownership/stop/handoff/replay/bounce cases passed"
+				},
+				{
+					"command": "Actual-Tokio exact-source probes built with just shared-build, then run at nice 19",
+					"exit_code": 0,
+					"log": "10 controls pass; 5 Rust mutants killed; stale-unbound replay reports twice; gone-before-row no-wait falsely answers 13/32; gone-first control 0/32"
+				},
+				{
+					"command": "Exact-method TypeScript retry probes",
+					"exit_code": 0,
+					"log": "R309-02 closed; first-send and reset-deadline mutants killed; stable first-failure deadline stops four slow tries rather than reset mutant nine"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "9 sensors fail: missing local dependencies/ambient Biome plus Rust control_mode; native contracts, SDK, route inventory and smoke pass; no local full-gate pass claimed"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer verdict: BLOCK\n\nPR #309, round 2 of 2 under C34, exact head 5f354f9ecfca6d08f31b4e4be2cfe5ba97df51f6. Two normal-use handoff/replay faults remain within the round-1 scope. R309-02 is closed; the ownership and fresh-row portions of R309-01/03 are fixed.\n\n## R309-01 remains open: an already-gone no-wait caller can consume the handoff\n\n`crates/daemon/src/http/mod.rs:1460-1485,1981-2005`; `crates/daemon/src/spawn_waits.rs:296-308`.\n\nThe owned launch and owned mutex guard correctly keep the row writer alive after the HTTP waiter is cancelled. However, if that cancellation happens while the row is held, the task reaches `answer_launch` with `gone` already ready. With `no_wait: true`, its answer future is immediately ready too: it calls `watch.answered(\"dispatched\")` before returning. The unbiased select can poll that answer first, despite the caller having ended before the row write completed.\n\nThat removes the launch's watch and records `spawn.answered` for a caller that cannot receive the answer. A later bind cannot hand the seat to the parent; boot recovery also skips an answered launch. This is an unreported live-seat regression of the R309-01 gone-caller requirement, not the pre-existing irreducible window between building a response and delivering it.\n\nThe actual-Tokio source probe held the row, ended the caller, released the row, then bound the seat. The current code falsely settled 13 of 32 deliberately synchronized no-wait launches as answered. This is a controlled ordering result, not a measured fleet failure rate. Changing only the copied selector to give the ready `gone` branch biased precedence produced 0 of 32 false answers and kept all ten controls passing.\n\nRequired: an already-signalled gone caller must win before immediate dispatch settlement is polled. The existing gone-caller CI test uses a waiting spawn; the held-row ownership test checks one pane/row and a successful resend, not this no-resend handoff outcome.\n\n## R309-03 remains open: a stale unbound row can re-arm a reported launch\n\n`crates/store/src/registry.rs:501-509`; `crates/daemon/src/http/mod.rs:1606-1627,1920-1925`; `crates/daemon/src/spawn_waits.rs:192-209,248-262`; `crates/daemon/src/registration.rs:287-295`.\n\n`watch_again` correctly protects a settled launch when the row snapshot says bound. But entry absence plus a snapshot saying unbound is not proof of a settled unbound dispatch.\n\nThe normal ordering is: a resend's indexed SELECT captures an unbound row; registration then binds and reports the recovered/abandoned launch, removing its entry; the resend resumes with its earlier snapshot. `watch_again(launch, false)` now sees no entry and re-arms that already-reported launch. Registration does not take the spawn lock, so the spawn lock does not serialize this ordering. Successful bound re-registrations call `waits.bound` again.\n\nThe source probe ran recovery-unbound -> bind/report -> rewatch with the earlier unbound snapshot -> bind -> abandon. It recorded two reports for one launch. If abandonment comes before that final bind, the re-armed entry instead remains wrongly unbound/unsettled until another registration. The fresh-bound-row controls pass, but they do not defend this legitimate stale snapshot.\n\nRequired: preserve the terminal-bound settlement fact across replay, including a stale row; distinguish it from the legitimate lost, still-unbound no-wait dispatch. This is the original report-before-rewatch fault, not optional new hardening.\n\nCorrection to my round-1 zero-notice oracle: once bound recovery has already admitted a parent report, a later resend cannot undo it. I do not block on that oracle still failing. One existing report, no second report, and no re-armed entry is the proper terminal expectation; those controls pass when the row snapshot is current.\n\n## Closed checks, merge and lifecycle\n\nR309-01 ownership: the request now awaits a separate task which owns the mutex guard through the descriptor write. The original cut-before-row/resend control passes; making the launch inline again fails it.\n\nR309-01 stop join: the production router and revive path use SpawnWaits' shared launch lock. `stop` sets the flag before acquiring that lock; removing its lock acquisition fails the pending-stop control. The launch drops its guard before waiting for binding, and stop releases its acquired guard before subsequent teardown. No spawn-lock/shutdown lock cycle was found. A gone waiting caller exits after its row and preserves F211's handoff; removing the gone branch fails that control. The no-wait fault above leaks a handoff, not a running Tokio waiter.\n\nR309-02 closed: the original twenty-one-second first-send/EOF probe now retries successfully with two attempts. Reinstating a first-send deadline fails it. Slow repeated failures stop after four tries with the first-failure deadline; replacing `??=` with `=` permits nine, killing the deadline-stability control.\n\nThere is one HTTP response per request/select result. Separate keyed requests may legitimately receive the same seat; that is not a double answer. The remaining duplicate is R309-03's parent report.\n\nThe main merge is clean: `git show --remerge-diff HEAD` has no resolution hunks, and the F255 production spawn files are unchanged from b2a6c5e4. #310's queue changes and shared tests/docs are inherited. `git diff --check` passes; the detached product checkout remains unchanged.\n\nN1 is recorded as requested: the resend's own trust-folder flag governs its wait. N2 stays closed as decided: build_spawn_plan passes input.model unchanged, so the identical resend has the same model expectation.\n\n## New, non-blocking note for the prime\n\nThe new five-second timeout of `SpawnWaits::stop` is discarded (`crates/daemon/src/lib.rs:367`). Therefore the claim that only SIGKILL/crash can cut a rowless launch is conditional: if this join expires, shutdown proceeds without proving that the owned launch-through-row segment finished. Surface/name the timed-out, stalled-launch limit rather than claiming an unconditional clean-stop guarantee. This is recorded under new notes_owed, not an additional C34 block.\n\nCost: one in-process task and caller-lifetime oneshot per spawn/revive/replay request; one shutdown-time five-second timeout and lock acquisition. No new periodic poll or OS-process launch site. Binding waits retain the existing 50 ms loop per outstanding waiter (20 iterations/s per waiter); nothing new runs at idle. No live deployment or before/after fleet measurement is claimed.\n\n## Evidence and proof grade\n\nExact-head CI run 44875974068 passed. Successful rust-test job 136760656399's upload identifies artifact 14695709267: 2,768 cases, zero failures; the eight focused ownership, stop, handoff, terminal-replay and bounce cases all passed. The artifact was selected by its successful job's ID, not by name.\n\nThe isolated probes copy the exact SpawnWaits, launch_seat_locked and answer_launch implementations and use actual repository-pinned Tokio. Row/bind/response effects and settlement recording are fakes; these are executable wiring/state-machine proofs, not a full HTTP/production bounce. They were built through just shared-build in the canonical target, niceness 19, four jobs, and run at niceness 19 without editing the checkout.\n\nTen baseline controls passed. Five Rust mutants were killed: inline row ownership, no stop-lock acquisition, unconditional settled re-arm, lost carried binding, and ignored gone caller. Both TypeScript deadline mutants were killed. The two remaining-ordering probes fail on the unmodified copied code; the gone-first control closes the no-wait case.\n\n`harness boot` is not ready without node_modules (C25; nothing restored). `harness checks` ran and exited 1: missing local dependencies/ambient Biome affect the static/TS sensors, and the Rust control_mode suite failed locally. Native contracts, SDK, route inventory and smoke passed. No local full-gate pass or new cause for the unchanged tmux suite is claimed.\n\nHarness improvement / magicWand: add the two compact cases to the existing spawn fixtures: cancel a held-row no-wait caller without resending, and hold an unbound lookup result across binding/reporting before rewatch. Preserve the positive ownership, settled-fresh-row and lost-unbound-dispatch controls alongside them.\n"
+		}
+	]
+}
