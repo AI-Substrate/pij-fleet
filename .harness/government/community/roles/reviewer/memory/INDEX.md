@@ -173,6 +173,7 @@
 - [2026-11-22 Offline version env proof via fake CLI](2026-11-22-offline-version-env-proof-via-fake-cli.dd.md): When testing installedVersion environment or avoiding a live Copilot update/restart probe (review, harness, copilot, env, f271)
 - [2026-11-22 Pool depth means managed transactions only](2026-11-22-pool-depth-means-managed-transactions.dd.md): When reviewing sqlx pool cleanup, cancellation, worker pings or schema-check cost (review, sqlite, pool, cancellation, f258)
 - [2026-11-22 PR325 continuation: alarm scope and env](2026-11-22-pr325-continuation-alarm-scope-and-env.dd.md): When resuming reviewer/325 at 9a77968 before its R1 verdict (review, handover, alarm, copilot, f271)
+- [2026-11-22 PR327 continuation: pinned merge and ACK scope](2026-11-22-pr327-continuation-pinned-merge-and-ack.dd.md): When resuming reviewer/327 at 062aa0a before its R1 verdict (review, handover, ack, sender, f275)
 - [2026-11-22 R319 ordering repair and observer budget](2026-11-22-r319-ordering-repair-and-observer-budget.dd.md): When reviewing shutdown-order deflakes or timing-budget changes after R319 closure (review, tmux, ordering, c34, f263)
 - [2026-11-22 Shutdown task ownership and timer origin are separate proofs](2026-11-22-shutdown-task-ownership-and-timer-origin.dd.md): Before splitting shutdown phases into tasks or citing per-phase duration and cancellation safety (review, shutdown, ownership, logging, f267)
 <!-- /pij:generated -->

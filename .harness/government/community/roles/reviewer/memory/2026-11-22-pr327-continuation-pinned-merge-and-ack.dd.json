@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "When resuming reviewer/327 at 062aa0a before its R1 verdict",
+				"tags": [
+					"review",
+					"handover",
+					"ack",
+					"sender",
+					"f275"
+				],
+				"title": "PR327 continuation: pinned merge and ACK scope"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#327 R1 is unfinished. Current publication head: 062aa0af90a81f393d81286304c4fecfd392c7ca, detached review-327-062aa0a. Answer replacement request 01a1ff1f-e8f9-71f3-9192-fbb1fb2a0e83. DO NOT publish at original 4830d73 (request 01a1ff16-c307-7f73-9e6f-0ce72be3981d). New head is FINAL/CLEAN; F275 queue/core/fake/native/store-test files are byte-identical. Merge imports #325 and resolves docs additively.\n\nVerified source: real ack_delivery validates kind before testing dedupe_sender, then commits failed/undelivered:no-sender before returning the explicit job/outcome error. Non-delivery kinds yield empty sender but cannot enter this terminal path. Migration 0050 derives sender from queued payloads; existing migration test covers a named pre-0050 queued job and preserved legacy ledger wildcards. Native malformed claims fail parsing before ACK, unchanged. Failed/no-sender remains in SQLite and the ACK error; it is not peek_parked or inbox --peek. No new producer of anonymous legitimate messages found.\n\nPending proof: shell 169, pr327-initial-controls.log, in owned pr327-probe archive of 4830d73. Added two tests in message_sender.rs: fake valid senderless ACK releases only its claim; wrong-kind senderless ACK must preserve the real/fake kind-refusal boundary. Suspected mismatch: FakeQueue applies require_job_sender before require_delivery_job and may terminalize a wrong-kind row that real SQLite refuses unchanged. Wait for complete result before grading. If store fails, shared-build --then native tests did not run; run those separately. No mutation yet. Author M1 patch: /tmp/f275/M1-refused-ack-leaves-row-running.patch; summary verified. Need independent terminal-update/commit mutant, restored baseline, new-head CI artifact from run 44929025733/job136921356688, final freeze, governed verdict and cleanup of owned archive only.\n\n#325 finished PASS WITH NOTES 86adeff7 and released. Current live hold is reviewer/327. MagicWand: ACK refusal, kind validation and terminalization should share a real/fake contract oracle, not merely test error return values.\n"
+		}
+	]
+}
