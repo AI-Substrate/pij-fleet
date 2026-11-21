@@ -1,0 +1,58 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdf6-2810-75a2-9424-ff17e0f4fa2b",
+				"date": "2026-11-21",
+				"head": "5c219c0b34c1f2e3e2253e68bbf96f8fca1a9631",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:320",
+				"writer": "pij-anonymous-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B320-01: an unrecorded renewal still permits a restart before the next heartbeat while the receiver is live.",
+				"B320-02: separate renewal-audit retry state from lapse-edge deduplication; the current reinsert suppresses a later real loss and its restart."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib auth_recovery::tests::review_probes:: -- --nocapture",
+					"exit_code": 101,
+					"log": "session-local pr320-mutation.log"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib review_second_expiry -- --nocapture",
+					"exit_code": 101,
+					"log": "session-local pr320-second-expiry.log"
+				},
+				{
+					"command": "harness checks",
+					"exit_code": 1,
+					"log": "session-local pr320-harness-checks.log"
+				},
+				{
+					"command": "just pr-freeze 320",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK at 5c219c0b34c1f2e3e2253e68bbf96f8fca1a9631, round 1.\n\nB320-01 — F268(b) still permits recovery of an already healthy receiver.\n`update_native_receiver` renews the mechanical lease before the renewed audit\nappend. When that append fails, `outstanding()` still sees the old lapse and\n`on_lapse()` has no current receiver-live brake\n(`crates/daemon/src/delivery/mod.rs:475-505`;\n`crates/daemon/src/auth_recovery.rs:659-673,701-719`).\nThe real-SQLite witness\n`review_f268_failed_renewal_must_not_restart_a_live_receiver_before_retry`\nleaves the first lapse undecided, renews, loses one renewed append, and reconciles\nbefore another heartbeat. `native_receiver_reason` is None, yet one `/restart`\ncontrol is queued. Retrying on the next heartbeat does not close this intervening\npolicy-input window. This is the outstanding F268(b) scope.\n\nB320-02 — the new audit-retry mark can conceal a later real receiver loss.\nThe added reinsert uses the same `native_lapsed` membership that suppresses\nfresh lapse publication (`crates/daemon/src/delivery/mod.rs:499-505,831-839`).\nAfter the first lapse is decided, a renewal succeeds mechanically but its audit\nfails. If the extension dies before its next retry heartbeat, a second actual\nlease expiry finds the retry mark already present and publishes no new lapse.\nThe first decision still suppresses recovery: there is no outstanding new loss\nfor either the live follower or its gap reconcile. The real-store witness\n`review_second_expiry_after_failed_renewal` restores a forty-minute-old acting\ndecision into an empty ledger and makes the now-idle receiver expire again:\none lapse edge and zero restart controls, expected two edges and one control.\nRemoving only the added reinsert produces two edges and one control on the\nsame ordering. This is a demonstrated regression, not a request to remove\naudit retry: its separate retry control fails when that reinsert is removed.\n\nAnswers to the other asks:\n- (a) PASS: a gap during detached throttle sleep is covered by the next durable\n  reconcile. The fixture renewed then lapsed again during sleep, added noise, and\n  got exactly one restart afterwards. Shutdown aborts and joins `extension_lost`\n  (`crates/daemon/src/lib.rs:388-389`); abort/join during a one-hour test sleep was\n  prompt. The lack of an inner stop select is not a shutdown hang here.\n- F260 merge ordering PASS: the old held body returns once despite a failed\n  renewed append and its retry. A new send to the mechanically live receiver is\n  queued, not re-parked. The one merge conflict preserves held-body return before\n  renewal-audit retry. `git diff --check` passed; the review checkout is unchanged.\n- (c) PASS for sequential state semantics: a held decision survives an\n  empty-ledger restart; a genuinely newer published lapse is eligible again;\n  `remembered()` still anchors the thirty-minute window to the acting recovery\n  event. This cannot compensate for B320-02's missing producer edge.\n- Labels/cost: the throttle and held-decision suppression are BRAKES, delaying\n  or sparing only. The lapse remains the POLICY input and inherits a missing or\n  stale renewal/lapse fact. One follower per daemon; storm reconciliation is\n  bounded to one per ten seconds after the preceding completion, with one roster\n  read and one latest-event read per live native Copilot seat. Retry rides the\n  existing heartbeat cadence (default sixty-second lease / three = twenty\n  seconds); no new periodic tick or process launch. Performance's a69acfd is\n  cost-only and does not clear either witness.\n\nProof receipts:\n- Exact-head isolated source, real SQLite registry/queue/spine, fake tmux and\n  process liveness, one injected renewed-append failure. Real monotonic time\n  with a one-second test-only lease; only test/visibility wiring changed outside\n  the review checkout. No working-seat lapse/renewal, live spawn, or bounce.\n- `just shared-build -- test -p pij-daemon --lib review_f268_ -- --nocapture`\n  with the canonical shared target: exit 101, three positive controls passed and\n  the two product-oracle failures above reproduced.\n- `just shared-build -- test -p pij-daemon --lib auth_recovery::tests::review_probes:: -- --nocapture`:\n  exit 101 by design; six positive controls passed, both witnesses reproduced,\n  and all four mutants failed their oracle: no throttle wait, no renewal retry\n  reinsert, ignored held record, missing held write. Mutation routing was confined\n  to the isolated source and selected by each test's own name.\n- `just shared-build -- test -p pij-daemon --lib review_second_expiry -- --nocapture`:\n  exit 101, strengthened product oracle fails at (one edge, zero controls);\n  reinsert-removal restoration passes at (two edges, one control).\n- CI run 44899914282, successful rust-test job 136833437449, upload artifact\n  14705537000: all three newly added upstream tests passed. The artifact was\n  selected by the successful upload's ID, not its name.\n- `harness checks`: exit 1. Rust (fmt/clippy/workspace tests), route inventory,\n  smoke, native contracts, Copilot SDK and pij-skill passed. Eight TS/static\n  stages failed: local-paths, omp-config, ddocs, coverage, typecheck, lockfile,\n  lint and test. Missing review-worktree node_modules and an incompatible ambient\n  Biome are visible; no dependency links were added under C25. This is not a\n  full local gate pass.\n- `just pr-freeze 320`: FINAL at the reviewed SHA, CI 5/5, CLEAN, no migrations.\n\nOwed: close B320-01's live-before-retry ordering and B320-02's next-lifetime\nordering while retaining eventual audit retry and F260 body-return behavior.\nHighest-value harness encoding: keep these cross-service failure orderings in\nthe daemon regression suite, not only the producer's next-heartbeat test.\n"
+		}
+	]
+}
