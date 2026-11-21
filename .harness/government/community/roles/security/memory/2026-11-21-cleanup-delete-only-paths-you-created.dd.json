@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before any cleanup, rm, or kill at the end of a review or probe",
+				"tags": [
+					"cleanup",
+					"tmp",
+					"shared-root",
+					"F262"
+				],
+				"title": "Cleanup: delete only paths you created, never a glob in a shared temp root"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Every seat runs as the same user, so a glob in a shared root reaches other seats' live files. Never kill OR delete by pattern in a shared root: a shared temp dir, /tmp, $TMPDIR (/var/folders/*/*/T), or a socket dir. Keep the path mktemp returns in a variable and remove exactly that path. On 2026-11-21 a #312 security seat ran rm -rf /var/folders/*/*/T/tmp.* during cleanup and may have deleted other seats' in-flight temp dirs (F262, AGENTS.md rule 6).\n"
+		}
+	]
+}
