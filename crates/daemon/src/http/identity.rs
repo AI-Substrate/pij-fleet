@@ -27,6 +27,7 @@
 use std::fmt::Write as _;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use axum::Extension;
 use axum::extract::{ConnectInfo, Json, Query, State};
@@ -38,6 +39,7 @@ use pij_core::ports::SeatFilter;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::route_counts::{self, StageSpan, WhoamiStage};
 use super::{
     AppState, Registration, RegistrationResponse, allocate_memorable_id, double_seat, envelope,
     internal, pane_harness_identity, refused, retired_seat_refused,
@@ -1236,7 +1238,12 @@ pub(crate) async fn whoami_get(
     State(state): State<AppState>,
     Query(query): Query<IdentityQuery>,
 ) -> Response {
-    whoami_resolved(state, query.seat, query.pane, None).await
+    let counts = Arc::clone(&state.route_counts);
+    route_counts::time_whoami(
+        &counts,
+        whoami_resolved(state, query.seat, query.pane, None),
+    )
+    .await
 }
 
 /// See [`whoami_get`]. The POST arm is the canonical one once the shim forwards
@@ -1246,11 +1253,15 @@ pub(crate) async fn whoami_post(
     Json(request): Json<IdentityRequest>,
 ) -> Response {
     let caller = request.caller.unwrap_or_default();
-    whoami_resolved(
-        state,
-        request.seat.or_else(|| caller.session_id.clone()),
-        request.pane.or_else(|| caller.pane.clone()),
-        Some(&caller),
+    let counts = Arc::clone(&state.route_counts);
+    route_counts::time_whoami(
+        &counts,
+        whoami_resolved(
+            state,
+            request.seat.or_else(|| caller.session_id.clone()),
+            request.pane.or_else(|| caller.pane.clone()),
+            Some(&caller),
+        ),
     )
     .await
 }
@@ -1267,19 +1278,24 @@ async fn whoami_resolved(
         Resolved::Refusal(_) => None,
     };
     let claimed_pane = caller.and_then(|caller| caller.pane.as_deref());
+    let codex = StageSpan::start(WhoamiStage::Codex);
     if let Some(refusal) =
         super::codex_caller::refusal_for(&state, WHOAMI, caller, seat, claimed_pane).await
     {
         return refusal;
     }
+    drop(codex);
     match resolved {
         Resolved::Seat(descriptor, _) => {
+            let role = StageSpan::start(WhoamiStage::Role);
             let descriptor = match state.services.roles.project_seat(descriptor).await {
                 Ok(descriptor) => descriptor,
                 Err(error) => return internal(WHOAMI, error),
             };
+            drop(role);
             // The status lines already call whoami once per render; the FYI count
             // rides on it so `✉N` costs no second request (plan 158).
+            let fyi = StageSpan::start(WhoamiStage::Fyi);
             let pending_fyis = match state
                 .services
                 .delivery
@@ -1289,6 +1305,8 @@ async fn whoami_resolved(
                 Ok(count) => count,
                 Err(error) => return internal(WHOAMI, error),
             };
+            drop(fyi);
+            let _encode = StageSpan::start(WhoamiStage::Encode);
             envelope(
                 StatusCode::OK,
                 &Envelope::ok(
@@ -1454,17 +1472,24 @@ pub(crate) async fn resolve_seat(
             pane: Some(pane.to_string()),
             ..SeatFilter::default()
         };
+        let list = StageSpan::start(WhoamiStage::SeatList);
         let mut seats = match state.services.registry.list(filter).await {
             Ok(seats) => seats,
             Err(error) => return Resolved::Refusal(internal(command, error)),
         };
+        drop(list);
+        route_counts::note_list_rows(seats.len());
         let mut found = None;
         let mut gone = None;
         for (index, seat) in seats.iter().enumerate() {
             if !is_live(seat) || seat.pane.as_deref() != Some(pane) {
                 continue;
             }
-            if process_gone(state, seat).await {
+            let liveness = StageSpan::start(WhoamiStage::Liveness);
+            route_counts::note_liveness_read();
+            let process_is_gone = process_gone(state, seat).await;
+            drop(liveness);
+            if process_is_gone {
                 gone.get_or_insert(index);
             } else {
                 found = Some(index);
@@ -1547,7 +1572,10 @@ pub(crate) async fn resolve_seat(
         return Resolved::Seat(seat, ResolvedBy::Pane);
     }
     let asserted = SeatId::from(asserted.expect("one of the two is present"));
-    match state.services.registry.get(&asserted).await {
+    let list = StageSpan::start(WhoamiStage::SeatList);
+    let found = state.services.registry.get(&asserted).await;
+    drop(list);
+    match found {
         Ok(Some(seat)) => match refuse_tombstoned(state, command, &seat).await {
             Some(refusal) => Resolved::Refusal(refusal),
             None => Resolved::Seat(seat, ResolvedBy::AssertedId),
