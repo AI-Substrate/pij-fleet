@@ -1,0 +1,72 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20037-e366-78a1-872f-133aaec5ab0f",
+				"date": "2026-11-22",
+				"head": "b9f87dcfe21f50f00f19413a710a02d40f36ad9a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:332",
+				"writer": "pij-written-mongoose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Existing post-deploy matched-count AFTER remains owed to performance; no new R2 blocker."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- clippy -p pij-daemon --all-targets -- -D warnings; focused committed handoff/failure/stop tests",
+					"exit_code": 0,
+					"log": "pr332-r2-baseline.log"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib -- review_f276 review_r2_rejected --nocapture",
+					"exit_code": 0,
+					"log": "pr332-r2-original-witness.log"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib -- review_f276 --nocapture (prior extra-guard causal control)",
+					"exit_code": 0,
+					"log": "pr332-r2-prior-causal-control.log"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib -- review_f276 a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_row --nocapture (M7)",
+					"exit_code": 101,
+					"log": "pr332-r2-m7-waiter-only.log"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib -- review_f276 a_cancelled_revive_spares_its_seats_queue_until_its_launch_writes_the_row --nocapture (M8)",
+					"exit_code": 101,
+					"log": "pr332-r2-m8-discarded-intent.log"
+				},
+				{
+					"command": "just pr-freeze 332",
+					"exit_code": 0
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "pr332-r2-harness-checks.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "**PASS-WITH-NOTES** at `b9f87dcfe21f50f00f19413a710a02d40f36ad9a`. **B332-01 is closed.** Final C34 round; scope was the intent fix and merge delta only.\n\nThe preserved actual-handler witness passes without the old extra-guard control: `protected_after_cancel=true`, `retired_before_revive_row=false`, final job `(\"pending\", None)`, one fake-tmux window. The old causal-control patch still applies and also passes; it was removed before the mutation checks.\n\n**Handoff and release:**\n\n- `revive.rs:457-466` creates the intent before the pane/lock waits. While acquisition is pending the waiter owns it; cancellation there launched nothing and releases it. After acquisition, `carry(reviving)` moves that same value into the hold with no intervening await or decrement.\n- `launch_seat_locked` moves the hold into its independently spawned task. Dropping the HTTP waiter cannot drop that task's hold. The intent ends after successful `put_lifting_owner_close`, at explicit `drop(spawn_guard)` (`http/mod.rs:1837-1867`), before later answer/bind work.\n- Early returns and launch errors drop the hold; panic unwinds it. The committed panic test proves both intent removal and lock release. An additional actual owned-launch rejection (empty session) produced no window, no lingering intent, and allowed the next sweep to terminalize the still-eligible old job.\n- No normal failure-path leak found. A genuinely stuck operation retaining its hold would only spare work: a conservative brake, not a changed retirement policy.\n\n**Stop disclosure:** accurate as a process-exit limitation. `stop()` sets the stopping flag and waits for the launch lock. The daemon bounds that wait; expiry alone does **not** release the launch-owned intent. It permits shutdown to continue. If the process actually exits before the row write, the next daemon loses the in-memory intent and sees the old tombstone. The already-disclosed later-arriving-revive ordering is unchanged. No new R2 blocker or extra review round.\n\n**Merge:** the rebased F276 patch has the same changed byte lines as the reviewed R1 patch. The final merge adds exactly main's delta; main `71771aee` is tree-identical to the already-reviewed #333 head. Combined diff is the ledger union only, and whitespace/conflict-marker checks pass. No additional queue-policy change.\n\n**Cost:** one `Option<ReviveIntent>` field on the existing hold, O(1) per hold; no new timer, loop, task or process launch. The old write bound, age/policy brakes and notice behavior are unchanged. The existing post-deploy matched-count AFTER remains owed to the performance role.\n\n**Proof** (Cargo through serialized nice-19 `just shared-build`, four jobs):\n\n| Command / check | Result |\n|---|---|\n| `clippy -p pij-daemon --all-targets -- -D warnings` | PASS on macOS; `pr332-r2-baseline.log` |\n| Committed cancelled-revive, lock-wait cancellation, carried-intent panic, and stop-waits-for-row tests | 4 PASS; same receipt |\n| `test -p pij-daemon --lib -- review_f276 review_r2_rejected --nocapture` | Preserved witness and owned-launch rejection: 2 PASS; `pr332-r2-original-witness.log` |\n| Prior extra launch-owned guard control, preserved witness | PASS; `pr332-r2-prior-causal-control.log` |\n| M7: intent kept only in waiter | Both cancellation witnesses RED on intended lost-intent/retired-job assertions; `pr332-r2-m7-waiter-only.log` |\n| M8: hold discards intent | Both cancellation witnesses RED on intended missing-intent assertions (preserved witness before cancellation; committed witness after it); `pr332-r2-m8-discarded-intent.log` |\n| Merge/replay equality and marker checks | PASS; `pr332-r2-merge.log` |\n| `just pr-freeze 332` | FINAL, CLEAN, exact head and latest CI checks PASS |\n| `harness checks --quick --json` | Exit 1, eight known dependency/ambient-tool failures; heavy stages skipped |\n\nC25: no dependency linking or local TS/full ship-gate pass claimed. Every touched scratch source was restored byte-identically; the requested checkout is clean (`pr332-r2-restoration.log`). Private stores and fake tmux only; no live-store write, working-seat renewal/lapse, bounce or deploy. Proof artifacts retained under session `ae639be0-bf8b-4dcf-b1a3-21645f441861/files`.\n"
+		}
+	]
+}
