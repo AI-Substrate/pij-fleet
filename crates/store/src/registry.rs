@@ -448,24 +448,22 @@ impl Registry for SqliteRegistry {
         require_current_schema(&self.pool).await?;
         // Absent filter fields mean "do not filter" — expressed as an IS NULL
         // guard per field rather than by building SQL strings, so an empty
-        // string can never be mistaken for "no filter".
-        let rows = sqlx::query(
-            "SELECT * FROM seats \
-             WHERE (?1 IS NULL OR harness = ?1) \
-               AND (?2 IS NULL OR folder = ?2) \
-               AND (?3 IS NULL OR parent = ?3) \
-               AND (?4 IS NULL OR pane = ?4) \
-               AND (?5 = 0 OR tombstoned_at IS NULL) \
-             ORDER BY id",
-        )
-        .bind(filter.harness.map(Harness::as_str))
-        .bind(filter.folder.as_deref())
-        .bind(filter.parent.as_ref().map(SeatId::as_str))
-        .bind(filter.pane.as_deref())
-        .bind(i64::from(filter.live_only))
-        .fetch_all(&self.pool)
-        .await
-        .map_err(adapter_error)?;
+        // string can never be mistaken for "no filter". A pane filter takes
+        // its own branch: the guard form cannot use an index (F258).
+        let sql = if filter.pane.is_some() {
+            LIST_BY_PANE_SQL
+        } else {
+            LIST_SQL
+        };
+        let rows = sqlx::query(sql)
+            .bind(filter.harness.map(Harness::as_str))
+            .bind(filter.folder.as_deref())
+            .bind(filter.parent.as_ref().map(SeatId::as_str))
+            .bind(filter.pane.as_deref())
+            .bind(i64::from(filter.live_only))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(adapter_error)?;
 
         rows.iter().map(row_to_descriptor).collect()
     }
@@ -568,6 +566,29 @@ impl Registry for SqliteRegistry {
         }
     }
 }
+
+/// The registry's list: `?1` harness, `?2` folder, `?3` parent, `?4` pane,
+/// each NULL for "any", and `?5` non-zero for live rows only.
+pub const LIST_SQL: &str = "SELECT * FROM seats \
+     WHERE (?1 IS NULL OR harness = ?1) \
+       AND (?2 IS NULL OR folder = ?2) \
+       AND (?3 IS NULL OR parent = ?3) \
+       AND (?4 IS NULL OR pane = ?4) \
+       AND (?5 = 0 OR tombstoned_at IS NULL) \
+     ORDER BY id";
+
+/// [`LIST_SQL`] with a pane named (F258 B1): one seek on `seats_by_pane`
+/// (migration 0048) instead of a scan of every seat row ever written. The
+/// status lines ask this once per render, per session. `INDEXED BY` makes
+/// SQLite refuse the query if the index is ever gone. Public so the cost test
+/// explains THIS query.
+pub const LIST_BY_PANE_SQL: &str = "SELECT * FROM seats INDEXED BY seats_by_pane \
+     WHERE pane = ?4 \
+       AND (?1 IS NULL OR harness = ?1) \
+       AND (?2 IS NULL OR folder = ?2) \
+       AND (?3 IS NULL OR parent = ?3) \
+       AND (?5 = 0 OR tombstoned_at IS NULL) \
+     ORDER BY id";
 
 /// The sole seats-row upsert, shared by registry puts and atomic placements.
 /// The upsert's guard (F149): a row its owner closed (`tombstone_reason`
