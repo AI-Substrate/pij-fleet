@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before interpreting PR306 catalog counts or no-resolution claims",
+				"tags": [
+					"canary",
+					"cost",
+					"catalog",
+					"final-review"
+				],
+				"title": "Canary round two branches the catalog once"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Final-round performance receipt 885af4f6b5c5ca8e5e560108b4aef74120de0885 at 89a82bf updates the round-one mechanism: canary observe_bind passes no native session id, so the adapter does not resolve its footer. runtime_model instead invokes exactly one shows operation when eligible native and a model-bearing OMP footer coexist, or one resolve operation without eligible native; the native branch returns even after a shows error and cannot fall through. Non-OMP or model-less footers invoke no OMP catalog. Both concrete operations run on spawn_blocking and retain the existing counted omp.models launch site. No new scheduled/per-seat launch. Cost wording is closed; after-deployment measurement remains separate from source and CI proof. MagicWand: report chosen evidence source separately from catalog invocation; no-resolution is not no-launch. This performance verdict does not decide stale-native/catalog-outage trust acceptance."
+		}
+	]
+}
