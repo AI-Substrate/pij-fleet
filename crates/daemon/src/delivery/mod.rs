@@ -1999,6 +1999,10 @@ impl DeliveryService {
         let idle_until = tokio::time::Instant::now()
             + Duration::from_millis(self.native_idle_answer_ms.load(Ordering::Relaxed));
         loop {
+            // F258 (R310-F001): when this pass reads the queue, taken before
+            // its claim, so the wait below never drops an instant crossed
+            // between that claim and its next-due read.
+            let pass_started = std::time::SystemTime::now();
             // Native claims are queue ownership, not permission to inject. The
             // receiver owns native consent; typing is never a native gate.
             // Keep mutation excluded through handoff; no pane IO occurs here.
@@ -2281,7 +2285,7 @@ impl DeliveryService {
             let timed = native || during_turn.is_some();
             let nap = if timed {
                 self.queue
-                    .next_claimable_in(&kinds)
+                    .next_claimable_in(&kinds, pass_started)
                     .await?
                     .map_or(CLAIM_WAIT_BACKSTOP, |due| due.min(CLAIM_WAIT_BACKSTOP))
             } else {
@@ -6629,5 +6633,72 @@ mod tests {
                 .is_some(),
             "released: still queued for the turn's end"
         );
+    }
+
+    /// Review of #310 (pij-noble-silkworm): a claim wait wakes on its OWN
+    /// seat's events. Messages to another seat publish on the same bus, and
+    /// the waiting seat makes no pass for any of them.
+    #[tokio::test(start_paused = true)]
+    async fn another_seats_messages_do_not_wake_a_claim_wait() {
+        let fixture = fixture(FakeTransport::reachable());
+        let native = |id: &str, pid: u32| {
+            let mut seat = SeatDescriptor::new(id, Harness::Copilot, "/abs/tree");
+            seat.native_extension_delivery = true;
+            seat.proc = Some(ProcIdentity {
+                pid,
+                proc_start: u64::from(pid) * 10,
+            });
+            seat.harness_session = Some(format!("native-{pid}"));
+            seat
+        };
+        let waiting = native("pij-waiting", 7);
+        let other = native("pij-other", 8);
+        fixture.registry.put(waiting.clone()).await.unwrap();
+        fixture.registry.put(other.clone()).await.unwrap();
+        let identity = NativeInboxIdentity {
+            native_session: Some("native-7".into()),
+            pid: Some(7),
+            proc_start: Some(70),
+        };
+        let reads = || {
+            fixture
+                .registry
+                .calls()
+                .iter()
+                .filter(|call| call.as_str() == "get:pij-waiting")
+                .count()
+        };
+        let wait = {
+            let (service, seat, identity) = (
+                Arc::clone(&fixture.service),
+                waiting.id.clone(),
+                identity.clone(),
+            );
+            tokio::spawn(async move { service.claim_native_inbox(&seat, true, &identity).await })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let before = reads();
+        for n in 0..5 {
+            fixture
+                .service
+                .send(
+                    "pij-peer".into(),
+                    other.id.clone(),
+                    &format!("not yours {n}"),
+                )
+                .await
+                .unwrap();
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(reads(), before, "another seat's messages woke this wait");
+        assert!(!wait.is_finished(), "still waiting, nothing of its own");
+        fixture
+            .service
+            .send("pij-peer".into(), waiting.id.clone(), "yours")
+            .await
+            .unwrap();
+        let page = wait.await.unwrap().unwrap();
+        assert_eq!(page.claims.len(), 1, "{:?}", page.held_reason);
+        assert_eq!(page.claims[0].message.body, "yours");
     }
 }

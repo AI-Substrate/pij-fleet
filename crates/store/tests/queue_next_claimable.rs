@@ -1,9 +1,10 @@
 //! F258: a native claim wait sleeps until its kinds' next timed change instead
 //! of polling every 500 ms. `next_claimable_in` names that instant: a pending
 //! row's `not_before` or a running claim's lapse, whichever comes first after
-//! now. Against SQLite, because the instant is the queue's own clock and SQL.
+//! the second the caller's empty claim read the queue. Against SQLite, because
+//! the instant is the queue's own clock and SQL.
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use pij_core::model::{Job, JobId};
 use pij_core::ports::Queue;
@@ -32,9 +33,14 @@ async fn open(fresh: &FreshStore) -> (SqlitePool, SqliteQueue) {
     (pool, queue)
 }
 
+/// The next instant after an empty claim that read the queue just now.
 async fn next(queue: &SqliteQueue, kind: &str) -> Option<Duration> {
+    next_since(queue, kind, SystemTime::now()).await
+}
+
+async fn next_since(queue: &SqliteQueue, kind: &str, since: SystemTime) -> Option<Duration> {
     queue
-        .next_claimable_in(&[kind.to_string()])
+        .next_claimable_in(&[kind.to_string()], since)
         .await
         .expect("next claimable")
 }
@@ -73,6 +79,28 @@ async fn a_row_already_due_has_no_next_instant() {
     let (_pool, queue) = open(&fresh).await;
     queue.enqueue(job(KIND, "pij-reader", "m-1")).await.unwrap();
     assert_eq!(next(&queue, KIND).await, None);
+}
+
+/// Review R310-F001: a row that fell due after the empty claim read the queue
+/// (the second rolled between that claim and this read) is due NOW, not
+/// dropped to the backstop. Read with `since` two seconds back, as a pass that
+/// started before the crossing.
+#[tokio::test]
+async fn a_row_that_fell_due_after_the_claim_read_the_queue_is_due_now() {
+    let fresh = FreshStore::new();
+    let (pool, queue) = open(&fresh).await;
+    let id = queue.enqueue(job(KIND, "pij-reader", "m-1")).await.unwrap();
+    set(
+        &pool,
+        "UPDATE jobs SET not_before = unixepoch() WHERE id = ?1",
+        id,
+    )
+    .await;
+    let before_it_fell_due = SystemTime::now() - Duration::from_secs(2);
+    assert_eq!(
+        next_since(&queue, KIND, before_it_fell_due).await,
+        Some(Duration::ZERO)
+    );
 }
 
 #[tokio::test]
@@ -187,6 +215,7 @@ async fn the_read_uses_an_index_at_a_realistic_queue_size() {
     let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(&explain)
         .bind(serde_json::json!([KIND]).to_string())
         .bind(LEASE_SECS as i64)
+        .bind(0_i64)
         .fetch_all(&pool)
         .await
         .expect("explain");

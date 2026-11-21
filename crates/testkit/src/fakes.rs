@@ -1183,9 +1183,16 @@ impl Queue for FakeQueue {
         Ok(pending.chain(claimed).min_by_key(|(id, _)| id.0))
     }
 
-    /// On the fake clock: a live row's `not_before` still ahead. This fake's
-    /// plain `claim` holds no lease, so no running claim ever lapses here.
-    async fn next_claimable_in(&self, kinds: &[String]) -> Result<Option<Duration>> {
+    /// On the fake clock: a live row's `not_before` still ahead of the fake
+    /// `now`. The fake clock only moves when a test advances it, so no instant
+    /// can cross between a claim and this read; `since` is the real clock and
+    /// is not this fake's. This fake's plain `claim` holds no lease, so no
+    /// running claim ever lapses here.
+    async fn next_claimable_in(
+        &self,
+        kinds: &[String],
+        _since: std::time::SystemTime,
+    ) -> Result<Option<Duration>> {
         let state = self.state.lock().expect("fake queue mutex");
         Ok(state
             .live
