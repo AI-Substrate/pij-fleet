@@ -972,6 +972,16 @@
 					"seat": "pij-uncertain-antelope",
 					"to": "2026-11-21T01:02:04.970Z",
 					"why": "verdict on #302 (F251)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T01:16:52.739Z",
+					"harness": "copilot",
+					"harness_session": "3f997bcc-d475-49a2-8481-d6e2701bccf2",
+					"instance_key": "304",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-sufficient-angelfish",
+					"why": "verdict on #304 (#42 OMP worktree spawn)"
 				}
 			]
 		}
