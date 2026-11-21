@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use pij_core::error::{PijError, Result};
-use pij_core::ports::{Registry, SeatFilter, TmuxPort};
+use pij_core::ports::{Registry, SeatFilter, TapAttach, TmuxPort};
 use pij_harnesses::{ComposerRegion, InteractionGate, composer_region};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -209,6 +209,10 @@ struct LastCapture {
     composer: String,
     cursor: (u32, u32),
     at: Instant,
+    /// The gate's finished-drain count for this pane when that tick began,
+    /// or `None` when a drain was in flight then: such a capture is never
+    /// replayed (F266, R318-001).
+    gate_drains: Option<u64>,
 }
 
 /// What a pane with no new tap bytes gets this tick (F258).
@@ -462,7 +466,7 @@ impl PaneObserver {
             let tracked = self.is_tracked(&pane.id);
             let sink = self.sink_path(&pane.id);
             match self.tmux.attach_pane_tap(&pane.id, &sink).await {
-                Ok(()) if !tracked => {
+                Ok(_) if !tracked => {
                     self.refusals.clear(&pane.id);
                     self.panes.lock().expect("pane observer mutex").insert(
                         pane.id.clone(),
@@ -472,7 +476,14 @@ impl PaneObserver {
                         },
                     );
                 }
-                Ok(()) => self.refusals.clear(&pane.id),
+                // F266: the pipe had vanished and was started again. Whatever
+                // the pane wrote meanwhile never reached the tap, so its last
+                // capture no longer stands: it is captured this tick.
+                Ok(TapAttach::Attached) => {
+                    self.refusals.clear(&pane.id);
+                    self.forget_capture(&pane.id);
+                }
+                Ok(TapAttach::Kept) => self.refusals.clear(&pane.id),
                 Err(error) => {
                     self.gate.record_unknown(&pane.id);
                     // One line per pane incarnation and refusal, not per retry.
@@ -489,6 +500,10 @@ impl PaneObserver {
                     continue;
                 }
             }
+            // Read before this tick's own drain: an injection drain begun from
+            // here on, or in flight now, means the capture taken below is
+            // never replayed (F266, R318-001).
+            let gate_drains = self.gate.tap_drains(&pane.id).settled();
 
             let bytes = match self.tmux.drain_pane_tap(&pane.id).await {
                 Ok(bytes) => bytes,
@@ -544,7 +559,7 @@ impl PaneObserver {
                 self.set_unknown(&pane.id);
                 continue;
             };
-            self.remember(&pane.id, &composer, (cursor_x, cursor_y), now);
+            self.remember(&pane.id, &composer, (cursor_x, cursor_y), now, gate_drains);
             self.decide(&pane.id, &composer, tap_active);
         }
 
@@ -658,7 +673,14 @@ impl PaneObserver {
     }
 
     /// Keep what this capture recognised, for the replays that follow it.
-    fn remember(&self, pane: &str, composer: &str, cursor: (u32, u32), at: Instant) {
+    fn remember(
+        &self,
+        pane: &str,
+        composer: &str,
+        cursor: (u32, u32),
+        at: Instant,
+        gate_drains: Option<u64>,
+    ) {
         if let Some(state) = self
             .panes
             .lock()
@@ -669,21 +691,34 @@ impl PaneObserver {
                 composer: composer.to_string(),
                 cursor,
                 at,
+                gate_drains,
             });
+        }
+    }
+
+    /// Drop `pane`'s last capture, so it is captured, not replayed (F266).
+    fn forget_capture(&self, pane: &str) {
+        if let Some(state) = self
+            .panes
+            .lock()
+            .expect("pane observer mutex")
+            .get_mut(pane)
+        {
+            state.last = None;
         }
     }
 
     /// Whether a pane with no new tap bytes can replay its last capture: its
     /// knowledge settled (Blank or NonBlank, never Unknown or PendingClear),
     /// its cursor where that capture read it, and the gate still holding that
-    /// composer with no uncertainty. Another recorder (an injection's fresh
-    /// capture) drains the same tap: when it read a newer screen the gate holds
-    /// that one, and when it could not read the screen the gate is uncertain;
-    /// either way this pane is captured again, as a settled verdict always
-    /// leaves the gate certain. Past [`CAPTURE_BACKSTOP`] it is captured
-    /// regardless.
+    /// composer with no uncertainty and no drain of its own begun since, nor
+    /// in flight. Another recorder (an injection's fresh read) drains the same
+    /// tap: those bytes never reach this observer, whether that read then
+    /// recorded a newer screen, left the gate uncertain or failed outright, so
+    /// any such drain means a new capture once it has ended (F266). Past
+    /// [`CAPTURE_BACKSTOP`] it is captured regardless.
     fn replay(&self, pane: &str, cursor: Option<(u32, u32)>, now: Instant) -> Replay {
-        let (knowledge, composer, at) = {
+        let (knowledge, composer, at, gate_drains) = {
             let panes = self.panes.lock().expect("pane observer mutex");
             let Some(state) = panes.get(pane) else {
                 return Replay::Capture;
@@ -695,12 +730,21 @@ impl PaneObserver {
             else {
                 return Replay::Capture;
             };
-            (state.knowledge, last.composer.clone(), last.at)
+            (
+                state.knowledge,
+                last.composer.clone(),
+                last.at,
+                last.gate_drains,
+            )
         };
         let held = self
             .gate
             .observed(pane)
-            .filter(|observed| observed.uncertainty_since.is_none())
+            .filter(|observed| {
+                observed.uncertainty_since.is_none()
+                    && gate_drains.is_some()
+                    && observed.tap_drains.settled() == gate_drains
+            })
             .and_then(|observed| observed.content);
         let holds = match (knowledge, held.as_deref()) {
             (ComposerKnowledge::Blank, Some(held)) => held.chars().all(char::is_whitespace),
@@ -1960,5 +2004,281 @@ mod tests {
         }
         let (new, old) = (counts_new.snapshot(), counts_old.snapshot());
         assert!(new.skipped > 100 && old.skipped == 0, "{new:?} {old:?}");
+    }
+
+    /// F266 N1 (gull's #313 note): a quiet pane is replayed only while the
+    /// gate still holds the composer its last capture recorded, with no
+    /// uncertainty. Another recorder changing either forces a capture that
+    /// tick.
+    ///
+    /// Mutation witness: replay whether or not the gate holds it.
+    #[tokio::test]
+    async fn a_gate_another_recorder_changed_forces_a_capture() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .with_standing_capture(framed("hello")),
+        );
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let (observer, _) =
+            counted_observer(&tmux, &gate, &["%1"], "/tmp/pij-observer-gate-holds").await;
+        let mut seen = Vec::new();
+        observer.observe_once().await.expect("first capture");
+        seen.push(captures_of(&tmux, "%1"));
+        observer.observe_once().await.expect("quiet pass");
+        seen.push(captures_of(&tmux, "%1"));
+        gate.observe_composer("%1", "a draft another reader saw");
+        observer
+            .observe_once()
+            .await
+            .expect("pass after a new composer");
+        seen.push(captures_of(&tmux, "%1"));
+        observer.observe_once().await.expect("quiet pass");
+        seen.push(captures_of(&tmux, "%1"));
+        gate.record_unknown("%1");
+        observer
+            .observe_once()
+            .await
+            .expect("pass after uncertainty");
+        seen.push(captures_of(&tmux, "%1"));
+        assert_eq!(seen, vec![1, 1, 2, 2, 3], "captures after each pass");
+    }
+
+    /// F266 N2: an injection's fresh read drains the tap and then fails (here
+    /// its pane listing), so the gate learns nothing, but the bytes it took
+    /// never reach the observer. The next tick must capture, not replay the
+    /// blank it last saw.
+    ///
+    /// Mutation witness: replay without comparing the gate's drain count.
+    #[tokio::test]
+    async fn a_fresh_read_that_drained_then_failed_forces_a_capture() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .with_standing_capture(framed("")),
+        );
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let (observer, counts) =
+            counted_observer(&tmux, &gate, &["%1"], "/tmp/pij-observer-fresh-fail").await;
+        observer.observe_once().await.expect("baseline");
+        observer.observe_once().await.expect("corroborated blank");
+        observer.observe_once().await.expect("replayed pass");
+        assert_eq!(counts.snapshot().skipped, 1, "{:?}", counts.snapshot());
+        assert!(gate.permits_injection("%1").await.expect("clear permits"));
+
+        tmux.queue_tap(b"typed".to_vec());
+        tmux.set_standing_capture(framed("hello"));
+        tmux.fail_list_panes(1);
+        assert!(
+            gate.permits_injection_fresh("%1").await.is_err(),
+            "the fresh read fails after its drain"
+        );
+        let before = captures_of(&tmux, "%1");
+        observer.observe_once().await.expect("pass after the drain");
+        assert_eq!(
+            captures_of(&tmux, "%1"),
+            before + 1,
+            "captured, not replayed"
+        );
+        assert!(
+            !gate.permits_injection("%1").await.expect("gate"),
+            "the draft the fresh read never saw now holds the gate"
+        );
+    }
+
+    /// F266 N2: a tap whose pipe vanished and was started again silently
+    /// missed what the pane wrote meanwhile; the tick that repairs it
+    /// captures instead of replaying.
+    ///
+    /// Mutation witness: treat a repaired attach like a kept one.
+    #[tokio::test]
+    async fn a_repaired_tap_forces_a_capture() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .with_standing_capture(framed("")),
+        );
+        let gate = Arc::new(InteractionGate::new(Arc::clone(&tmux) as Arc<dyn TmuxPort>));
+        let (observer, counts) =
+            counted_observer(&tmux, &gate, &["%1"], "/tmp/pij-observer-repaired").await;
+        observer.observe_once().await.expect("baseline");
+        observer.observe_once().await.expect("corroborated blank");
+        observer.observe_once().await.expect("replayed pass");
+        assert_eq!(counts.snapshot().skipped, 1, "{:?}", counts.snapshot());
+
+        tmux.set_standing_capture(framed("hello"));
+        tmux.lose_tap("%1");
+        let before = captures_of(&tmux, "%1");
+        observer.observe_once().await.expect("repairing pass");
+        assert_eq!(
+            captures_of(&tmux, "%1"),
+            before + 1,
+            "captured, not replayed"
+        );
+        assert!(
+            !gate.permits_injection("%1").await.expect("gate"),
+            "the draft written while the pipe was gone now holds the gate"
+        );
+    }
+
+    /// A tmux port that holds one armed tap drain open: it is entered, then
+    /// waits for release before draining. Everything else is the fake's.
+    struct PausingDrain {
+        inner: Arc<FakeTmux>,
+        armed: AtomicBool,
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+
+    #[async_trait]
+    impl TmuxPort for PausingDrain {
+        async fn list_panes(&self) -> Result<Vec<Pane>> {
+            self.inner.list_panes().await
+        }
+        async fn pane_process(&self, pane: &str) -> Result<Option<pij_core::model::PaneProcess>> {
+            self.inner.pane_process(pane).await
+        }
+        async fn acquire_submit(&self, pane: &str) -> Result<pij_core::ports::StagedSubmit> {
+            self.inner.acquire_submit(pane).await
+        }
+        async fn stage_submit(
+            &self,
+            staged: &mut pij_core::ports::StagedSubmit,
+            text: &str,
+        ) -> Result<()> {
+            self.inner.stage_submit(staged, text).await
+        }
+        async fn commit_submit(&self, staged: &pij_core::ports::StagedSubmit) -> Result<()> {
+            self.inner.commit_submit(staged).await
+        }
+        async fn abort_submit(&self, staged: &pij_core::ports::StagedSubmit) -> Result<()> {
+            self.inner.abort_submit(staged).await
+        }
+        async fn clear_staged_leftover(
+            &self,
+            staged: &pij_core::ports::StagedSubmit,
+            text: &str,
+            observed: &str,
+        ) -> Result<()> {
+            self.inner
+                .clear_staged_leftover(staged, text, observed)
+                .await
+        }
+        async fn submit(&self, pane: &str, text: &str) -> Result<()> {
+            self.inner.submit(pane, text).await
+        }
+        async fn send_keys(&self, pane: &str, keys: &str) -> Result<()> {
+            self.inner.send_keys(pane, keys).await
+        }
+        async fn capture(&self, pane: &str, lines: u32) -> Result<String> {
+            self.inner.capture(pane, lines).await
+        }
+        async fn attach_pane_tap(&self, pane: &str, sink: &std::path::Path) -> Result<TapAttach> {
+            self.inner.attach_pane_tap(pane, sink).await
+        }
+        async fn pane_tap_sink(&self, pane: &str) -> Result<Option<PathBuf>> {
+            self.inner.pane_tap_sink(pane).await
+        }
+        async fn drain_pane_tap(&self, pane: &str) -> Result<Vec<u8>> {
+            if self.armed.swap(false, Ordering::SeqCst) {
+                self.entered.notify_one();
+                self.release.notified().await;
+            }
+            self.inner.drain_pane_tap(pane).await
+        }
+        async fn sweep_orphan_taps(&self) -> Result<pij_core::ports::TapSweep> {
+            self.inner.sweep_orphan_taps().await
+        }
+        async fn detach_pane_tap(&self, pane: &str) -> Result<()> {
+            self.inner.detach_pane_tap(pane).await
+        }
+        async fn kill(&self, pane: &str) -> Result<()> {
+            self.inner.kill(pane).await
+        }
+        async fn new_window(
+            &self,
+            session: &str,
+            name: &str,
+            cwd: &str,
+            command: Option<&pij_core::ports::LaunchCommand>,
+        ) -> Result<Pane> {
+            self.inner.new_window(session, name, cwd, command).await
+        }
+        async fn user_typing(&self, pane: &str) -> Result<bool> {
+            self.inner.user_typing(pane).await
+        }
+    }
+
+    /// R318-001 (pij-alert-tarantula): an injection's drain still in flight
+    /// when the observer captures must not make that capture a baseline. The
+    /// fresh read pauses inside its drain; the observer captures the blank;
+    /// the pane then shows a draft and writes bytes, which the resumed drain
+    /// takes before its read fails. The next tick must capture the draft, and
+    /// once the drain has ended the pane is replayed again.
+    ///
+    /// Mutation witnesses: a capture taken during the drain kept as a baseline
+    /// (the first assertion fails: the blank is replayed); the drain's end not
+    /// counted (the last fails: the pane is never replayed again).
+    #[tokio::test]
+    async fn a_drain_in_flight_during_a_capture_does_not_become_its_baseline() {
+        let tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane(pane("%1", 7, 2))
+                .with_standing_capture(framed("")),
+        );
+        let pausing = Arc::new(PausingDrain {
+            inner: Arc::clone(&tmux),
+            armed: AtomicBool::new(false),
+            entered: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+        });
+        let gate = Arc::new(InteractionGate::new(
+            Arc::clone(&pausing) as Arc<dyn TmuxPort>
+        ));
+        let (observer, counts) =
+            counted_observer(&tmux, &gate, &["%1"], "/tmp/pij-observer-in-flight").await;
+        observer.observe_once().await.expect("baseline");
+        observer.observe_once().await.expect("corroborated blank");
+        observer.observe_once().await.expect("replayed pass");
+        assert_eq!(counts.snapshot().skipped, 1, "{:?}", counts.snapshot());
+
+        pausing.armed.store(true, Ordering::SeqCst);
+        let fresh = tokio::spawn({
+            let gate = Arc::clone(&gate);
+            async move { gate.permits_injection_fresh("%1").await }
+        });
+        pausing.entered.notified().await;
+        observer
+            .observe_once()
+            .await
+            .expect("pass during the drain");
+
+        tmux.set_standing_capture(framed("hello"));
+        tmux.queue_tap(b"typed".to_vec());
+        tmux.fail_list_panes(1);
+        pausing.release.notify_one();
+        assert!(
+            fresh.await.expect("fresh read task").is_err(),
+            "the fresh read fails after its drain"
+        );
+
+        let before = captures_of(&tmux, "%1");
+        observer.observe_once().await.expect("pass after the drain");
+        assert_eq!(
+            captures_of(&tmux, "%1"),
+            before + 1,
+            "captured, not replayed"
+        );
+        assert!(
+            !gate.permits_injection("%1").await.expect("gate"),
+            "the draft the drain hid now holds the gate"
+        );
+        let skipped = counts.snapshot().skipped;
+        observer.observe_once().await.expect("quiet pass");
+        assert_eq!(
+            counts.snapshot().skipped,
+            skipped + 1,
+            "with the drain ended, the quiet pane is replayed again"
+        );
     }
 }

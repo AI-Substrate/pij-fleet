@@ -22,7 +22,7 @@ use pij_core::delivery::MAX_TYPED_FRAME_BYTES;
 use pij_core::error::{PijError, Result};
 use pij_core::model::{Harness, Pane, PaneProcess, ProcIdentity};
 use pij_core::ports::{
-    LaunchCommand, MenuKey, STAGED_SUBMIT_RECOVERY, StagedSubmit, TapSweep, TmuxPort,
+    LaunchCommand, MenuKey, STAGED_SUBMIT_RECOVERY, StagedSubmit, TapAttach, TapSweep, TmuxPort,
     is_rendered_leftover,
 };
 use tokio::sync::Mutex as AsyncMutex;
@@ -1170,7 +1170,7 @@ impl TmuxPort for TmuxAdapter {
         }
     }
 
-    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<()> {
+    async fn attach_pane_tap(&self, pane: &str, sink: &Path) -> Result<TapAttach> {
         let expected = self.expected_tap_sink(pane);
         if sink != expected {
             return Err(self.error(format!(
@@ -1205,7 +1205,7 @@ impl TmuxPort for TmuxAdapter {
             .trim()
         {
             "0" => {}
-            "1" if tracked && marker_matches => return Ok(()),
+            "1" if tracked && marker_matches => return Ok(TapAttach::Kept),
             // A matching pane-scoped marker is durable ownership evidence from a
             // prior daemon. Replacing that orphan is adoption, not clobbering.
             "1" if marker_matches => {}
@@ -1298,7 +1298,7 @@ impl TmuxPort for TmuxAdapter {
                 },
             );
         }
-        Ok(())
+        Ok(TapAttach::Attached)
     }
 
     async fn pane_tap_sink(&self, pane: &str) -> Result<Option<PathBuf>> {
