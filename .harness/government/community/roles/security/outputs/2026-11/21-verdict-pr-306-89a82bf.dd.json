@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fbe6-78ef-76f2-b20c-afa9eade3bc5",
+				"date": "2026-11-21",
+				"head": "89a82bf8ec10ca7ba8902f2070df7efb8560542f",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:306",
+				"writer": "pij-dynamic-alligator",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"S306-003 (low): agreement check fails open on catalog Err (if let Ok(false)); with a stale native after an unseen role switch, a catalog outage or 5 s timeout passes the stale model. Fix: footer names a model + shows() Err => refuse. PM to record or fix."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr view 306 --json headRefOid,mergeStateStatus,statusCheckRollup",
+					"exit_code": 0,
+					"log": "head 89a82bf, CLEAN; check(22) check(24) rust-lint rust-test SUCCESS; delivers SUCCESS (earlier run CANCELLED, superseded)"
+				},
+				{
+					"command": "sed -n 104,120p crates/harnesses/src/adapter.rs",
+					"exit_code": 0,
+					"log": "native_session_id copied from the argument into the facts: the removed session comparison could never fail"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Security verdict, #306 (F249), ROUND 2 (final, C34) at 89a82bf8ec10ca7ba8902f2070df7efb8560542f: PASS WITH NOTES. Static review of the change alone (git diff 8af888e2^ 8af888e2). CI at this head: check(22), check(24), rust-lint and rust-test succeeded; delivers succeeded on its latest run (an earlier delivers run was cancelled and superseded); CLEAN. I ran no live canary and no build.\n\nMy round-1 notes:\n- S306-N1 CLOSED. unisphere seat_status now sets model_switch_pending when the status lists \"model.pending_switch\" as unknown, and SeatStatus::unknown() sets it to true. The test an_undecided_switch_reads_as_pending covers both the undecided and the decided case. I checked the SDK side: derive() drops the name from `unknown` only when pending_known is true, so a decided no-switch still reads false. A same-millisecond tie is still invisible on the pij side. That's acceptable: the footer agreement check catches it whenever the footer already shows the new model.\n- S306-N2 CLOSED as asked. runtime_model refuses with Disagree (details.native_model and details.footer_model) when an OMP footer names a model that the native selector's own catalog row does not show. omp_model_shows matches only inside that one row (selector, id, name, or the name with \"Claude \" removed), so names shared across providers can't make the check pass or fail falsely.\n\nCrafted footer. The footer parse (unchanged from round 1) answers None for no model segment, two segments, a glued glyph or no-model, and None skips the agreement check. So the check is only as good as the footer, which is the harness's own render and fails closed. A footer that a seat itself steers into naming the native model only removes a cross-check. It can't create a pass the native record didn't already give. Under C33 (the trust boundary is the user account) that is the accepted residual. The canary stays a misattribution check, not proof against a lying seat.\n\nFreshness. Round 2 drops the comparison of observation.facts.native_session_id with current.harness_session, so observe_bind now gets no session id. I checked adapter.rs observe_bind_with_model_lookup: native_session_id is copied straight from the argument into the facts, so the old comparison could never fail. Removing it loses nothing. The incarnation is still bound by the pane-process subtree check and the non-empty bound session, and native is read only for seat.harness_session. The doc now says this correctly (\"process, bound session and pane\").\n\nCatalog-outage question:\n- S306-003 (LOW, new, non-blocking): the agreement check fails open on a catalog error. `if let Ok(false) = catalog.shows(..)` treats any Err as agreement, and the test native_evidence_needs_no_footer_resolution pins that. An Err covers: omp models failing, its 5 s OMP_TIMEOUT expiring under fleet load, unparseable output, or the native selector missing from the inventory.\n- So a stale native record after a role switch the record doesn't see (R306-001: smol, slow, temporary, fallback or prewalk), combined with a catalog Err, passes on the stale model. The seat's next call would run the footer's model. That is a real gap in the misattribution property, but it needs both conditions at once.\n- It is also looser than main. There, a footer naming a model was always resolved through the catalog and an Err refused, though main refused every OMP canary anyway.\n- A missing selector rarely matters. Native is provider/model from the response, which normally equals a catalog selector. If it doesn't, native usually fails the expect/bound comparison and the canary refuses anyway.\n- Fix: when the footer names a model and shows() errs, refuse with the catalog error in the details (fail closed). This costs nothing extra: the canary still makes one omp.models launch, and only when the footer names a model. A canary refused during an outage is a safe failure and can be retried.\n- Acceptable to merge as is, given the low likelihood and C33, if the PM records it. Otherwise fix it before merge.\n\nLaunch and cost (security view): unchanged from round 1. The site is omp.models, launched through program::launch by absolute path with fixed argv (models --json --no-extensions), no footer text in argv or env, a 5 s timeout, and it runs on spawn_blocking off the reactor. It runs at most once per OMP canary, and only when the footer names a model: resolve and shows never both run, because they are exclusive branches of runtime_model. Nothing runs per tick or per seat.\n"
+		}
+	]
+}
