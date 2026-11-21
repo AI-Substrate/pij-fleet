@@ -2807,7 +2807,10 @@
 					"harness_session": "7e16c5c7-d3e8-485f-9c6d-b87655f79c00",
 					"instance_key": "322",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "PR #322 merged (3af194f9caad)",
+					"released_by": "pij-far-jackal",
 					"seat": "pij-anonymous-mongoose",
+					"to": "2026-11-21T16:56:32.052Z",
 					"why": "#322 F270 round 1 (reuse)"
 				},
 				{
