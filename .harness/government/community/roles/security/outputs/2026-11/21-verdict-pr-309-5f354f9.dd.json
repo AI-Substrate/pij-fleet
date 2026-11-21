@@ -1,0 +1,44 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fce5-2557-7d82-bde6-81d7b1212283",
+				"date": "2026-11-21",
+				"head": "5f354f9ecfca6d08f31b4e4be2cfe5ba97df51f6",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "security",
+				"subject": "pr:309",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N1 recorded: resend trust_folder governs its wait (C33, documented)",
+				"residual (stated): crash between new_window and row write leaves a rowless pane; N3 stale status file on raw-HTTP key reuse, low"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 309 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at 5f354f9"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #309 round 2 at 5f354f9ecfca6d08f31b4e4be2cfe5ba97df51f6: pass-with-notes\n\nStatic review of the delta d10b5e0..5f354f9 (b2a6c5e4, the R2 fixes, plus a merge of main), in a detached worktree. No builds and no live spawns. CI 5/5 SUCCESS at this head (gh pr checks 309 --json).\n\n## Can a resend under another caller hijack or observe a launch it doesn't own, now that the launch outlives its request?\nNo new reach.\n- The detached `launch_owned` task returns its Response only through its own JoinHandle, to its own request. When that request is gone, `select!` yields a 204 that no one reads. No answer is rerouted to another request.\n- A resend is still gated, unchanged from round 1. `answer_again` requires a live row for the key whose harness, folder, parent and explicit id match. The key shape check runs before any use. The answer is still only `spawn_success(seat)`: the descriptor, which `pij list` already shows, with no grant or token.\n- The spawn lock is now owned by the task, so a resend of a cut launch waits for the row and then gets the same gated replay. It cannot slip in before the row and launch a second seat.\n- Taking over the watch works the same as in round 1: only the latest watcher settles, and the original request still gets its own answer. This is under C33, and N1 below still applies.\n\n## Does the gone-caller release keep the seat with the right parent?\nYes.\n- Dropping the request drops the oneshot sender. `select!` then drops the `wait_for_bind` future, which drops the WaitGuard unsettled, which calls `not_answered(ABANDONED)`, and that reports once the seat is bound.\n- The report target is `Launch.parent`. A fresh launch builds it from the request's parent, which under `--role` was resolved by the daemon to the actor. A resend builds it from `Launch::of(&seat)`, which is the row's parent, and the resend can only reach this point when its parent equals that row's parent.\n- R309-03's `watch_again` never re-arms a launch that is settled and bound, so a second, hostile or lost, resend cannot cause a second parent report. This is covered by four ordering tests (s-12 through s-15).\n\n## Stop and drain\n`stop()` sets the flag, then takes the launch lock, so any launch already past the check writes its row first. Daemon::shutdown bounds that wait with SHUTDOWN_DRAIN_TIMEOUT. Both are brakes: removing the flag would allow more launches, and the join only delays the stop.\n\n## N1 / N2\n- N1 (recorded): the resend's own trust_folder governs its wait. This is documented in the PR body and pij-rs-api.md, and it stays inside the #264 invariants (the launch's own pane, the requested cwd, a closed key grammar). It is accepted under C33.\n- N2: closed. `build_spawn_plan` sets `model: input.model` unchanged (crates/harnesses/src/spawn.rs:286), so comparing against `request.model` on a resend is equivalent.\n\n## Residuals (stated by the coder; not new security scope)\n- A SIGKILL or crash between new_window and the row write leaves a rowless pane. A resend would then launch again. Integrity only, no privilege.\n- N3 from round 1 (a stale status file on a reused rowless key) is unchanged. It needs a raw same-user HTTP caller. Low.\n"
+		}
+	]
+}
