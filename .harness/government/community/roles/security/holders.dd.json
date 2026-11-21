@@ -1320,6 +1320,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-selected-deer",
 					"why": "#330 F267 step 3 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T19:24:11.495Z",
+					"harness": "copilot",
+					"harness_session": "aa358e02-6f68-4ca0-88ce-59ef10419c81",
+					"instance_key": "331",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-selected-deer",
+					"why": "#331 F259a R1 verdict"
 				}
 			]
 		}
