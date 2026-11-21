@@ -49,7 +49,7 @@ pub(crate) const FYI_ID_TAKEN: &str = "E-RS-FYI-ID-TAKEN";
 const NATIVE_RECEIVER_UNAVAILABLE: &str = "native-extension-unavailable";
 const NATIVE_RECEIVER_RENEWAL_DIVISOR: u64 = 3;
 /// D1: the spine kinds of a native receiver lease's two edges.
-const NATIVE_RECEIVER_LAPSED: &str = "native.receiver.lapsed";
+pub(crate) const NATIVE_RECEIVER_LAPSED: &str = "native.receiver.lapsed";
 const NATIVE_RECEIVER_RENEWED: &str = "native.receiver.renewed";
 /// R277-1: how long a native (Copilot) claim waits idle before the daemon
 /// answers an empty page, under the extension's 65 s request timeout, so an
