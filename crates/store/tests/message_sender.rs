@@ -4,7 +4,7 @@
 //! id from two seats is two messages. Ledger rows from before 0050 record no
 //! sender and match any, so a retry across the upgrade is still one message.
 
-use pij_core::model::{DeliveryOrigin, Job, Outcome, SeatId};
+use pij_core::model::{DeliveryOrigin, Job, SeatId};
 use pij_core::ports::{DeliveryEnqueue, Queue};
 use pij_store::SqliteQueue;
 use pij_testkit::FreshStore;
@@ -78,11 +78,13 @@ async fn the_same_id_from_two_seats_is_two_messages() {
     );
 }
 
-/// F270 (B322-01): no path writes a NEW match-any-sender ('') ledger row.
-/// The generic enqueue takes any payload, so a sender-less delivery can reach
-/// a claim; its ack, the final ledger writer, refuses it and the claim stays
-/// running. A named sender's message under the same id is then still queued
-/// and delivered, never "already delivered".
+/// F270 (B322-01), F275: no path writes a NEW match-any-sender ('') ledger
+/// row, and a delivery that names no sender never blocks its recipient. The
+/// generic enqueue takes any payload, so a sender-less delivery can reach a
+/// claim; its ack, the final ledger writer, refuses it and fails the row as
+/// `undelivered:no-sender` in the same transaction. A named sender's message
+/// under the same id, queued behind it on the same serial key, is then
+/// claimed and delivered, never "already delivered".
 #[tokio::test]
 async fn no_ack_writes_a_sender_less_ledger_row() {
     let fresh = FreshStore::new();
@@ -96,6 +98,13 @@ async fn no_ack_writes_a_sender_less_ledger_row() {
         .await
         .unwrap()
         .unwrap();
+    // A real sender's same id queues behind it, on the same serial key.
+    let named = queued(
+        queue
+            .enqueue_delivery(delivery("pij-reader", "pij-sender", "squat"))
+            .await
+            .unwrap(),
+    );
     let acked = queue
         .ack_delivery(claimed, DeliveryOrigin::ReaderRead)
         .await;
@@ -106,25 +115,28 @@ async fn no_ack_writes_a_sender_less_ledger_row() {
             .await
             .unwrap();
     assert_eq!(wildcards, 0);
-    assert!(
-        queue.claimed_delivery(claimed).await.unwrap().is_some(),
-        "a refused ack leaves the claim running"
-    );
-    // Its reader gives up on it; a plain ack writes no ledger row.
-    queue.ack(claimed, Outcome::Done).await.unwrap();
-
-    // A real sender's same id is its own message, queued and delivered.
-    let named = queued(
-        queue
-            .enqueue_delivery(delivery("pij-reader", "pij-sender", "squat"))
+    let ended: (String, Option<String>) =
+        sqlx::query_as("SELECT state, outcome FROM jobs WHERE id = ?1")
+            .bind(claimed.0 as i64)
+            .fetch_one(&pool)
             .await
-            .unwrap(),
+            .unwrap();
+    assert_eq!(
+        ended,
+        (
+            "failed".to_string(),
+            Some(pij_core::delivery::NO_SENDER_OUTCOME.to_string())
+        ),
+        "the refused ack ends the claim"
     );
+    assert!(queue.claimed_delivery(claimed).await.unwrap().is_none());
+
+    // The serial key is free at once: the named message is next.
     let (next, _) = queue
         .claim(&["delivery:pij-reader".to_string()], "worker")
         .await
         .unwrap()
-        .unwrap();
+        .expect("the sender-less claim no longer blocks its serial key");
     assert_eq!(next, named);
     queue
         .ack_delivery(named, DeliveryOrigin::ReaderRead)

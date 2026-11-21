@@ -782,8 +782,13 @@ sender `''`, which matches any sender, so a retry across the upgrade still
 finds its delivery (a brake: removing it only delivers more); every new row
 names its sender. A delivery or claim that names none is refused, and so is
 the ack of a delivery whose payload names none (the final ledger writer, so no
-path, generic enqueue included, can write a new `''` row; the claim stays
-running). A refused control (`delivery.control-refused`, keyed by its sender
+path, generic enqueue included, can write a new `''` row). That refused ack
+also ends the row, in the same transaction, as failed with outcome
+`undelivered:no-sender` (F275, `pij_core::delivery::NO_SENDER_OUTCOME`): left
+running, a lease would hand it out again for ever and it would block its
+recipient's serial key. It is not a park: there is no sender to tell. A
+payload that does not parse at all is a different case, held as before. A
+refused control (`delivery.control-refused`, keyed by its sender
 and id) replays only to that sender: a parent's control under the target's
 refused id is a new request. A refusal recorded before F270 names no sender
 and still replays to any (a brake). Decision answers keep their store-side
