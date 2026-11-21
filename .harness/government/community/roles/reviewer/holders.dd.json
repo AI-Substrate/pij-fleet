@@ -2601,6 +2601,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-secondary-starfish",
 					"why": "verdict on #306 (F249)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T02:24:02.346Z",
+					"harness": "copilot",
+					"harness_session": "94a0a959-bdfc-477a-a6fa-bb35aaecdad0",
+					"instance_key": "307",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-breakable-aardwolf",
+					"why": "verdict on #307 (F250)"
 				}
 			]
 		}
