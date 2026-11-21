@@ -1,0 +1,30 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Open before touching /v1/spawn, launch_seat*, spawn_waits.rs, client resends, auth_recovery.rs, or a Copilot seat that went silent with its receiver lapsed",
+				"tags": [
+					"spawn",
+					"idempotency",
+					"cancellation",
+					"f255",
+					"f261",
+					"copilot",
+					"auth",
+					"lease"
+				],
+				"title": "Spawn idempotency and cancellation (F255/#309), and the Copilot 8 h extension loss (F261/#311)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- **A key is not enough.** F255 keys spawns: the caller mints `spawn_id`, and a resend gets the existing seat back. Round 1 was BLOCKED because the HTTP handler owned the segment from new_window to the row write. An axum handler can be dropped at any await, so that segment must run in its own `tokio::spawn` task holding an `OwnedMutexGuard` on the spawn lock. After the row, stop waiting once the caller goes: pass a oneshot dropped with the request and `select!` on it. If the task kept waiting, it would answer into the void and the parent would never be told (F211).\n- **The stop must JOIN in-flight work.** Setting a flag is not enough: `SpawnWaits::stop()` sets the flag, then takes the launch lock, and `Daemon::shutdown` awaits it with a timeout before tmux is released.\n- **Retry clocks start at the FIRST FAILURE, not the first send.** A spawn can wait 60 s for its seat before a bounce cuts it. TS needs `deadline ??=`; Rust needs a lazy `get_or_insert_with`. Test with an injected `Date.now`.\n- **Re-watching a settled launch** (answered or reported) must not re-arm it: use `watch_again(launch, row_bound)`. Test every ordering of bind / report / resend / drop. Reviewers (mongoose) probe these with exact-source state machines.\n- **Deterministic cut test:** wrap the Registry so the KEY's `put_reporting` blocks on a oneshot (HeldRowWrite in http/tests.rs). Call `launch_seat` through `test_state(...)` in a spawned task and abort that task at the gate. A network abort is not deterministic.\n- **F261: the Copilot 8 h Entra loss.** At start+8h the CLI flips its managed-extension policy Allowed→Pending and force-kills the pij extension; the host log ends `=== force-killed ===`. No session.error fires on an idle seat, so the only signal is `native.receiver.lapsed`.\n  - Trace it in `~/.copilot/logs/process-<epochms>-<pid>*.log`; the extension host has its own log, `=== launch pid=… module=…/pij/extension.mjs`. Grep for `managed extension reconciliation`.\n  - Controls are NOT refused on a lapsed receiver (only bodies are), so `/restart` still reaches the pane.\n  - `auth_recovery::follow_lapses` is an `event_bus.subscribe_live` follower, like park_notice.\n- **A lapsed pm can silently lose your FINAL.** A send to a lapsed native receiver is REFUSED and never redelivered (F260). If the request still reads unanswered, re-send a short reply with in_reply_to.\n- **TS `fetch` failures** are `TypeError('fetch failed')` with `cause.code` (UND_ERR_SOCKET, ECONNRESET). Retry broadly only for keyed routes.\n"
+		}
+	]
+}
