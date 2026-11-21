@@ -635,6 +635,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-like-guppy",
 					"why": "#313 F258 D1 round 1"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T08:37:45.531Z",
+					"harness": "copilot",
+					"harness_session": "43dfc7b1-1b7e-463d-af0d-4f4aae11d8bf",
+					"instance_key": "315",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-encouraging-turtle",
+					"why": "#315 F258 0049 round 1"
 				}
 			]
 		}
