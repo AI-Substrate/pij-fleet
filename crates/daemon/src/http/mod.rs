@@ -1503,6 +1503,10 @@ async fn launch_owned(
     if state.services.spawn_waits.stopping() {
         return stopping_refused(command_name);
     }
+    state.services.spawn_waits.set_launching(format!(
+        "a spawn into {} not yet past its checks",
+        request.cwd
+    ));
     if let Some(id) = request.id.as_ref()
         && id.as_str().trim().is_empty()
     {
@@ -1669,6 +1673,10 @@ async fn launch_owned(
         }
         None => return refused(command_name, "revive requires an existing seat id"),
     };
+    state.services.spawn_waits.set_launching(format!(
+        "seat {seat_id} (spawn {spawn_id}, folder {})",
+        request.cwd
+    ));
 
     // Plan 229 (c-spawn-gate): a Copilot seat on a Claude model is wired to
     // the cache proxy only when its status route says ready and serves the
@@ -2002,9 +2010,13 @@ async fn answer_launch(state: &AppState, command_name: &'static str, waiting: Wa
         )
         .await
     };
+    // F264: a caller already gone wins over an answer ready at once (a
+    // `--no-wait` dispatch), which would settle the launch as answered for
+    // nobody and keep its seat from the parent.
     tokio::select! {
-        answer = answer => answer,
+        biased;
         _ = gone => StatusCode::NO_CONTENT.into_response(),
+        answer = answer => answer,
     }
 }
 

@@ -366,10 +366,27 @@ impl Daemon {
         // F255: no spawn starts once the stop begins, and every launch already
         // past its check writes its row before anything else stops (R309-01:
         // its task holds the spawn lock until then, and `stop` takes it), with
-        // tmux still up. Bounded: a wedged launch never wedges the stop. A
-        // keyed caller cut off in its wait sends it again to the next daemon,
-        // which answers with that row's seat.
-        let _ = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, self.spawn_waits.stop()).await;
+        // tmux still up. Bounded: a wedged launch never wedges the stop, and
+        // one that outlasts the bound is named (F264): its pane may then have
+        // no row, and the next daemon cannot find it by its key. A keyed caller
+        // cut off in its wait sends it again to the next daemon, which answers
+        // with that row's seat.
+        // F267: every phase logs as it starts and as it ends, with its time, so
+        // a stop that hangs names the phase it hangs in.
+        let launches = phase("spawn launches (SpawnWaits::stop)", async {
+            tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, self.spawn_waits.stop()).await
+        })
+        .await;
+        if launches.is_err() {
+            eprintln!(
+                "pij-rs: stopping without waiting longer for a spawn launch to write its row \
+                 ({SHUTDOWN_DRAIN_TIMEOUT:?}): {}; if its pane exists with no seat row, close it \
+                 by hand",
+                self.spawn_waits
+                    .launching()
+                    .unwrap_or_else(|| "a launch that did not name itself".to_string())
+            );
+        }
         let _ = self.shutdown.send(true);
         let _ = self.governance_shutdown.send(());
         let tmux = Arc::clone(&self.tmux);
@@ -381,12 +398,12 @@ impl Daemon {
         // that commits after this abort is not lost: the next boot's sweep
         // notifies it (`park_notice::LOOKBACK_MS`), and a notice admitted twice
         // is impossible because its id is derived from the parked job.
-        let _ = self.park_notices.await;
+        let _ = phase("park notices", self.park_notices).await;
         // F261: a lapse decision cut here is decided by nobody. A restart it
         // had queued is a durable control; its recovery event is the brake
         // the next daemon reads.
         self.extension_lost.abort();
-        let _ = self.extension_lost.await;
+        let _ = phase("lapse follower", self.extension_lost).await;
         let (
             served,
             drained,
@@ -401,30 +418,30 @@ impl Daemon {
             governance,
             released,
         ) = tokio::join!(
-            async {
+            phase("http drain (claim waits, streams)", async {
                 self.joined.await.map_err(|error| PijError::Adapter {
                     adapter: "daemon".to_string(),
                     message: format!("the server task did not stop cleanly: {error}"),
                 })
-            },
-            self.drain_loop.shutdown(),
-            self.bind_loop.shutdown(),
-            self.pane_observer.shutdown(),
-            self.federation_worker.shutdown(),
-            self.background_loop.shutdown(),
-            self.death_sweep_loop.shutdown(),
-            self.pa_watchdog_loop.shutdown(),
-            self.cache_proxy_loop.shutdown(),
-            self.sidecars.shutdown(),
-            async {
+            }),
+            phase("delivery drain loop", self.drain_loop.shutdown()),
+            phase("bind loop", self.bind_loop.shutdown()),
+            phase("pane observer", self.pane_observer.shutdown()),
+            phase("federation worker", self.federation_worker.shutdown()),
+            phase("background loop", self.background_loop.shutdown()),
+            phase("death sweep", self.death_sweep_loop.shutdown()),
+            phase("pa watchdog", self.pa_watchdog_loop.shutdown()),
+            phase("cache-proxy watch", self.cache_proxy_loop.shutdown()),
+            phase("sidecars", self.sidecars.shutdown()),
+            phase("governance observer", async {
                 self.governance_observer
                     .await
                     .map_err(|error| PijError::Adapter {
                         adapter: "daemon/governance".to_string(),
                         message: format!("delivery observer task failed: {error}"),
                     })
-            },
-            release,
+            }),
+            phase("tmux control release", release),
         );
         // A release that panicked is the client's teardown lost, not the
         // stop's: the process exit ends the client either way.
@@ -432,16 +449,22 @@ impl Daemon {
         // Join work we own first. Both this join and physical pool cleanup share
         // one deadline: leaked leases must never turn stop into another wedge.
         let deadline = tokio::time::Instant::now() + SHUTDOWN_DRAIN_TIMEOUT;
-        let admitted = tokio::time::timeout_at(deadline, async {
-            let admitted = self.delivery.flush().await;
-            self.event_bus.flush().await;
-            admitted
+        let admitted = phase(
+            "delivery and event flush",
+            tokio::time::timeout_at(deadline, async {
+                let admitted = self.delivery.flush().await;
+                self.event_bus.flush().await;
+                admitted
+            }),
+        )
+        .await;
+        let (spine_closed, background_closed) = phase("store close", async {
+            tokio::join!(
+                pij_store::migrate::close(&self.store_pools[0], deadline),
+                pij_store::migrate::close(&self.store_pools[1], deadline),
+            )
         })
         .await;
-        let (spine_closed, background_closed) = tokio::join!(
-            pij_store::migrate::close(&self.store_pools[0], deadline),
-            pij_store::migrate::close(&self.store_pools[1], deadline),
-        );
         if admitted.is_err() || !spine_closed || !background_closed {
             // Role-labelled counts may refer to the same configured pool.
             let checked_out = |pool: &pij_store::StorePool| {
@@ -468,6 +491,19 @@ impl Daemon {
         proxy_watch?;
         forwarded
     }
+}
+
+/// F267: one shutdown phase, logged as it starts and as it ends with its
+/// time in ms. Two lines per phase per stop; nothing at run time.
+async fn phase<T>(name: &str, work: impl std::future::Future<Output = T>) -> T {
+    let started = std::time::Instant::now();
+    eprintln!("pij-rs shutdown: {name}: started");
+    let done = work.await;
+    eprintln!(
+        "pij-rs shutdown: {name}: ended after {}ms",
+        started.elapsed().as_millis()
+    );
+    done
 }
 
 impl std::fmt::Debug for Daemon {

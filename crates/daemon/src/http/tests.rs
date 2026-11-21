@@ -4593,6 +4593,61 @@ async fn a_request_gone_while_waiting_leaves_its_seat_to_the_parent() {
     assert_eq!(reported.len(), 1, "the parent is told once");
 }
 
+/// F264: a `--no-wait` caller gone while its launch's row was held. Its
+/// answer is ready the moment the row is written, but nobody can receive
+/// it, so the launch is not settled as answered: the bind that follows hands
+/// the seat to the parent, once. Repeated, since which ready branch a select
+/// polls first is otherwise chosen at random.
+#[tokio::test]
+async fn a_no_wait_caller_gone_before_its_row_leaves_its_seat_to_the_parent() {
+    for round in 0..16 {
+        let (state, registry, _tmux, reached, release) = held_row_daemon().await;
+        let first = spawn_launch(&state);
+        reached.await.expect("the launch reached its row write");
+        first.abort();
+        let _ = first.await;
+        release.send(()).expect("release the row write");
+        let mut row = None;
+        for _ in 0..200 {
+            row = registry.list_launched(KEY).await.unwrap().pop();
+            if row.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let row = row.expect("the launch wrote its row");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        state
+            .services
+            .spawn_waits
+            .bound(KEY, &row.id, row.pane.as_deref());
+        let mut kinds = Vec::new();
+        for _ in 0..200 {
+            kinds = state
+                .services
+                .spine
+                .tail(Some(&row.id), Seq(0))
+                .await
+                .expect("seat events")
+                .into_iter()
+                .map(|event| event.kind)
+                .filter(|kind| {
+                    kind == crate::spawn_waits::REPORTED || kind == crate::spawn_waits::ANSWERED
+                })
+                .collect();
+            if !kinds.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            kinds,
+            [crate::spawn_waits::REPORTED],
+            "round {round}: told once, never answered"
+        );
+    }
+}
+
 /// F211: the spine record of a launch, as `/v1/spawn` writes it.
 async fn record_spine(spine: &FakeSpine, seat: &str, kind: &str, spawn_id: &str) {
     spine

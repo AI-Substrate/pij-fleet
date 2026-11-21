@@ -27,9 +27,12 @@
 //! the same spawn id, and that request watches the launch in its place
 //! ([`SpawnWaits::watch_again`]), keeping any binding already known. Only the
 //! latest watcher settles it, so an earlier request ending later never counts,
-//! and a launch already settled with a bound seat is never re-armed (R309-03).
-//! Once the daemon is stopping ([`SpawnWaits::stop`]), no spawn starts, and the
-//! stop waits for each launch already past its check to write its row.
+//! and a launch already settled with a bound seat is never re-armed (R309-03),
+//! even by a resend whose row read predates the binding: settled launches are
+//! remembered, the newest [`SETTLED_KEPT`] of them (F264; a BRAKE: it only
+//! ever withholds a watch). Once the daemon is stopping
+//! ([`SpawnWaits::stop`]), no spawn starts, and the stop waits for each launch
+//! already past its check to write its row.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -120,9 +123,45 @@ struct Entry {
     watcher: u64,
 }
 
+/// How many settled launches [`SpawnWaits`] remembers (F264). A resend reads
+/// its launch's row before it watches again, under the spawn lock, and only a
+/// registration can settle a launch in between (it binds and reports without
+/// that lock): a few at most in milliseconds, so the oldest can go.
+pub const SETTLED_KEPT: usize = 256;
+
+/// F264: launches whose hand-off is settled, newest last, so a resend holding
+/// a stale row never re-arms one. Bounded by [`SETTLED_KEPT`] (the oldest is
+/// forgotten first), and gone with the daemon: at boot the spine's records
+/// stand in.
+#[derive(Debug, Default)]
+struct Settled {
+    order: std::collections::VecDeque<String>,
+    /// Each settled launch, and whether its seat is known to be bound.
+    launches: HashMap<String, (Launch, bool)>,
+}
+
+impl Settled {
+    fn record(&mut self, launch: Launch, bound: bool) {
+        let spawn_id = launch.spawn_id.clone();
+        if let Some(known) = self.launches.get_mut(&spawn_id) {
+            *known = (launch, bound || known.1);
+            return;
+        }
+        self.launches.insert(spawn_id.clone(), (launch, bound));
+        self.order.push_back(spawn_id);
+        if self.order.len() > SETTLED_KEPT
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.launches.remove(&oldest);
+        }
+    }
+}
+
 /// Launches whose hand-off is not settled.
 pub struct SpawnWaits {
     entries: Mutex<HashMap<String, Entry>>,
+    /// Locked after `entries` whenever both are held.
+    settled: Mutex<Settled>,
     settle: Arc<dyn Settle>,
     next_watcher: AtomicU64,
     stopping: AtomicBool,
@@ -130,6 +169,9 @@ pub struct SpawnWaits {
     /// the task that owns that segment (never by the HTTP request waiting on
     /// it), so a resend and the daemon's stop both wait for the row.
     launches: Arc<tokio::sync::Mutex<()>>,
+    /// F264: what the holder of `launches` is launching, for a stop that
+    /// gives up waiting on it.
+    launching: Mutex<Option<String>>,
 }
 
 impl SpawnWaits {
@@ -137,16 +179,32 @@ impl SpawnWaits {
     pub fn new(settle: Arc<dyn Settle>) -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
+            settled: Mutex::new(Settled::default()),
             settle,
             next_watcher: AtomicU64::new(1),
             stopping: AtomicBool::new(false),
             launches: Arc::new(tokio::sync::Mutex::new(())),
+            launching: Mutex::new(None),
         }
     }
 
     /// The lock a launch holds until its row is written (the spawn lock).
     pub fn launch_lock(&self) -> Arc<tokio::sync::Mutex<()>> {
         Arc::clone(&self.launches)
+    }
+
+    /// F264: the holder of the spawn lock names what it launches (each holder
+    /// overwrites it as it starts, so it is never an earlier holder's).
+    pub fn set_launching(&self, what: String) {
+        *self.launching.lock().expect("spawn waits launching") = Some(what);
+    }
+
+    /// What the holder of the spawn lock last said it launches.
+    pub fn launching(&self) -> Option<String> {
+        self.launching
+            .lock()
+            .expect("spawn waits launching")
+            .clone()
     }
 
     /// The daemon is stopping (F255): no spawn starts from now on, and this
@@ -181,20 +239,32 @@ impl SpawnWaits {
         self.guard(spawn_id, watcher)
     }
 
-    /// F255: the same spawn sent again; `bound` is what its row says now.
+    /// F255: the same spawn sent again; `bound` is what its row said when the
+    /// resend read it, which a registration (it binds and reports without
+    /// the spawn lock) can have overtaken since.
     /// - Still unsettled (a request or a recovery holds it): this request
     ///   watches it in place of the earlier one, keeping a binding either knew.
-    /// - Already settled and bound (its caller was answered, or its parent was
-    ///   told, R309-03): never re-armed. The guard settles nothing, so this
-    ///   answer, or its loss, can never report the seat again.
-    /// - Settled unbound (a `--no-wait` dispatch whose answer was lost): it is
-    ///   watched again as a fresh launch.
+    /// - Already settled and bound (its caller was answered with the seat, or
+    ///   its parent was told, R309-03), by its row or by this daemon's record
+    ///   of it (F264, whatever the row said): never re-armed. The guard
+    ///   settles nothing, so this answer, or its loss, can never report the
+    ///   seat again.
+    /// - Settled unbound (a `--no-wait` dispatch whose answer was lost, its
+    ///   seat not bound since): it is watched again as a fresh launch.
     pub fn watch_again(self: &Arc<Self>, launch: Launch, bound: bool) -> WaitGuard {
         let spawn_id = launch.spawn_id.clone();
         let watcher = self.next_watcher.fetch_add(1, Ordering::Relaxed);
         let mut entries = self.entries.lock().expect("spawn waits");
         let known = entries.get(&spawn_id).map(|entry| entry.bound);
-        if known.is_some() || !bound {
+        let settled_bound = known.is_none()
+            && self
+                .settled
+                .lock()
+                .expect("spawn waits settled")
+                .launches
+                .get(&spawn_id)
+                .is_some_and(|(_, bound)| *bound);
+        if known.is_some() || !(bound || settled_bound) {
             entries.insert(
                 spawn_id.clone(),
                 Entry {
@@ -235,11 +305,19 @@ impl SpawnWaits {
     }
 
     /// A registration bound `seat` to its process. Only the launch's own seat
-    /// on its own pane counts.
+    /// on its own pane counts. A settled launch's binding is remembered too
+    /// (F264: a `--no-wait` dispatch that binds after its answer).
     pub fn bound(&self, spawn_id: &str, seat: &SeatId, pane: Option<&str>) {
         let report = {
             let mut entries = self.entries.lock().expect("spawn waits");
             let Some(entry) = entries.get_mut(spawn_id) else {
+                let mut settled = self.settled.lock().expect("spawn waits settled");
+                if let Some((launch, bound)) = settled.launches.get_mut(spawn_id)
+                    && launch.seat == *seat
+                    && launch.pane.as_deref() == pane
+                {
+                    *bound = true;
+                }
                 return;
             };
             if entry.launch.seat != *seat || entry.launch.pane.as_deref() != pane {
@@ -247,7 +325,9 @@ impl SpawnWaits {
             }
             entry.bound = true;
             match entry.unanswered.clone() {
-                Some(reason) => entries.remove(spawn_id).map(|entry| (entry.launch, reason)),
+                Some(reason) => self
+                    .settle_entry(&mut entries, spawn_id, true)
+                    .map(|launch| (launch, reason)),
                 None => None,
             }
         };
@@ -267,9 +347,8 @@ impl SpawnWaits {
                 return;
             }
             if entry.bound {
-                entries
-                    .remove(spawn_id)
-                    .map(|entry| (entry.launch, reason.to_string()))
+                self.settle_entry(&mut entries, spawn_id, true)
+                    .map(|launch| (launch, reason.to_string()))
             } else {
                 entry.unanswered = Some(reason.to_string());
                 None
@@ -278,6 +357,22 @@ impl SpawnWaits {
         if let Some((launch, reason)) = report {
             self.hand_off(launch, reason);
         }
+    }
+
+    /// F264: remove a settled launch's entry and record it, both under the
+    /// entries lock, so a resend never finds it in neither.
+    fn settle_entry(
+        &self,
+        entries: &mut HashMap<String, Entry>,
+        spawn_id: &str,
+        bound: bool,
+    ) -> Option<Launch> {
+        let entry = entries.remove(spawn_id)?;
+        self.settled
+            .lock()
+            .expect("spawn waits settled")
+            .record(entry.launch.clone(), bound || entry.bound);
+        Some(entry.launch)
     }
 
     /// The launch's entry, removed, while `watcher` still watches it.
@@ -290,13 +385,24 @@ impl SpawnWaits {
     }
 
     fn answered(&self, spawn_id: &str, watcher: u64, outcome: &'static str) {
-        let Some(entry) = self.take(spawn_id, watcher) else {
+        let launch = {
+            let mut entries = self.entries.lock().expect("spawn waits");
+            if entries
+                .get(spawn_id)
+                .is_none_or(|entry| entry.watcher != watcher)
+            {
+                return;
+            }
+            // Answered with a bound seat unless it was only dispatched.
+            self.settle_entry(&mut entries, spawn_id, outcome != "dispatched")
+        };
+        let Some(launch) = launch else {
             return;
         };
         let settle = Arc::clone(&self.settle);
         // Detached: the answer is built; recording it must not be cancelled
         // with the request.
-        tokio::spawn(async move { settle.answered(&entry.launch, outcome).await });
+        tokio::spawn(async move { settle.answered(&launch, outcome).await });
     }
 
     fn hand_off(&self, launch: Launch, reason: String) {
@@ -752,6 +858,62 @@ mod tests {
             reported(&recorded).await,
             [("s-15".to_string(), ABANDONED.to_string())]
         );
+    }
+
+    /// F264: recovered unbound, then bound and reported by a registration
+    /// while a resend held the row it read before that bind (unbound). The
+    /// resend never re-arms it: bound again and abandoned, still one report.
+    #[tokio::test]
+    async fn a_stale_unbound_resend_never_rearms_a_reported_launch() {
+        let (waits, recorded) = waits();
+        waits.recover(launch("s-16"), false);
+        bind(&waits, "s-16");
+        assert_eq!(reported(&recorded).await.len(), 1);
+        let again = waits.watch_again(launch("s-16"), false);
+        bind(&waits, "s-16");
+        drop(again);
+        assert_eq!(reported(&recorded).await.len(), 1, "reported once");
+        assert!(waits.entries.lock().unwrap().is_empty(), "nothing re-armed");
+    }
+
+    /// F264: the same, abandoned before the bind: nothing is left unsettled.
+    #[tokio::test]
+    async fn a_stale_unbound_resend_abandoned_before_a_bind_leaves_nothing_unsettled() {
+        let (waits, recorded) = waits();
+        waits.recover(launch("s-17"), false);
+        bind(&waits, "s-17");
+        assert_eq!(reported(&recorded).await.len(), 1);
+        drop(waits.watch_again(launch("s-17"), false));
+        assert!(waits.entries.lock().unwrap().is_empty(), "nothing re-armed");
+        bind(&waits, "s-17");
+        assert_eq!(reported(&recorded).await.len(), 1, "reported once");
+    }
+
+    /// F264: a `--no-wait` launch answered, then bound: a resend holding the
+    /// row from before that bind finds it settled bound and re-arms nothing.
+    #[tokio::test]
+    async fn a_dispatched_launch_bound_since_is_not_rearmed_by_a_stale_resend() {
+        let (waits, recorded) = waits();
+        waits.watch(launch("s-18")).answered("dispatched");
+        bind(&waits, "s-18");
+        drop(waits.watch_again(launch("s-18"), false));
+        assert!(waits.entries.lock().unwrap().is_empty(), "nothing re-armed");
+        assert!(reported(&recorded).await.is_empty());
+    }
+
+    /// F264: the settled record keeps the newest [`SETTLED_KEPT`] launches.
+    #[tokio::test]
+    async fn the_settled_record_keeps_only_the_newest_launches() {
+        let (waits, _recorded) = waits();
+        for n in 0..=SETTLED_KEPT {
+            let spawn_id = format!("s-k{n}");
+            waits.watch(launch(&spawn_id)).answered("bound");
+        }
+        let settled = waits.settled.lock().unwrap();
+        assert_eq!(settled.launches.len(), SETTLED_KEPT);
+        assert_eq!(settled.order.len(), SETTLED_KEPT);
+        assert!(!settled.launches.contains_key("s-k0"), "the oldest goes");
+        assert!(settled.launches.contains_key(&format!("s-k{SETTLED_KEPT}")));
     }
 
     /// The close command quotes what a shell would split or expand.

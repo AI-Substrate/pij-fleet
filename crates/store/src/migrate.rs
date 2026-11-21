@@ -72,12 +72,23 @@ pub async fn close(pool: &StorePool, deadline: tokio::time::Instant) -> bool {
     .is_ok()
 }
 
+/// Roll back a transaction a lease left open, before the connection goes idle.
+///
+/// The pool's ONLY connection hook, so the clean path must cost nothing: a depth
+/// of zero here is exact without a worker round trip. The depth rises only when
+/// the SQLite worker processes a `BEGIN`, and a `BEGIN` still queued at release
+/// belongs to a cancelled begin, which the worker itself rolls back when it
+/// cannot deliver the acknowledgement (sqlx-sqlite 0.8.6, `Command::Begin`). A
+/// non-zero depth can be stale the other way, a `Transaction::drop` rollback
+/// still queued, so only then do we ping to flush the queue before deciding:
+/// normal drop cleanup is not a poisoned lease.
 async fn clean_connection(
     connection: &mut SqliteConnection,
     recovered: &AtomicU64,
 ) -> std::result::Result<bool, sqlx::Error> {
-    // Flush any Transaction::drop rollback already queued on the SQLite worker
-    // before examining its depth; normal drop cleanup is not a poisoned lease.
+    if !connection.is_in_transaction() {
+        return Ok(true);
+    }
     connection.ping().await?;
     if !connection.is_in_transaction() {
         return Ok(true);
@@ -114,18 +125,22 @@ pub async fn open(path: &str) -> Result<Pool<Sqlite>> {
     .busy_timeout(STORE_WAIT_TIMEOUT);
 
     let recovered = Arc::new(AtomicU64::new(0));
-    let released = Arc::clone(&recovered);
     let pool = SqlitePoolOptions::new()
         // Do not warm up siblings against the old schema: migration pins the
         // first connection before runtime readers can grow the pool.
         .min_connections(0)
         .max_connections(if path.is_empty() { 1 } else { 4 })
         .acquire_timeout(STORE_WAIT_TIMEOUT)
+        // F258: every round trip to a connection's SQLite worker is a channel
+        // send and a thread wake. sqlx already pings every connection on
+        // release (after `after_release`), so a ping on acquire re-proves what
+        // the release just proved, on the request path.
+        .test_before_acquire(false)
+        // Cleanup lives on release, not acquire: a lease that leaked a write
+        // transaction must not sit in the idle queue holding SQLite's write
+        // lock (every other writer would wait out `busy_timeout`) until that
+        // one connection happens to be handed out again.
         .after_release(move |connection, _| {
-            let recovered = Arc::clone(&released);
-            Box::pin(async move { clean_connection(connection, &recovered).await })
-        })
-        .before_acquire(move |connection, _| {
             let recovered = Arc::clone(&recovered);
             Box::pin(async move { clean_connection(connection, &recovered).await })
         })
