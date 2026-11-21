@@ -2240,6 +2240,31 @@ impl FakeTmux {
         self
     }
 
+    /// [`Self::script_tap`] for a fake already behind an `Arc`: bytes a later
+    /// drain returns, queued after any already scripted.
+    pub fn queue_tap(&self, bytes: impl Into<Vec<u8>>) {
+        self.state
+            .lock()
+            .expect("fake tmux mutex")
+            .tap_drains
+            .push_back(Ok(bytes.into()));
+    }
+
+    /// [`Self::with_standing_capture`] for a fake already behind an `Arc`: the
+    /// screen changes with no tap bytes, as behind a dead tap.
+    pub fn set_standing_capture(&self, text: impl Into<String>) {
+        self.state.lock().expect("fake tmux mutex").standing_capture = Some(text.into());
+    }
+
+    /// Move a listed pane's cursor, as `list-panes` will report it next.
+    pub fn move_cursor(&self, pane: &str, x: u32, y: u32) {
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        if let Some(listed) = state.panes.iter_mut().find(|listed| listed.id == pane) {
+            listed.cursor_x = Some(x);
+            listed.cursor_y = Some(y);
+        }
+    }
+
     /// Queue one dependency failure from the next attached tap drain.
     pub fn script_tap_error(self, message: impl Into<String>) -> Self {
         self.state
