@@ -1,0 +1,38 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"head": "3707709efd6bb731b4de96c32b2a4d4e12363bb6",
+				"kind": "note",
+				"role": "performance",
+				"subject": "pr:332",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "nice -n 19 python -u /Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-after.py",
+					"exit_code": 0,
+					"log": "/Users/jordanknight/.copilot/session-state/2c4d4a94-b597-4f4e-b664-302f3c41c5ee/files/pr332-after.json"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "F276 / #332 AFTER COMPLETE.\n\nExact deployment: 3707709efd6bb731b4de96c32b2a4d4e12363bb6, daemon PID42265 (health reports3707709efd). #332's merge receipt identifies this full commit; the deployed retirement queue, park-notice, revive-intent and constants files match reviewed b9f87dcfe21f50f00f19413a710a02d40f36ad9a. Matching healthy head/PID pings bracket every live snapshot.\n\nBEFORE anchor: the prime's ~/.pij-rs/pij.sqlite.pre-f276 backup, mtime November22 08:50:27+10 (November21 22:50:27UTC), schema50 and independently checked quick_check=ok. It has377 open delivery jobs:345 eligible jobs across146 recipients plus32 young jobs. Its eligible job-ID cohort matches the earlier read-only BEFORE count; the receipt preserves its cohort SHA256. No backup or live file was modified.\n\nRecorded retirement batches (timestamps are canonical fact/sweep timestamps, not full-pass timings):\n\n| November22, +10 | Jobs retired | Eligible cohort remaining |\n| --- | ---: | ---: |\n| 08:52:57.570 | 64 | 281 |\n| 08:53:58.241 | 64 | 217 |\n| 08:54:58.271 | 64 | 153 |\n| 08:56:02.324 | 64 | 89 |\n| 08:57:03.610 | 64 | 25 |\n| 08:58:03.649 | 25 | 0 |\n\nAt the completed snapshots09:00:03-09:00:05+10 (November21 23:00:03-23:00:05UTC):\n\n- The live age-qualified eligible-open count is0. All345 backup-cohort jobs are failed with undelivered:recipient-retired; no other terminal outcome and no missing row. All32 young jobs remain pending/running;0 were recipient-retired.\n- Exactly345 delivery.parked facts match those jobs and345 adjacent delivery.outcome facts match their message/sender/recipient and refusal reason:690 canonical retirement facts. No duplicate retirement fact and no batch over64.\n- All15 expected notices for the three live local senders have15 distinct durable delivery-ledger identities and15 delivery.park-notice audits. Ledger origins:5 reader-read,10 injected-to-transport. Six also have completed queue carriers, zero FYI carriers; those six OVERLAP the ledger evidence and are not extra admissions. No duplicate queue/FYI admission, ledger identity or audit, and no notice to a backup-dead/missing/pij-bg sender. Sender liveness was unchanged at the observed snapshots.\n- The complete result was unchanged at a later snapshot more than60s after the first complete observation. No duplicate notice or retirement was found across these sweeps. This is bounded-window proof, not a forever/no-restart guarantee or a claim that every injected notice was semantically read by a model.\n\nMethod: backup and live opened with SQLite URI mode=ro and query_only=ON; one read transaction per snapshot, closing before sleeping. No live claim, retirement, send-as test, bounce, receiver change, copy or build. A guarded bounded observer sampled about once per60s and compared the cohort, canonical fact pairs, queue/FYI carriers, delivered ledger and audit records. The first observer was stopped only to add missing DIRECT-send ledger coverage; its snapshots are retained and explicitly marked as queue/FYI-only notice counts. No production behavior was changed.\n\nReceipt command: nice -n19 python -u <this-session>/files/pr332-after.py -- exit0. Persistent aggregate receipt: <this-session>/files/pr332-after.json; logs: pr332-after-monitor.log and pr332-after-monitor-ledger.log. The receipt contains head/PID checks, backup provenance/cohort hash, all sampled counts and batch timestamps, not message bodies or sender lists.\n\nNo Rust full-sweep CPU/latency claim is made. The requested backlog, young-row, outcome/fact and live-sender/no-duplicate AFTER obligations are closed.\n\nHolding disposition: the authoritative performance/332 row already ended at08:52:59.986+10 by the merger, reason PR#332 merged(3707709efd6b). Released state is verified; no reassign or duplicate release is needed.\n"
+		}
+	]
+}
