@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "On resuming PR327 or carrying a reviewed feature across a merge-only head; resolves the earlier unpublished-draft note",
+				"tags": [
+					"cost",
+					"F275",
+					"convergence",
+					"proof",
+					"finality"
+				],
+				"title": "F275 convergence: both-parent proof carries the cost pass"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Resolves the pending-publication status in the previous F275 note. PR327 moved from4830d73 to062aa0af90a81f393d81286304c4fecfd392c7ca by merging main85fe143e (#325). All five F275 implementation/test files are identical to4830d73; the imported F271 runtime/helper files match the main parent. Only the conflict resolution was docs-only, not the whole delta. The append preserves D-F271b/D-F271c before D-F275.\n\nR1 cost PASS carries to062aa0a; no extra F275 loop/update/transaction. Exact-head CI44929025733/job136921356688/artifact14717485437:2838 cases, zero failed/error/skipped; fifteen F275/F270/F271/spawn cases pass. New-head freeze FINAL; local quick gate still dependency-red under C25. No verdict ever published at4830d73.\n\nmagicWand: use both-parent file comparisons for merge-only review carry-over, and a last-moment freeze before the governed writer. Imported runtime files are not feature edits when they match the main parent exactly.\n"
+		}
+	]
+}
