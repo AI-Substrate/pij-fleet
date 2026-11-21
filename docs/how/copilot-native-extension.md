@@ -265,8 +265,8 @@ reloads.
 [installed SDK contract](#installed-sdk-contract-d-f208-1) on the version now
 installed, and:
 
-- on a pass, records that version in `harness/copilot-sdk-verified.json` (commit
-  it) and says the fleet may reload Copilot seats;
+- on a pass, says the fleet may reload Copilot seats. The contract's full pass
+  has recorded a local pass for that version (below); there is nothing to commit;
 - on any failure, exits 1 with `do not reload: the SDK would drop pij_send/hooks`
   and the failing checks: leave seats on the old process and fix the extension
   for the new shape first;
@@ -276,14 +276,28 @@ installed, and:
 applies a download at the next launch, and 17 Nov's 1.0.113 arrived that way, so
 a seat's `/restart` or relaunch can be the update. Then the first sign is the
 contract's version warning in `just doctor` and `harness checks` (`copilot-sdk`):
-`Copilot is <new>, but the last verified version is <old>: run just
-copilot-sdk-contract before reloading seats; after a pass, run just
-copilot-sdk-contract --record and commit harness/copilot-sdk-verified.json.`
-Treat it as the same step: no more seat reloads until the contract has passed
-and is recorded.
+`Copilot is <new>, but neither the committed floor (<old>) nor a local pass
+names it: run just copilot-sdk-contract before reloading seats.` Treat it as the
+same step: no more seat reloads until the contract has passed.
+
+**Local passes (F250).** Every full pass of the contract on the installed CLI's
+own SDK writes `<state-dir>/copilot-sdk-pass/<version>.json` (pij-rs's state
+dir: `PIJ_RS_STATE_DIR`, else `~/.pij-rs`; mode 0600, written to a new file and
+renamed into place) with the version, the pass time, the check count and the
+contract's commit (read from the checkout's git files, no launch). The contract
+then accepts the installed version when the committed floor
+`harness/copilot-sdk-verified.json` or a local pass names it exactly, so Copilot's
+own updates need no record PR. A local pass counts only if it is whole: it names
+the version asked for, has a parseable pass time and the contract's current check
+count, and is a regular file (never a symlink). Anything else is treated as
+absent, and the sensor warns as before. A run given `--sdk` or
+`--copilot-version` checked something other than the installed CLI and records
+nothing. The committed floor still moves only with `--record`, and CI, which has
+no Copilot CLI, skips as before.
 
 Cost: on demand only. No loop, hook or timer; one run is the update plus one
-contract run.
+contract run. A local pass adds no launch: the contract writes and reads one
+small file in-process.
 
 ## In-place CLI upgrade
 
@@ -550,9 +564,9 @@ the run with each stderr event 50 ms late and cut mid-line (R259-001).
 It skips (exit 0) when no Copilot CLI is installed, as in CI, so it guards the
 machines that run seats. It runs in `just doctor` (a failure is reported there,
 as every doctor line is), `just self-check`, and `harness checks` as the `copilot-sdk`
-sensor. `harness/copilot-sdk-verified.json` records the version it last passed
-on: a pass on another version is `warn` until `just copilot-sdk-contract --record`
-updates the record. Any failure fails, and the `copilot-sdk` sensor takes only an
+sensor. A pass is `pass` when `harness/copilot-sdk-verified.json` (the committed
+floor) or a local pass names the installed version (§ On a Copilot update), and
+`warn` otherwise. Any failure fails, and the `copilot-sdk` sensor takes only an
 explicit `pass`, `warn` or `skipped` from the report (anything else is a `warn`
 carrying the output). Pass `--copilot-version <v>` or `--sdk <path>`
 to check another installed runtime. The pre-F208 flat shape passes on 1.0.112-0

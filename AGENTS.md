@@ -241,10 +241,13 @@ citation disputes, all of which resolved as neither party being wrong.)
 - **`just update-omp`** reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
 - **`just update-copilot`** is the one way to take a Copilot CLI update: it runs
-  `copilot update`, then `just copilot-sdk-contract` on the new version, records
-  it on a pass, and otherwise says **do not reload** (D-F208-2). Copilot also
-  updates itself: a `copilot-sdk` warn in `just doctor` or `harness checks` means
-  run just copilot-sdk-contract before reloading seats.
+  `copilot update`, then `just copilot-sdk-contract` on the new version, and
+  otherwise says **do not reload** (D-F208-2). A full pass records a local pass
+  for that exact version in `~/.pij-rs/copilot-sdk-pass/` (F250): nothing to
+  commit, no PR per version. `harness/copilot-sdk-verified.json` stays the
+  committed floor CI reads. Copilot also updates itself: a `copilot-sdk` warn in
+  `just doctor` or `harness checks` means run just copilot-sdk-contract before
+  reloading seats; its pass clears the warn on this machine.
 - **`just pr-freeze <pr>`**: is a PR head final for verdicts? Run by hand before each verdict
   request and before READY. FINAL (exit 0) only when `git ls-remote` and `gh` agree on the head,
   the base is main, it is CLEAN, every check's latest run passed, it is not draft, its migrations

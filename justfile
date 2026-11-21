@@ -147,15 +147,17 @@ copilot-native-smoke *ARGS:
 
 # D-F208-1: does the INSTALLED Copilot SDK register pij's tools and hooks? Runs
 # the real extension against `copilot`'s own SDK over its JSON-RPC wire. Skips
-# when no Copilot CLI is installed (CI); warns when it passed on a version not
-# yet recorded in harness/copilot-sdk-verified.json (`--record` records it).
+# when no Copilot CLI is installed (CI). A full pass records a local pass for
+# the version in ~/.pij-rs/copilot-sdk-pass/ (F250); it warns on a version that
+# neither a local pass nor harness/copilot-sdk-verified.json (the committed
+# floor; `--record` moves it) names.
 copilot-sdk-contract *ARGS:
     @harness/scripts/nice19.sh node harness/scripts/copilot-sdk-contract.mjs "$@"
 
 # D-F208-2: the one way to take a Copilot CLI update. `copilot update`, then the
-# installed-SDK contract on the new version; on a pass it records the version
-# (commit harness/copilot-sdk-verified.json) and says the fleet may reload
-# seats, otherwise it stops: do not reload. With no update it still checks.
+# installed-SDK contract on the new version; on a pass (a local pass recorded,
+# nothing to commit) it says the fleet may reload seats, otherwise it stops: do
+# not reload. With no update it still checks.
 update-copilot:
     @harness/scripts/nice19.sh node harness/scripts/update-copilot.mjs
 

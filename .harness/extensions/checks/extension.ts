@@ -96,7 +96,7 @@ const SENSORS: Sensor[] = [
 		args: ["copilot-sdk-contract", "--json"],
 		reports: true,
 		proves:
-			"the installed Copilot CLI's own SDK registers pij_send and pij's hooks (D-F208-1); skipped without a Copilot CLI, warns on a version not yet recorded",
+			"the installed Copilot CLI's own SDK registers pij_send and pij's hooks (D-F208-1); skipped without a Copilot CLI, warns on a version neither the committed floor nor a local pass (F250) names",
 	},
 	{
 		name: "route-inventory",
