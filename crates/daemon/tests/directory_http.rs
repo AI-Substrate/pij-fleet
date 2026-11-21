@@ -7259,7 +7259,8 @@ async fn a_reply_to_a_closed_request_gets_the_same_gate() {
 #[tokio::test]
 async fn a_refused_role_reply_and_a_contradicted_caller_answer_nothing() {
     let (rig, repo, _) = limit_rig("pij-reply-refused", false).await;
-    // The PA is a native Copilot seat with no receiver: it refuses delivery.
+    // The PA is a native Copilot seat with no live receiver: once its holds
+    // are full (F260), it refuses delivery.
     let mut native = SeatDescriptor::new("pij-native-pa", Harness::Copilot, "/tmp");
     native.proc = Some(pij_core::model::ProcIdentity {
         pid: 191,
@@ -7285,7 +7286,8 @@ async fn a_refused_role_reply_and_a_contradicted_caller_answer_nothing() {
     .await;
     assert_eq!(assigned["ok"], true, "{assigned}");
     // Its receiver was attested for one session, and the seat has since moved
-    // to another: the receiver no longer matches, so delivery is refused.
+    // to another: the receiver no longer matches, so bodies to it are held
+    // (F260) until its holds are full, and then refused.
     rig.delivery
         .attest_native_receiver(
             &SeatId::from("pij-native-pa"),
@@ -7306,6 +7308,22 @@ async fn a_refused_role_reply_and_a_contradicted_caller_answer_nothing() {
         .unwrap();
     moved.harness_session = Some("native-92".into());
     rig.services.registry.put(moved).await.unwrap();
+    for n in 0..pij_core::delivery::NATIVE_HOLD_LIMIT {
+        let held = rig
+            .delivery
+            .send(
+                SeatId::from("pij-holder"),
+                SeatId::from("pij-native-pa"),
+                format!("fills the hold {n}"),
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(held.outcome, pij_core::model::DeliveryOutcome::Held { .. }),
+            "{n}: {:?}",
+            held.outcome
+        );
+    }
     let answered = || {
         let store = rig.store.clone();
         async move {

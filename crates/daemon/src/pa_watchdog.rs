@@ -1463,8 +1463,8 @@ async fn lapsed_receivers(services: &Services, rows: &[FleetRow]) -> Vec<FleetAn
         .into_iter()
         .map(|(seat, renewed)| FleetAnomaly {
             detail: format!(
-                "native receiver lease lapsed ({}), so sends to it are refused \
-                 (native-extension-unavailable), and an extensions_reload ask cannot reach it \
+                "native receiver lease lapsed ({}), so sends to it are held until it renews \
+                 (F260; native-extension-unavailable), and an extensions_reload ask cannot reach it \
                  either. Restart it from its pane: `pij send {} --command restart` (Copilot's \
                  /restart, typed when the seat is idle with an empty composer; it keeps the \
                  session); a receive-held line in its extension log names the cause",

@@ -487,11 +487,21 @@ impl DeliveryService {
             .as_millis() as u64;
         drop(receivers);
         self.native_receiver_changed.notify_one();
-        // D1: the heartbeat that ends a told lapse says so, once.
-        if renew && self.native_lapsed.lock().await.remove(seat) {
-            let at = (self.clock)().ok();
-            self.tell_receiver_edge(NATIVE_RECEIVER_RENEWED, seat, at)
-                .await;
+        // D1: the heartbeat that ends a told lapse says so, once. F260: it
+        // first returns the bodies held for this seat to the queue; if that
+        // fails, the lapse stays told and the next heartbeat tries again.
+        if renew && self.native_lapsed.lock().await.contains(seat) {
+            match self.recover_held(seat).await {
+                Ok(()) => {
+                    self.native_lapsed.lock().await.remove(seat);
+                    let at = (self.clock)().ok();
+                    self.tell_receiver_edge(NATIVE_RECEIVER_RENEWED, seat, at)
+                        .await;
+                }
+                Err(error) => {
+                    eprintln!("pij-rs could not return held messages to {seat}: {error}");
+                }
+            }
         }
         Ok(NativeReceiverHeartbeat {
             state: "live",
@@ -675,6 +685,14 @@ impl DeliveryService {
         self.receiver_live(&receivers, seat)
     }
 
+    /// F260: would a body to `seat` be held now, its native receiver lapsed?
+    pub(crate) async fn native_receiver_lapsed(&self, seat: &SeatDescriptor) -> bool {
+        seat.harness == Harness::Copilot
+            && seat.native_extension_delivery
+            && seat.tombstoned_at.is_none()
+            && !self.native_receiver_live(seat).await
+    }
+
     /// Whether `seat`'s receiver lease is live: its own incarnation renewed it
     /// within the lease, or, with no lease yet, the daemon started within one.
     fn receiver_live(
@@ -808,28 +826,32 @@ impl DeliveryService {
                     self.tell_receiver_edge(NATIVE_RECEIVER_LAPSED, &seat.id, renewed_at)
                         .await;
                 }
-                let (count, next_guard) = self.park_native_receiver(&seat.id, guard).await?;
-                parked += count;
+                let (held, next_guard) = self.park_native_receiver(&seat.id, guard).await?;
+                parked += held.len();
                 guard = next_guard;
             }
         }
         Ok(parked)
     }
 
+    /// Park every queued body of `seat` from its head (F124's brake: never
+    /// deliver into a lapsed receiver). Returns each parked message's id with
+    /// the instant its hold ends (F260), in Unix milliseconds.
     async fn park_native_receiver(
         &self,
         seat: &SeatId,
         mut guard: tokio::sync::OwnedMutexGuard<()>,
-    ) -> Result<(usize, tokio::sync::OwnedMutexGuard<()>)> {
+    ) -> Result<(Vec<(String, u64)>, tokio::sync::OwnedMutexGuard<()>)> {
         let kinds = [delivery_kind(seat)];
-        let mut count = 0;
+        let mut parked_ids = Vec::new();
         while let Some((job_id, job)) = self.queue.peek(&kinds).await? {
             pij_core::delivery::require_recovery_authority(self.recovery_authority_shared)?;
             let queue = self.queue.clone();
             let spine = self.event_bus.raw_spine();
             let seat = seat.clone();
             let at = (self.clock)()?;
-            let (parked, next_guard) = self
+            let attempt = job.attempt;
+            let (held_until, next_guard) = self
                 .event_bus
                 .publish_committed_batch(async move {
                     let evidence = pij_core::ports::ParkingEvidence {
@@ -838,20 +860,126 @@ impl DeliveryService {
                         at,
                     };
                     let (parked, events) = queue
-                        .park_delivery(job_id, &seat, job.attempt, &evidence, spine.as_ref())
+                        .park_delivery(job_id, &seat, attempt, &evidence, spine.as_ref())
                         .await?;
-                    Ok((events, (parked.is_some(), guard)))
+                    let held_until = parked.map(|_| {
+                        events
+                            .iter()
+                            .filter(|event| event.kind == "delivery.parked")
+                            .find_map(|event| {
+                                serde_json::from_str::<serde_json::Value>(&event.payload)
+                                    .ok()?["heldUntil"]
+                                    .as_u64()
+                            })
+                            .unwrap_or(at)
+                    });
+                    Ok((events, (held_until, guard)))
                 })
                 .await?;
             guard = next_guard;
             // A manual CLI read owns its ordinary claim lease, not the native
             // receiver lease. Leave that running head and its successors alone.
-            if !parked {
+            let Some(held_until) = held_until else {
                 break;
-            }
-            count += 1;
+            };
+            parked_ids.push((job.dedupe_key, held_until));
         }
-        Ok((count, guard))
+        Ok((parked_ids, guard))
+    }
+
+    /// F260: a body for a native receiver whose lease lapsed is held, not
+    /// lost. It is queued and parked at once (so F124's brake still holds:
+    /// nothing is delivered into the lapsed receiver), and its receipt says
+    /// `held` and until when. The lease's renewal returns it to the queue
+    /// ([`Self::recover_held`]); the park notice sweep tells the sender if the
+    /// hold expires first. A recipient whose holds are full is refused, as
+    /// every such send was before F260.
+    async fn hold_for_lapsed_receiver(
+        &self,
+        msg: &Msg,
+        recipient: &SeatDescriptor,
+        at: u64,
+        guard: tokio::sync::OwnedMutexGuard<()>,
+    ) -> Result<Receipt> {
+        let to = &recipient.id;
+        let receipt = |outcome| Receipt {
+            msg_id: msg.msg_id.clone(),
+            outcome,
+            at,
+            cold_check: None,
+            warning: None,
+        };
+        let held = self.queue.held_native_count(to).await?;
+        if held >= pij_core::delivery::NATIVE_HOLD_LIMIT {
+            let receipt = receipt(DeliveryOutcome::Refused {
+                reason: format!(
+                    "{NATIVE_RECEIVER_UNAVAILABLE}: native receiver for {to} has not renewed its \
+                     lease, and it already holds {held} messages for when it does"
+                ),
+            });
+            publish_delivery_outcome(&self.event_bus, to, &receipt, "extension-stream").await?;
+            return Ok(receipt);
+        }
+        // The renewal that recovers this body is the one that ends a told
+        // lapse: a send can find the lease lapsed before reconciliation does.
+        if self.native_lapsed.lock().await.insert(to.clone()) {
+            let renewed_at = self.last_renewal_ms(recipient).await;
+            self.tell_receiver_edge(NATIVE_RECEIVER_LAPSED, to, renewed_at)
+                .await;
+        }
+        if let DeliveryEnqueue::AlreadyDelivered(origin) =
+            self.enqueue_carrier(msg, recipient, false).await?.0
+        {
+            return Ok(receipt(DeliveryOutcome::Delivered { origin }));
+        }
+        let (parked, _guard) = self.park_native_receiver(to, guard).await?;
+        // Not parked: a manual CLI read holds the head, so this body waits
+        // queued behind it and is parked (held) by the next reconciliation.
+        let held_until = parked.iter().find(|(id, _)| *id == msg.msg_id).map_or_else(
+            || at.saturating_add(pij_core::delivery::NATIVE_HOLD_SECS.saturating_mul(1_000)),
+            |(_, until)| *until,
+        );
+        let receipt = receipt(DeliveryOutcome::Held {
+            reason: pij_core::delivery::native_hold_reason(to.as_str(), held_until),
+        });
+        // The refused transport is the native extension's, never the daemon's
+        // own message transport (F124: a Copilot refusal named `claude-uds`).
+        publish_delivery_outcome(&self.event_bus, to, &receipt, "extension-stream").await?;
+        Ok(receipt)
+    }
+
+    /// F260: the renewal that ends a told lapse returns every body held for
+    /// `seat` to the queue, under the native lock, so its receiver claims them
+    /// through the ordinary path. Each gets a `queued` outcome on the
+    /// recipient's seat, which also wakes a waiting claim.
+    async fn recover_held(&self, seat: &SeatId) -> Result<()> {
+        let recovered = self.queue.recover_held_native_deliveries(seat).await?;
+        let at = (self.clock)()?;
+        for (_, job) in recovered {
+            let receipt = Receipt {
+                msg_id: job.dedupe_key,
+                outcome: DeliveryOutcome::Queued {
+                    reason: Some("native-receiver-renewed".into()),
+                    next_retry_at: None,
+                    draft_sha: None,
+                },
+                at,
+                cold_check: None,
+                warning: None,
+            };
+            publish_delivery_outcome(&self.event_bus, seat, &receipt, "extension-stream").await?;
+        }
+        Ok(())
+    }
+
+    /// F260: end one held body's hold now, so it is never recovered. True
+    /// when its sender is owed an expiry notice (see [`Queue::expire_native_hold`]).
+    ///
+    /// # Errors
+    /// Queue failures.
+    pub(crate) async fn expire_native_hold(&self, job: JobId, recipient: &SeatId) -> Result<bool> {
+        let _guard = self.native_lock.lock().await;
+        self.queue.expire_native_hold(job, recipient).await
     }
 
     fn queued_outcome(reason: Option<&str>, not_before_ms: u64) -> DeliveryOutcome {
@@ -1359,27 +1487,10 @@ impl DeliveryService {
             && recipient.tombstoned_at.is_none()
             && !self.native_receiver_live(&recipient).await
         {
-            let (_, _guard) = self
-                .park_native_receiver(
-                    &to,
-                    native_guard.expect("native body admission is serialized"),
-                )
-                .await?;
-            let receipt = Receipt {
-                msg_id: msg.msg_id,
-                outcome: DeliveryOutcome::Refused {
-                    reason: format!(
-                        "{NATIVE_RECEIVER_UNAVAILABLE}: native receiver for {to} has not renewed its lease"
-                    ),
-                },
-                at,
-                cold_check: None,
-                warning: None,
-            };
-            // The refused transport is the native extension's, never the daemon's
-            // own message transport (F124: a Copilot refusal named `claude-uds`).
-            publish_delivery_outcome(&self.event_bus, &to, &receipt, "extension-stream").await?;
-            return Ok(receipt);
+            let guard = native_guard.expect("native body admission is serialized");
+            return self
+                .hold_for_lapsed_receiver(&msg, &recipient, at, guard)
+                .await;
         } else {
             native_guard
         };
@@ -5380,16 +5491,17 @@ mod tests {
                 fixture.registry.put(seat.clone()).await.unwrap();
             }
             tokio::time::advance(lease).await;
-            let refused = fixture
+            let held_send = fixture
                 .service
                 .send("pij-from".into(), seat.id.clone(), "after death")
                 .await
                 .unwrap();
+            // F260: held for the receiver's renewal, never delivered into it.
             assert!(
-                matches!(&refused.outcome, DeliveryOutcome::Refused { reason }
-                    if reason.contains("native-extension-unavailable") && reason.contains(seat.id.as_str())),
+                matches!(&held_send.outcome, DeliveryOutcome::Held { reason }
+                    if reason.starts_with("native-receiver-lapsed") && reason.contains(seat.id.as_str())),
                 "a live Copilot host cannot hide an expired receiver: {:?}",
-                refused.outcome
+                held_send.outcome
             );
             assert_eq!(
                 fixture.registry.get(&seat.id).await.unwrap(),
@@ -5409,7 +5521,11 @@ mod tests {
                     .iter()
                     .map(|row| row.message.msg_id.as_str())
                     .collect::<Vec<_>>(),
-                vec![first.msg_id.as_str(), second.msg_id.as_str()]
+                vec![
+                    first.msg_id.as_str(),
+                    second.msg_id.as_str(),
+                    held_send.msg_id.as_str()
+                ]
             );
             for row in parked {
                 assert_eq!(row.state.as_deref(), Some("failed"));
@@ -5439,8 +5555,8 @@ mod tests {
                 .collect();
             assert_eq!(
                 parked.len(),
-                2,
-                "each retained body parks once; refused sends never queue"
+                4,
+                "each body parks once, the held sends included"
             );
             for event in parked {
                 assert_eq!(event["recipient"], seat.id.as_str());
@@ -5451,8 +5567,8 @@ mod tests {
                 .iter()
                 .filter(|event| event.kind == "delivery.outcome")
                 .map(|event| serde_json::from_str::<Value>(&event.payload).unwrap())
-                .find(|payload| payload["msg_id"] == refused.msg_id.as_str())
-                .expect("the refusal is published");
+                .find(|payload| payload["msg_id"] == held_send.msg_id.as_str())
+                .expect("the hold is published");
             assert_eq!(
                 outcome["transport"], "extension-stream",
                 "a native refusal names the native transport (F124)"
@@ -5581,15 +5697,12 @@ mod tests {
                 .is_err()
         );
         tokio::time::advance(half).await;
-        assert!(matches!(
-            fixture
-                .service
-                .send("pij-from".into(), seat.id.clone(), "dead")
-                .await
-                .unwrap()
-                .outcome,
-            DeliveryOutcome::Refused { .. }
-        ));
+        let held = fixture
+            .service
+            .send("pij-from".into(), seat.id.clone(), "dead")
+            .await
+            .unwrap();
+        assert!(matches!(held.outcome, DeliveryOutcome::Held { .. }));
         fixture
             .service
             .heartbeat_native_receiver(&seat.id, &identity, 1, 1, None)
@@ -5600,19 +5713,22 @@ mod tests {
             .send("pij-from".into(), seat.id.clone(), "reconnected")
             .await
             .unwrap();
-        let claim = fixture
-            .service
-            .claim_native_inbox(&seat.id, false, &identity)
-            .await
-            .unwrap()
-            .claims
-            .remove(0);
-        assert_eq!(claim.message.msg_id, sent.msg_id);
-        fixture
-            .service
-            .acknowledge_inbox(&seat.id, claim.job_id, &identity, None)
-            .await
-            .unwrap();
+        // F260: the renewal returned the held body first; both arrive, in order.
+        for expected in [&held.msg_id, &sent.msg_id] {
+            let claim = fixture
+                .service
+                .claim_native_inbox(&seat.id, false, &identity)
+                .await
+                .unwrap()
+                .claims
+                .remove(0);
+            assert_eq!(&claim.message.msg_id, expected);
+            fixture
+                .service
+                .acknowledge_inbox(&seat.id, claim.job_id, &identity, None)
+                .await
+                .unwrap();
+        }
     }
 
     // Regression from the reviewer's live-receiver theft and dead-window probes.
@@ -5798,7 +5914,7 @@ mod tests {
                 .await
                 .unwrap()
                 .outcome,
-            DeliveryOutcome::Refused { .. }
+            DeliveryOutcome::Held { .. }
         ));
         let events = fixture.spine.tail(None, Seq(0)).await.unwrap();
         assert_eq!(
@@ -5806,7 +5922,8 @@ mod tests {
                 .iter()
                 .filter(|event| event.kind == "delivery.parked")
                 .count(),
-            1
+            2,
+            "the original park, then the held send's (F260)"
         );
     }
 
