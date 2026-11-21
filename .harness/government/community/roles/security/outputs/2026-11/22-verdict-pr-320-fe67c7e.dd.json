@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fe9e-a06b-7712-9f93-7e7a65376e78",
+				"date": "2026-11-22",
+				"head": "fe67c7e26d89c3abbc18b5cd139f77714fba56c1",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:320",
+				"writer": "pij-selected-deer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "gh pr checks 320 --json name,state",
+					"exit_code": 0,
+					"log": "5/5 SUCCESS at fe67c7e"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #320 round 2 at fe67c7e26d89c3abbc18b5cd139f77714fba56c1: pass\n\nStatic review of 0619ac3e (the R2 fixes) and the merge fe67c7e2, in a detached worktree. I triggered no lapse or renewal. CI 5/5 SUCCESS at this head.\n\n## Can a caller forge a \"renewed with this daemon\" record for another seat?\nNo new reach. The new brake (`native_receiver_renewed`, delivery/mod.rs) only reads `native_receivers[seat].renewed_at`, which has two writers:\n- `update_native_receiver(renew = true)` from `heartbeat_native_receiver`. Under `native_lock`, this first requires `inbox_recipient(seat, identity)` to resolve to the seat's current registration, a Copilot seat with native delivery, or it refuses. It is the same identity-gated heartbeat as before this PR.\n- `attest_registered_native_receiver(takeover)`, reached only from registration.rs:1681 inside the registration path.\n\nA forgery would therefore need the seat's native identity (native_session, pid, proc_start) on an authenticated daemon call: C33, the same bar as forging a heartbeat before this PR.\n\n## Is the incarnation check tight?\nYes. The brake requires `receiver.identity.matches(&registry row)` for the CURRENT row, read under `native_lock`, AND `renewed_at` within one lease.\n- A renewal by an earlier incarnation, or by a different pid/proc_start, does not spare the seat.\n- A forged renewal can spare a seat for at most one lease, after which its renewal has expired. A missing row, a failed read or a mismatch fall to the existing paths.\n- A failed read spares and records nothing.\n\nBrake test: removing the check only adds restarts, so it is a BRAKE. It is in memory, so after a bounce it is empty and falls back to round-1 behaviour (the restart question is the reviewer's).\n\n## B320-02\n`native_renewal_owed` is keyed by the same identity-gated heartbeat, and is pruned to live native seats with every lease prune. It holds only seat ids, so a caller cannot add a seat without that seat's heartbeat. `native_lapsed` is back to edge dedup only, which removes the round-1 \"re-park\" side effect I had assessed.\n\nNo new notes. No secrets, lockfile or `.npmrc` changes.\n"
+		}
+	]
+}
