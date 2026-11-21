@@ -71,4 +71,5 @@
 - [2026-11-21 Quiet-pane backstop averages and observer-only counters](2026-11-21-quiet-pane-backstop-averages-and.dd.md): Before pricing pane-observer replay or interpreting deployed observer counters (F258, pane-observer, counters, measurement)
 - [2026-11-21 Tmux absence proof and launched-read budgets](2026-11-21-tmux-absence-proof-and-launched-read.dd.md): Before changing tmux cleanup, Linux holder census, bounce waits or resuming after PR299 (tmux, F247, F248, bounds, proof, handover)
 - [2026-11-21 Whoami instrumentation: off-scope cost and wall time](2026-11-21-whoami-stage-overhead.dd.md): Before pricing shared task-local timers or interpreting whoami stage counters (cost, whoami, instrumentation, wall-time, proof)
+- [2026-11-22 Compact handoff: open reviews and pending batched AFTER](2026-11-22-compact-open-reviews-after.dd.md): On resuming this seat or taking over performance/320, performance/322 or the \#318/\#321 AFTER verification (handover, receipts, after-deploy, ownership)
 <!-- /pij:generated -->
