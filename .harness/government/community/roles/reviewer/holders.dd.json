@@ -2803,6 +2803,16 @@
 					"machine": "JordansacStudio.localdomain",
 					"seat": "pij-anonymous-mongoose",
 					"why": "#322 F270 round 1 (reuse)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T15:18:24.433Z",
+					"harness": "copilot",
+					"harness_session": "f1dae566-30c8-4ef6-9854-9eba059f2d1c",
+					"instance_key": "323",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-complex-alpaca",
+					"why": "#323 F272 round 1 (reuse)"
 				}
 			]
 		}
