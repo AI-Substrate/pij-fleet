@@ -1,0 +1,68 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1feaf-ed28-77e3-a3e5-ad247827cec6",
+				"date": "2026-11-22",
+				"head": "134b0109a468024892eccf161392e1272d3bfa58",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:323",
+				"writer": "pij-complex-alpaca",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Existing non-blocking distinction: assign warning checks open holdings, while duplicate-release advice checks live seats; no lifecycle-policy change requested"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib picture -- --nocapture --then test -p pij-daemon --test directory_http per_pr_instances_ -- --nocapture",
+					"exit_code": 0,
+					"log": "pr323-baseline.log and pr323-restored.log: 15 picture + 1 assign/view regression passed; repeated-seat/dead/closed/mixed/kept-seat control included"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib -- per_pr_instances reviewer_323 --nocapture",
+					"exit_code": 101,
+					"log": "pr323-grouping-mutant.log: both assertions caught instance-blind grouping; successful compilation"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --test directory_http per_pr_instances_ -- --nocapture",
+					"exit_code": 101,
+					"log": "pr323-warning-mutant.log: independent instance-blind warning killed by no-warning assertion; successful compilation"
+				},
+				{
+					"command": "gh api repos/AI-Substrate/pij-fleet/actions/artifacts/14713000796/zip",
+					"exit_code": 0,
+					"log": "Exact-head job 136887571562, run 44917973935: 2813 JUnit cases, no failures"
+				},
+				{
+					"command": "just pr-freeze 323",
+					"exit_code": 0,
+					"log": "Final recheck: exact 134b010 head, FINAL/CLEAN, latest checks green, no migration"
+				},
+				{
+					"command": "harness checks --quick --json",
+					"exit_code": 1,
+					"log": "Dependency/ambient-Biome-limited under C25; native Copilot and skill checks pass; no local full-gate claim"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Reviewer/323 — round 1\n\nHead: `134b0109a468024892eccf161392e1272d3bfa58`.\n\n**Verdict: PASS WITH NOTES.** No new correctness blocker. Instance grouping and assign warning mutations are independently killed; all sixteen restored controls are green.\n\nThe duplicate identity is correct for this advice: `(role, instance, distinct seat)`, within the already-selected project. The bare role's empty instance is its own holding, not a wildcard for duplicate detection. A bare holder beside a named-instance holder is not a duplicate; two distinct live seats on the same bare or named holding are. Repeated rows for one seat alone do not create an action. Dead and closed holdings are filtered before grouping; `holders: many` receives no one-holder advice.\n\nGrouping preserves the input's oldest-first order, so each duplicate group keeps the existing open-work/newest-seat selection. The release filter compares seat identity rather than row pointer: older repeated rows belonging to the kept seat cannot produce a release of that seat. Commands preserve the holding's instance and `--project`, pass through the existing shell quoting and printable-key guards, and do not mutate anything automatically.\n\nConsumer closure was checked with hidden-source-aware searches: directory JSON computes the groups; the CLI renders that same `view[\"actions\"]`; the `unanswered_by_holder` read is gated by the shared grouping helper; assign warning compares same instance and excludes the same seat. No second old duplicate-advice computation was found. The remaining `live.len() > 1` in the FYI binding path concerns a pane's seat identity, not role holdings.\n\n`E-RS-ROLE-HOLDERS` remains separate and unchanged in `delivery/role_send.rs`. A bare role send can still be ambiguous across holdings even where no holding is duplicated; that is a routing refusal, not justification for releasing unrelated per-PR holdings. This PR does not weaken the multi-holder routing refusal or convert a warning into an admission refusal.\n\n**N323-1 (existing, non-blocking qualification):** assign's warning checks an open holding row, not current seat liveness. An old open row on a dead seat may still warn when assigning another seat to the same instance; this was true before the PR. The operating picture correctly excludes the dead seat from duplicate-release advice. Do not broaden this fix into a new lifecycle/admission policy merely to align that existing warning's wording.\n\nThe corrected duplicate classification is a **POLICY** fix for advice: changing the holding key changes which releases are recommended. It is not a retention rule or a newly executed destructive action. The existing open-work and printable-key checks are **BRAKES** on producing executable release advice. No live holding was assigned or released in this review.\n\nCost: no new timer, poll, process launch, or steady-state fleet tick. The grouping is in-process over already-loaded rows, with allocation and worst-case `O(H * I)` comparisons for H live rows and I instances, once in the action renderer and once in the read gate. Thus “none” means no external/recurring work, not literally zero CPU. The open-work store read now runs only for a real duplicate group.\n\n## Validation\n\n`just pr-freeze 323`: initially exit 0, FINAL/CLEAN at the requested head, latest five checks successful, no migration.\n\nExact-head CI run `44917973935`, successful rust-test job `136887571562`, upload-log-selected JUnit artifact `14713000796`: 2,813 cases, no failures. All fourteen picture tests and the new assign/view regression are present and passed.\n\nIndependent local baseline adds one focused same-seat/dead/closed/mixed-holder/kept-seat control to the frozen source in an owned archive, then runs `just shared-build -- test -p pij-daemon --lib picture -- --nocapture --then test -p pij-daemon --test directory_http per_pr_instances_ -- --nocapture`: exit 0, fifteen picture tests and the assign/view regression passed. No product worktree was edited.\n\nAuthor mutation patches/log summaries were inspected at the explicitly supplied `/tmp/f272/` paths. Each independent M1/M2 grouping mutant failed the new library and HTTP regression; M3 warning-scope mutant failed the HTTP regression. Those receipts were made before rustfmt/main convergence.\n\nIndependent requested-head grouping mutant (`find(|_| true)`, retaining the distinct-seat guard): `just shared-build -- test -p pij-daemon --lib -- per_pr_instances reviewer_323 --nocapture`: exit 101, both tests failed on the intended assertions, including the bare-plus-instance case. Independent warning mutant (ignore instance equality): `just shared-build -- test -p pij-daemon --test directory_http per_pr_instances_ -- --nocapture`: exit 101, the no-warning assertion failed for a different seat assigned to a different instance. Both compiled successfully. Each mutant was applied alone.\n\nBoth production guards are restored; `directory.rs` matches the frozen source byte-for-byte, and `picture.rs` differs only by the retained reviewer test patch. The baseline command returned exit 0 again: fifteen picture tests and one assign/view regression passed.\n\nLocal boot is dependency-limited under C25; exact-head CI is the broad test proof. All local cargo runs use the resolved shared target, shared-build lock, niceness 19, and four jobs.\n\n`harness checks --quick --json`: exit 1, missing worktree dependencies and incompatible ambient Biome; native Copilot contracts, SDK, and skill checks passed. No local full-gate success is claimed and no shared dependencies were linked or installed.\n\nEvidence retained: `pr323-reviewer-control.patch`, the grouping/warning mutation patches and logs, baseline/restored logs, local-checks envelope and exact-head JUnit archive. The owned temporary source archive is removed; the product worktree remains unchanged.\n\n**Harness lesson:** retain the same-seat duplicate-row/kept-seat oracle beside the new instance tests; identities are seats, not assignment-row addresses.\n"
+		}
+	]
+}
