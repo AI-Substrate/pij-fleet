@@ -2955,6 +2955,16 @@
 					"seat": "pij-written-mongoose",
 					"to": "2026-11-21T22:15:30.023Z",
 					"why": "#333 F278 R1 verdict"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-21T23:34:19.619Z",
+					"harness": "copilot",
+					"harness_session": "98661a44-a9d9-4811-9498-9eff52e2416a",
+					"instance_key": "334",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-vertical-marmot",
+					"why": "#334 F279 R1 verdict (fresh seat; C35-approved)"
 				}
 			]
 		}
