@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fcca-8781-7312-a6b2-244c69c91f16",
+				"date": "2026-11-21",
+				"head": "6f4c3b9010109bf5532864e48dcaa59d97603050",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:312",
+				"writer": "pij-real-tarsier",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"C34 follow-up R312-N1 (non-blocking): connect mandatory-index proof to actual Registry::list dispatch; a branch-removal mutant passed the current tests.",
+				"Performance/pm-001: live whoami after-measurement remains owed after the prime deploys and bounces; no deployment was performed by this reviewer."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 312",
+					"exit_code": 0,
+					"log": "FINAL at 6f4c3b9010109bf5532864e48dcaa59d97603050; five latest check groups pass"
+				},
+				{
+					"command": "just shared-build -- test -p pij-store --locked --lib --tests --then clippy -p pij-store --locked --all-targets -- -D warnings",
+					"exit_code": 0,
+					"log": "207 tests across 18 suites pass; macOS clippy clean"
+				},
+				{
+					"command": "isolated SQL-equivalence and sqlx migration probes",
+					"exit_code": 0,
+					"log": "1750 full-row/order comparisons pass; populated v47-to-v48 upgrade and second open preserve 50000 rows; prior-version guard refuses v48 at open and get"
+				},
+				{
+					"command": "isolated production dispatch and harness-predicate mutations",
+					"exit_code": 0,
+					"log": "Branch-removal mutant survived (2/2 tests pass); harness-filter-removal mutant killed by expected wrong-row assertion (runner exit 101), not compilation"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "C25 dependency-less worktree: missing local TS packages and mismatched ambient Biome; exact-head CI 44875077557 succeeds"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Reviewer: PASS-WITH-NOTES\nPR: 312\nHead: 6f4c3b9010109bf5532864e48dcaa59d97603050\nRound: 1 of at most 2 (C34)\nDate: 2026-11-21\n\nNo blocking correctness finding.\n\nEquivalence: crates/store/src/registry.rs:447-469,570-592 retain the same SELECT *, five numbered bind slots, harness/folder/parent/live_only predicates, and ORDER BY id. When pane is Some, ?4 is non-NULL, so replacing (?4 IS NULL OR pane=?4) with pane=?4 is exactly equivalent. Some(\"\") remains an exact value, distinct from None. A scratch SQLite probe extracted both production SQL constants and passed 1,750 full-row and order comparisons across combined filters, empty strings, NULL columns, absent values, retired rows and a quote-containing pane. This covers all pane-filter callers, including identity resolution, registration's pane-holder checks, and take-over; their authority and liveness guards are unchanged.\n\nMigration: 0048 creates a non-unique pane index, so repeated pane values and NULL panes remain valid. The raw CREATE INDEX is NOT independently idempotent: running it twice fails on the existing index. Supported boot/reopen IS idempotent because sqlx's migration ledger records migration 48 once and skips it subsequently. A real sqlx replay made two successive opens of a populated v47 store with 50,000 rows, upgraded it to v48, preserved all rows, returned the expected 50-row pane, kept one successful v48 ledger entry, and passed integrity_check. Migration 48 is above main's 47. An older v47 binary is intentionally NOT allowed to read v48: migrate.rs:174-187 refuses at open, and require_current_schema also refuses a live read after another binary upgrades the file. A source-level replay of the unchanged prior-version guards passed both open and registry-get refusals with found=48, expected=47. This is the existing directional-skew contract, not a new backward-reading promise.\n\nMissing index: INDEXED BY is a requirement, not a hint. Dropping seats_by_pane in scratch produced \"no such index: seats_by_pane\"; list maps that failure to the existing store/registry Adapter error instead of silently scanning. That deliberate failure is acceptable for this cost invariant. The migration ledger does not repair an index somebody drops externally, and no such repair is claimed.\n\nMerge: clean at the requested SHA. The B1 Rust, SQL and test files are unchanged from the first parent. The remerge diff shows the sole difficulties.md conflict resolved by keeping both D-F258-1 and D-F258-2. The diff against the main parent contains exactly the five PR files; diff --check passes.\n\nC34 follow-up R312-N1 (non-blocking): crates/store/tests/registry_pane_index.rs:96-121 explains LIST_BY_PANE_SQL directly rather than the SQL selected by Registry::list. Removing the actual pane branch and always selecting LIST_SQL still passed both committed tests (2/2). Thus the suite can stay green if this PR's optimization is accidentally disconnected. The simplest additional sensor is a test that opens a current scratch store, drops seats_by_pane, and asserts a pane-filtered Registry::list returns the Adapter error; that exercises the real branch without timing thresholds or new production machinery. The committed behavior test also does not exercise folder/parent combinations, despite its \"every other filter\" wording; the implementation retains both correctly and the scratch matrix verified them.\n\nMutation evidence: the production branch-removal mutant survived as above. Removing the harness predicate from the actual pane SQL was killed by the committed behavior test at line 67 (wrong seat ids; exit 101), not by a compile/setup failure. Independent SQL mutations removing harness, folder, parent and live_only predicates were all killed by result comparisons.\n\nCost scope: no new loop, timer, poll, process launch or launch site. Existing status lines drive this read per render, roughly 8-10 calls/s in the supplied fleet receipts, scaling with rendered sessions. The change replaces a total-registry scan with a pane-index seek plus matching rows; ORDER BY id still requires its existing result ordering, with the indexed plan showing a temporary sort. Index maintenance on seat writes is the new work. This is not a destructive change and introduces neither a deletion policy nor a safety brake. Performance owns the cost verdict; the live post-deploy whoami measurement remains owed after the prime's bounce. No live database writes, deployment, bounce, or pane interaction were performed.\n\nValidation:\n- just pr-freeze 312: FINAL at the full head, five latest check groups passing.\n- Exact-head CI run 44875077557: success, head SHA matches; check(22), check(24), rust-lint and rust-test all pass. Delivers also passes on this head.\n- just shared-build -- test -p pij-store --locked --lib --tests --then clippy -p pij-store --locked --all-targets -- -D warnings: exit 0, 207 tests in 18 suites, macOS clippy clean.\n- Isolated exact-head archive: registry_pane_index baseline 2/2; populated v47-to-v48 sqlx upgrade/reopen probe 1/1.\n- Prior-version guard replay: 1/1, explicit StoreSchemaStale { found: 48, expected: 47 } at store open and registry get.\n- Scratch SQL matrix/migration probe: exit 0, 1,750 equivalence cases; index SEARCH before/after ANALYZE; missing-index refusal; 50,600-row synthetic index build preserves rows and integrity.\n- harness boot: advisory ready=false, missing local TS dependencies. harness checks --quick: exit 1 on absent TS dependencies and an incompatible ambient Biome; three independent native/skill checks pass. Full local TS/Rust-workspace/smoke inventory is not claimed; C25 leaves TS proof to the passing exact-head CI. No dependency installation or symlink was used.\n\nHarness feedback: magicWand = bind index-plan proof to the query the real registry operation selects. Difficulty = detached C25 review trees cannot satisfy dependency-based local checks; exact-head CI and scoped nice-19 Rust checks are the available proof. The reusable sensor above is a follow-up, not a round-1 blocker.\n"
+		}
+	]
+}
