@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fbb3-691e-7290-a493-eb9154ca7411",
+				"date": "2026-11-21",
+				"head": "52ffd6c146b8515fff631ec1fd6c8b49ec408894",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass",
+				"role": "security",
+				"subject": "pr:305",
+				"writer": "pij-overseas-eel",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# Security verdict, #305 at 52ffd6c: pass\n\nThe fixes for S303-N1 and S303-N2 are verified, both statically and in a live browser.\n\n## No data reaches markup unescaped\n- **Static audit of the template.** There are three `innerHTML` sinks:\n  - the empty state (a constant);\n  - the tally (constants plus a count);\n  - `cardHtml`, where every data value now goes through `esc()`, including `colour` in `style=\"\"` and `pr`.\n\n  Every other data value is set through `textContent` or `setAttribute` (SVG paint). Every colour source (branch, stack, crew `realColour`, label `fill`) comes from `D.lines`/`D.sidings`, which `cleanData` normalises to `#rgb`/`#rrggbb` or `var(--muted)`. Stops are walked recursively: `pr` must be a positive safe integer, and `url` must start with `https://` (no `javascript:` or `data:`). The depot crew colour is the constant `var(--ink)`.\n- **Attribute contexts.** `esc()` alone does not stop CSS injection inside `style` (mutant M1 below shows it). The colour allow-list is what closes that: in the generator through `COLOUR_RE`, and again on page load through `safeColour`.\n- **Live test.** Headless Chrome ran on index.html with a hostile `fleet-map.data.js` written directly, so the generator's checks were bypassed and only the page-side layer was tested. The hostile values were:\n  - `colour = red;background:url(https://evil.example/c)\"><img onerror>`\n  - `pr = \"1<img onerror>\"`\n  - `url = javascript:` and `data:text/html`\n\n  Hovering all 24 data-key elements opened 24 cards. The card HTML contained no `<img>`, no `javascript:` or `data:` link and no `evil.example`, and `window.PWN` was never set. The valid PR #7 still rendered.\n- **Mutations** (scratch copies of probe.html; all caught):\n  - M1: `cleanData` disabled. The `javascript:` link and the `evil.example` CSS `url()` reach the cards.\n  - M2: M1, plus `esc` removed from colour. `<img>` markup is injected.\n  - M3: M1, plus `esc` removed from pr. `<img>` markup is injected.\n\n  So each layer carries weight.\n\n## No external requests (S303-N1)\n- The Google Fonts links are removed, and `<meta name=\"referrer\" content=\"no-referrer\">` is added.\n- Static scan: the template contains no `http(s)://` apart from the SVG namespace string, and no `url()` beyond in-page `#ids`. It has no `@import`, `fetch`, XHR, `Image`, `Worker`, `WebSocket`, `sendBeacon` or `location` use.\n- Chrome net-log of the standalone file: only Chrome's own background traffic (update2, variations, accounts, identical in the control run). There were no font or page-initiated requests.\n\n## gh argv cannot be steered\n- `execFileSync(\"gh\", [\"pr\",\"view\",String(n),\"-R\",repo,...])` runs with no shell.\n- `n` passes `prOf`, a positive safe integer, so nothing that isn't a number is ever looked up.\n- `repo` passes `REPO_RE`, which forbids a leading `-` or `.`, so it can't read as a flag or a path step.\n- The `pij outputs --subject pr:${n}` call uses the same integer.\n\n## C21\nThe added fixture and test lines use only `example.invalid` and `x.invalid` URLs. No secrets or home paths.\n"
+		}
+	]
+}
