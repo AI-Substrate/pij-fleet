@@ -20,7 +20,7 @@
         { "id": "a1", "name": "First merged", "pr": 11, "state": "merged" },
         { "id": "a2", "name": "Second merged", "pr": 12, "state": "merged" },
         { "id": "a3", "name": "In review", "pr": 13, "owner": "pij-fixture-a", "waitingOn": "Reviewer verdict" },
-        { "id": "a4", "name": "Not started", "state": "next" }
+        { "id": "a4", "name": "Not started", "pr": "7\" onmouseover=\"alert(1)", "state": "next" }
       ]
     },
     {
@@ -67,7 +67,7 @@
     {
       "id": "500",
       "name": "Side work",
-      "colour": "#0F9D7A",
+      "colour": "#0F9D7A\"><img src=x onerror=alert(1)>",
       "joins": "alpha",
       "state": "done",
       "stops": [{ "id": "e1", "name": "Tidy", "state": "merged" }]

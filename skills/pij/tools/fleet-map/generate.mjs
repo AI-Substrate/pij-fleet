@@ -268,13 +268,20 @@ export function repoOf(item, inherited) {
 
 const prKey = (repo, n) => (repo ? `${repo}#${n}` : String(n));
 
+/** A stop's PR number: a positive integer, else undefined, so it is never looked up or written. */
+export const prOf = (s) => (Number.isSafeInteger(s.pr) && s.pr > 0 ? s.pr : undefined);
+
+/** A line colour the page may paint with: `#rgb` or `#rrggbb` only. */
+export const COLOUR_RE = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
+
 /** Every distinct PR the structure names, with the repo it lives in, in a stable order. */
 function prRefs(structure) {
 	const refs = new Map();
 	const walk = (stops, inherited) => {
 		for (const s of stops || []) {
 			const repo = repoOf(s, inherited);
-			if (s.pr && repo !== false) refs.set(prKey(repo, s.pr), { repo, n: s.pr });
+			const n = prOf(s);
+			if (n && repo !== false) refs.set(prKey(repo, n), { repo, n });
 			walk(s.stops, repo);
 		}
 	};
@@ -447,17 +454,20 @@ export function buildData(structure, sources, { offline, generatedAt }) {
 		const repo = repoOf(s, inherited);
 		if (repo === false && s.repo !== undefined)
 			warnings.push(`stop ${s.id}: repo ${JSON.stringify(s.repo)} is not owner/name`);
-		const live = s.pr && repo !== false && prs[prKey(repo, s.pr)];
-		let state = s.state || (s.pr ? "review" : lineState === "later" ? "later" : "next");
+		const pr = prOf(s);
+		if (s.pr !== undefined && pr === undefined)
+			warnings.push(`stop ${s.id}: pr ${JSON.stringify(s.pr)} is not a PR number`);
+		const live = pr && repo !== false && prs[prKey(repo, pr)];
+		let state = s.state || (pr ? "review" : lineState === "later" ? "later" : "next");
 		if (live?.state) {
 			if (live.state === "MERGED") state = "merged";
 			else if (live.state === "CLOSED") state = "closed";
 			else if (state === "merged") state = "review";
-		} else if (s.pr && !offline) state = s.state || "review";
+		} else if (pr && !offline) state = s.state || "review";
 		if (!STOP_STATES.includes(state)) warnings.push(`stop ${s.id}: unknown state ${state}`);
 		const o = { id: s.id, name: s.name, state };
-		if (s.pr) o.pr = s.pr;
-		if (s.pr && repo) o.repo = repo;
+		if (pr) o.pr = pr;
+		if (pr && repo) o.repo = repo;
 		if (live) {
 			o.title = live.title;
 			o.url = live.url;
@@ -481,7 +491,13 @@ export function buildData(structure, sources, { offline, generatedAt }) {
 		if (repo === false)
 			warnings.push(`line ${l.id}: repo ${JSON.stringify(l.repo)} is not owner/name`);
 		const stops = (l.stops || []).map((s) => stopOut(s, l.state, repo));
-		const o = { id: l.id, name: l.name, colour: l.colour, state: l.state, stops };
+		let colour = l.colour;
+		if (typeof colour !== "string" || !COLOUR_RE.test(colour)) {
+			// shown, never written back: the structure keeps its own value until someone fixes it
+			colour = PALETTE[fnv1a(String(l.id)) % PALETTE.length];
+			warnings.push(`line ${l.id}: colour ${JSON.stringify(l.colour)} is not #rgb or #rrggbb`);
+		}
+		const o = { id: l.id, name: l.name, colour, state: l.state, stops };
 		if (l.joins) o.joins = l.joins;
 		if (l.joinsLine) {
 			o.joinsLine = l.joinsLine;

@@ -4,9 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Fleet map</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&display=swap" rel="stylesheet">
+<meta name="referrer" content="no-referrer">
 <style>
 :root {
   --paper: #EDF1F0;
@@ -41,7 +39,7 @@
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--paper); color: var(--ink);
-  font-family: Overpass, "Helvetica Neue", Arial, sans-serif; font-size: 15px; line-height: 1.4;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 15px; line-height: 1.4;
   display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
   font-variant-numeric: tabular-nums;
 }
@@ -72,7 +70,7 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 #viewport.dragging { cursor: grabbing; }
 #map { display: block; width: 100%; height: 100%; }
 
-.lbl { font-family: Overpass, sans-serif; fill: var(--ink); paint-order: stroke; stroke: var(--halo); stroke-width: 4px; stroke-linejoin: round; }
+.lbl { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; fill: var(--ink); paint-order: stroke; stroke: var(--halo); stroke-width: 4px; stroke-linejoin: round; }
 .lbl-stop { font-size: 13px; font-weight: 600; }
 .lbl-pr { font-size: 11.5px; font-weight: 800; }
 .lbl-station { font-size: 16px; font-weight: 800; letter-spacing: -.005em; }
@@ -279,6 +277,18 @@ if (!D) {
   viewport.innerHTML = '<div class="empty"><div><b>No map data.</b><br>Run <code>pij fleet-map generate</code> to write fleet-map.data.js next to this page.</div></div>';
   return;
 }
+
+// A colour, PR number or link reaches HTML and SVG paint, so anything that isn't strictly one is
+// dropped here, whatever wrote the data file (F253). Every other value is escaped where it is shown.
+const safeColour = (c) => (typeof c === 'string' && /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(c) ? c : 'var(--muted)');
+const prNum = (n) => (Number.isSafeInteger(n) && n > 0 ? n : undefined);
+const safeUrl = (u) => (typeof u === 'string' && /^https:\/\//i.test(u) ? u : undefined);
+function cleanData(D) {
+  const stop = (s) => { s.pr = prNum(s.pr); s.url = safeUrl(s.url); (s.stops || []).forEach(stop); };
+  for (const l of [...(D.lines || []), ...(D.sidings || [])]) { l.colour = safeColour(l.colour); (l.stops || []).forEach(stop); }
+  return D;
+}
+cleanData(D);
 
 // ======================================================================
 // Layout: a pure function of the data. Fixed pitches, fixed lane rule,
@@ -1202,13 +1212,13 @@ function cardHtml(item) {
   if (item.kind === 'stop') {
     const { b, s } = item;
     const real = L.branches.find((x) => x.id === b.realLine) || b;
-    let h = `<div class="band" style="background:${real.colour}"></div>`;
-    h += `<div class="top"><span class="sw" style="background:${real.colour}"></span>${esc(real.name)}${real.roadmap ? ', ' + esc(shortRoadmap(real.roadmap)) : ''}</div>`;
+    let h = `<div class="band" style="background:${esc(real.colour)}"></div>`;
+    h += `<div class="top"><span class="sw" style="background:${esc(real.colour)}"></span>${esc(real.name)}${real.roadmap ? ', ' + esc(shortRoadmap(real.roadmap)) : ''}</div>`;
     h += `<h4>${esc(s.name)}</h4>`;
     if (s.title) h += `<p class="sub">${esc(s.title)}</p>`;
     h += '<dl>';
     h += `<dt>Status</dt><dd><span class="pill" style="color:${STATE_COLOUR[s.state] || 'var(--ink)'}">${esc(STOP_LABEL[s.state] || s.state)}</span></dd>`;
-    const prName = (s.repo ? esc(s.repo) : '') + '#' + s.pr;
+    const prName = (s.repo ? esc(s.repo) : '') + '#' + esc(s.pr);
     if (s.pr) h += `<dt>PR</dt><dd>${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${prName}</a>` : prName}${s.head ? ` at <b>${esc(s.head)}</b>` : ''}${s.base && s.base !== 'main' ? `<br><em style="font-style:normal;color:var(--muted)">stacked on ${esc(s.base)}</em>` : ''}</dd>`;
     if (s.owner) h += `<dt>Owner</dt><dd>${seatHtml(s.owner, s.ownerState)}</dd>`;
     if (s.verdicts && s.verdicts.length) {
@@ -1225,7 +1235,7 @@ function cardHtml(item) {
   }
   if (item.kind === 'crew') {
     const STATE_WORD = { working: 'working', idle: 'idle', absent: 'no live seat', released: 'released', unknown: 'unknown' };
-    let h = `<div class="band" style="background:${item.colour}"></div>`;
+    let h = `<div class="band" style="background:${esc(item.colour)}"></div>`;
     h += `<div class="top">Pij Community${item.depot ? ', shared roles' : ''}</div><h4>${esc(item.title)}</h4>`;
     h += '<div class="crew">' + item.community.map((c) => {
       const cls = c.state === 'working' ? 'working' : c.state === 'idle' ? 'idle' : '';
@@ -1252,8 +1262,8 @@ function cardHtml(item) {
   const stops = L.branches.filter((x) => x.realLine === real.id).flatMap((x) => x.stops);
   const counts = {};
   for (const s of stops) counts[s.state] = (counts[s.state] || 0) + 1;
-  let h = `<div class="band" style="background:${real.colour}"></div>`;
-  h += `<div class="top"><span class="sw" style="background:${real.colour}"></span>${real.kind === 'siding' ? 'Siding' : 'Line'}${real.roadmap ? ', ' + esc(shortRoadmap(real.roadmap)) : ''}</div><h4>${esc(real.name)}</h4>`;
+  let h = `<div class="band" style="background:${esc(real.colour)}"></div>`;
+  h += `<div class="top"><span class="sw" style="background:${esc(real.colour)}"></span>${real.kind === 'siding' ? 'Siding' : 'Line'}${real.roadmap ? ', ' + esc(shortRoadmap(real.roadmap)) : ''}</div><h4>${esc(real.name)}</h4>`;
   h += '<dl>';
   h += `<dt>Status</dt><dd><span class="pill" style="color:var(--ink-2)">${esc(PHASE_LABEL[real.state] || real.state)}</span></dd>`;
   const where = real.joins ? (S.find((s) => s.id === real.joins) || {}).name : real.joinsLine ? lineName(real.joinsLine) + ' (junction)' : '';

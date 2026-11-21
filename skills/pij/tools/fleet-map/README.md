@@ -23,6 +23,10 @@ Viewers that serve one file without its siblings can't resolve `<script src="fle
 data"; the standalone page needs nothing beside it. The data's every `<` is written as `\u003c`, so a seat name,
 path or message can never close or comment out the inlined block.
 
+The page requests nothing from another origin: it uses the system font stack (no web fonts) and sends no referrer.
+Every data value it puts into HTML is escaped, and on load it drops any line colour that isn't `#rgb`/`#rrggbb`, any
+`pr` that isn't a positive integer and any PR link that isn't `https://`, whatever wrote the data file.
+
 ## Verbs
 
 ```sh
@@ -70,6 +74,10 @@ A stop with `pr` takes its state, head, title and verdicts from live sources; `s
 `repo` (`owner/name`, on a line or a stop; stacked stops inherit it) sends that PR's lookup to `gh pr view <n> -R
 owner/name`. A value that isn't `owner/name` is a warning, and its PRs aren't looked up. A role with no `seat` or
 `seats` shows the directory's live holders. `templates/structure.example.json` is the starter.
+
+`colour` must be `#rgb` or `#rrggbb`. Anything else is a warning, and the page shows the line in its palette colour
+(the structure keeps its own value until you fix it). `pr` must be a positive integer (`42`, not `"42"`). Anything else
+is a warning, and the stop is shown without a PR and never looked up.
 
 ## Live data: pij first
 
