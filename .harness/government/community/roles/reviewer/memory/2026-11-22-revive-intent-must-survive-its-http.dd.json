@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before trusting a revive-in-progress brake around a request-surviving launch or destructive sweep",
+				"tags": [
+					"review",
+					"f276",
+					"cancellation",
+					"ownership"
+				],
+				"title": "Revive intent must survive its HTTP waiter"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR332 at 0e6eba2 BLOCK (461b702): ReviveIntent lives in revive_seat HTTP scope, but launch_owned survives that waiter. Actual handler + real registry/queue/spine, fake tmux, held row write: intent present before cancel, absent after cancel; park follower fails job, then revive writes live row. Not the disclosed later-arrival race. Moving an additional guard into the launch-owning task makes the same fixture keep the pending job. M1/M2/M3/M6 all fail intended assertions but do not cover this lifetime. Hook proof on cancellation while the owner is still before persistence, not merely an intent-map accessor. MagicWand: every destructive consumer of an in-flight set has a request-cancellation ownership fixture. Proof fixtures/RED/GREEN receipts retained in session ae639be0/files; all checkouts untouched."
+		}
+	]
+}
