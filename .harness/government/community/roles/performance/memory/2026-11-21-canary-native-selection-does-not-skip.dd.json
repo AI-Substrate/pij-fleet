@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-21",
+				"hook": "Before pricing canaries or claiming native-first is a no-catalog fast path",
+				"tags": [
+					"canary",
+					"cost",
+					"native",
+					"catalog",
+					"proof"
+				],
+				"title": "Canary native selection does not skip catalog work"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR306 performance receipt 40f84bb133ee0b9622d065be0712b49072eb7290. Trace work before source selection: observe_bind resolves a recognized OMP footer before native_runtime_model, so even native-answered canaries pay one omp.models launch. Rate denominator is qualifying canaries, not live seats. StatusPort shares per-seat cursors and serializes folds, but incremental IO is not a constant CPU/memory/deadline bound: cold/reset reads fold the transcript, warm derivation also visits retained turn accumulators, and the 64MiB record/batch cap is not a total-work cap. Exact-head JUnit proves test execution, not deployed latency. MagicWand: encode a read-only cost-receipt command with PID/start/commit, monotonic interval, reconciled op and route deltas, CPU/RSS and separately labelled machine window. Detached C25 reviews must not install/link dependencies or claim local full-gate success."
+		}
+	]
+}
