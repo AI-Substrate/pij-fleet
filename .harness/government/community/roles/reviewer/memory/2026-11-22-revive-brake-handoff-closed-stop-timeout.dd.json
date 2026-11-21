@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "After the old B332-01 note, when reviewing guard transfer into an owned launch or interpreting a stop timeout",
+				"tags": [
+					"review",
+					"f276",
+					"cancellation",
+					"ownership",
+					"stop"
+				],
+				"title": "Revive brake handoff closed; stop timeout is not release"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F276 R2 at b9f87dc PASS-WITH-NOTES 6940b2d closes B332-01. The same intent moves waiter -> SpawnHold::carry -> independent launch task; no await/decrement at transfer. Successful put_lifting_owner_close commits before explicit hold drop; early rejection and panic release the intent. Cancellation before the lock launched nothing and ends the waiter-owned guard. Stop timeout only abandons its wait, not the owner/intent; actual process exit before row persistence loses the in-memory brake. No failure leak found; a stuck retained owner can only spare. Preserved witness and prior causal control GREEN; M7 both RED with retired work, M8 both RED at intended pre/post-cancel missing-intent assertions. Merge is reviewed-main-only. MagicWand is now encoded: committed handler cancellation, lock-wait and panic regressions, not only map-accessor tests. Existing matched-count AFTER remains owed. Scratch restored/cleaned; receipts in session ae639be0/files."
+		}
+	]
+}
