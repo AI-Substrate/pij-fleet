@@ -329,3 +329,55 @@ fn a_daemon_joins_the_log_rotated_after_its_launcher_opened_it() {
     let rotated = fs::read_to_string(state.join("daemon.log.1")).expect("rotated log");
     assert!(!rotated.contains("listening on"), "{rotated}");
 }
+
+/// F251 (moth's R301-R2-002): a daemon whose stdout is an unrelated file,
+/// deleted before it starts, is not the managed log: it never adopts, joins or
+/// trims `<state-dir>/daemon.log`, which stays exactly as it was.
+#[test]
+fn a_deleted_foreign_stdout_is_never_adopted() {
+    let root = pij_testkit::fresh_dir("pij-daemon-log-foreign");
+    let state = root.join("state");
+    fs::create_dir_all(&state).expect("private daemon state");
+    let log_path = state.join("daemon.log");
+    let managed = b"2026-10-27T00:00:00Z the state dir's own log\n";
+    fs::write(&log_path, managed).expect("state log");
+    let foreign = root.join("elsewhere.log");
+    let stdout = File::create(&foreign).expect("an unrelated file");
+    let stderr = stdout.try_clone().expect("shared");
+    let mut child = Command::new("/bin/sh")
+        .args([
+            "-c",
+            "read go; exec \"$0\" --state-dir \"$1\" daemon --offline --bind 127.0.0.1:0",
+        ])
+        .arg(env!("CARGO_BIN_EXE_pij-rs"))
+        .arg(&state)
+        .env("HOME", &root)
+        .env_remove("PIJ_RETIRED_HARNESSES")
+        .stdin(Stdio::piped())
+        .stdout(stdout)
+        .stderr(stderr)
+        .spawn()
+        .expect("start a held private daemon");
+    fs::remove_file(&foreign).expect("delete the foreign stdout");
+    child
+        .stdin
+        .take()
+        .expect("gate")
+        .write_all(b"go\n")
+        .expect("release");
+    let daemon = PrivateDaemon { child, root };
+    // The daemon is up once it answers on its state dir's key file, a fact it
+    // writes outside its log.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !state.join("daemon.key").exists() {
+        assert!(Instant::now() < deadline, "daemon startup timed out");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(
+        fs::read(&log_path).expect("state log"),
+        managed,
+        "the state dir's log is untouched"
+    );
+    drop(daemon);
+}

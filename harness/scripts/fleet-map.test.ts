@@ -144,6 +144,51 @@ describe("determinism", () => {
 			true,
 		);
 	});
+
+	it("the standalone page is index.html with the data inlined in place of its src, and no src left", () => {
+		const out = join(scratch(), "out");
+		const structure = join(FIXTURES, "structure.json");
+		expect(
+			run(["generate", "--offline", "--at", AT, "--structure", structure, "--out", out]).status,
+		).toBe(0);
+		const page = readFileSync(join(out, "index.html"), "utf8");
+		const standalone = readFileSync(join(out, "fleet-map.standalone.html"), "utf8");
+		const golden = readFileSync(join(FIXTURES, "golden.data.js"), "utf8");
+		const tag = '<script src="fleet-map.data.js"></script>';
+		expect(page.split(tag)).toHaveLength(2);
+		expect(standalone).toBe(page.replace(tag, `<script>\n${golden}</script>`));
+		expect(standalone).not.toMatch(/<script[^>]*\bsrc=/);
+		expect(standalone.startsWith(`<!doctype html>\n<!-- ${HEADER} -->\n`)).toBe(true);
+	});
+
+	it("hostile data cannot end or comment out the inlined block, and reads back unchanged", () => {
+		const out = join(scratch(), "out");
+		const hostile = "</script><!-- <script>alert(1)</script> -->";
+		const s = JSON.parse(readFileSync(join(FIXTURES, "structure.json"), "utf8"));
+		s.title = hostile;
+		s.lines[0].stops[0].name = `</SCRIPT >${hostile}`;
+		const structure = join(out, "..", "structure.json");
+		writeFileSync(structure, JSON.stringify(s));
+		expect(
+			run(["generate", "--offline", "--at", AT, "--structure", structure, "--out", out]).status,
+		).toBe(0);
+		const standalone = readFileSync(join(out, "fleet-map.standalone.html"), "utf8");
+		const page = readFileSync(join(out, "index.html"), "utf8");
+		// The HTML parser ends a script at the first `</script` (any case) and enters a comment state
+		// at `<!--`: the block from the data's opener to the next `</script` must hold all the data.
+		const open = standalone.indexOf("<script>\n// ");
+		const block = standalone.slice(
+			open + "<script>\n".length,
+			standalone.indexOf("</script", open),
+		);
+		expect(block).toBe(readFileSync(join(out, "fleet-map.data.js"), "utf8"));
+		expect(block).not.toMatch(/<\/script|<!--/i);
+		expect(standalone.match(/<\/script/gi)).toHaveLength(page.match(/<\/script/gi)?.length ?? 0);
+		const window: { FLEET_MAP?: { title: string; lines: { stops: { name: string }[] }[] } } = {};
+		new Function("window", block)(window);
+		expect(window.FLEET_MAP?.title).toBe(hostile);
+		expect(window.FLEET_MAP?.lines[0].stops[0].name).toBe(`</SCRIPT >${hostile}`);
+	});
 });
 
 describe("track geometry (AC4)", () => {
@@ -501,7 +546,7 @@ describe("project defaults, through the pij shim", () => {
 		const gen = shim(["generate", "--offline", "--at", AT], gov);
 		expect(gen.status, gen.stderr).toBe(0);
 		const out = join(repo, "scratch", "fleet-map");
-		expect(listing(out)).toEqual(["fleet-map.data.js", "index.html"]);
+		expect(listing(out)).toEqual(["fleet-map.data.js", "fleet-map.standalone.html", "index.html"]);
 		expect(gen.stderr).toContain("is not git-ignored");
 
 		writeFileSync(join(repo, ".gitignore"), "scratch/\n");

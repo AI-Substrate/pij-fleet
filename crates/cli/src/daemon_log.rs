@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
-use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::Shutdown;
 use std::os::fd::AsFd;
 #[cfg(test)]
@@ -409,9 +409,11 @@ impl Rotation {
     /// file the path names (device and inode; a symlink is its own inode, so it
     /// never matches), or one a rotation by another daemon just moved off the
     /// path after this one's launcher opened it (R301-001): the file now at
-    /// `daemon.log.1`, or a regular file with no name left (an oversized log
-    /// trimmed to its tail). The first look under the lock ([`Self::sync`])
-    /// then joins the file the path names.
+    /// `daemon.log.1`, or a regular file with no name left that a trim
+    /// recorded as the managed log it unlinked (`daemon.log.trimmed`, F251).
+    /// A deleted file nothing recorded is foreign and stays foreign: the
+    /// record is a **brake**, and removing it adopts more. The first look
+    /// under the lock ([`Self::sync`]) then joins the file the path names.
     fn adopt(file: &File, path: &Path, cap: u64, keep: usize) -> Option<Self> {
         let open = file.metadata().ok()?;
         let same =
@@ -421,7 +423,7 @@ impl Rotation {
         moved.push(".1");
         let rotated_away = named.file_type().is_file()
             && open.file_type().is_file()
-            && (open.nlink() == 0
+            && ((open.nlink() == 0 && was_trimmed(path, open.dev(), open.ino()))
                 || std::fs::symlink_metadata(&moved).is_ok_and(|moved| same(&moved)));
         (same(&named) || rotated_away).then(|| Self {
             path: path.to_path_buf(),
@@ -459,12 +461,7 @@ impl Rotation {
         let mine = current.metadata()?;
         let joined = match std::fs::symlink_metadata(&self.path) {
             Ok(named) if named.dev() == mine.dev() && named.ino() == mine.ino() => None,
-            Ok(named) if named.file_type().is_file() => Some(
-                OpenOptions::new()
-                    .append(true)
-                    .custom_flags(OFlag::O_NOFOLLOW.bits())
-                    .open(&self.path)?,
-            ),
+            Ok(named) if named.file_type().is_file() => Some(open_regular_append(&self.path)?),
             _ => return Ok(Synced::Unmanaged),
         };
         self.size = match &joined {
@@ -534,9 +531,20 @@ impl Rotation {
     /// A file more than a sixteenth over the cap (one from before the bound,
     /// or one line longer than that) becomes `.1` holding only its last `cap`
     /// bytes, from the start of a line. So no rotated file exceeds 17/16 cap.
+    ///
+    /// The source is opened without following a symlink (S301-R2-N2), and its
+    /// device and inode are recorded in `daemon.log.trimmed` before its name
+    /// is removed, so a daemon whose launcher opened it can prove at start
+    /// that its unnamed file was the managed log (F251).
     fn keep_tail(&self) -> io::Result<()> {
-        let mut source = BufReader::new(File::open(&self.path)?);
-        let length = source.get_ref().metadata()?.len();
+        let mut source = BufReader::new(
+            OpenOptions::new()
+                .read(true)
+                .custom_flags(OFlag::O_NOFOLLOW.bits())
+                .open(&self.path)?,
+        );
+        let unlinked = source.get_ref().metadata()?;
+        let length = unlinked.len();
         source.seek(SeekFrom::Start(length.saturating_sub(self.cap)))?;
         let mut partial = Vec::new();
         source.read_until(b'\n', &mut partial)?;
@@ -545,7 +553,71 @@ impl Rotation {
         io::copy(&mut source, &mut target)?;
         target.flush()?;
         std::fs::rename(&staged, self.numbered(1))?;
+        self.record_trimmed(unlinked.dev(), unlinked.ino())?;
         std::fs::remove_file(&self.path)
+    }
+
+    /// Add a trimmed file's device and inode to `daemon.log.trimmed`, keeping
+    /// the newest [`TRIMMED_KEPT`]. Under the lock; replaced whole by a rename,
+    /// so a reader sees the old record or the new one, never half of one.
+    fn record_trimmed(&self, dev: u64, ino: u64) -> io::Result<()> {
+        let record = trimmed_record(&self.path);
+        let old = read_no_follow(&record).unwrap_or_default();
+        let mut lines: Vec<&str> = old.lines().collect();
+        let entry = format!("{dev} {ino}");
+        lines.push(&entry);
+        let start = lines.len().saturating_sub(TRIMMED_KEPT);
+        let staged = self.suffixed(".trimmed.new");
+        let mut file = staging(&staged)?;
+        file.write_all((lines[start..].join("\n") + "\n").as_bytes())?;
+        file.flush()?;
+        std::fs::rename(&staged, &record)
+    }
+}
+
+/// Trimmed generations remembered in `daemon.log.trimmed`.
+const TRIMMED_KEPT: usize = 16;
+
+fn trimmed_record(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".trimmed");
+    PathBuf::from(name)
+}
+
+fn read_no_follow(path: &Path) -> io::Result<String> {
+    let mut text = String::new();
+    OpenOptions::new()
+        .read(true)
+        .custom_flags((OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK).bits())
+        .open(path)?
+        .take(64 * 1024)
+        .read_to_string(&mut text)?;
+    Ok(text)
+}
+
+/// Did a trim record (`dev`, `ino`) as the managed log at `path` it unlinked?
+fn was_trimmed(path: &Path, dev: u64, ino: u64) -> bool {
+    let entry = format!("{dev} {ino}");
+    read_no_follow(&trimmed_record(path))
+        .is_ok_and(|record| record.lines().any(|line| line == entry))
+}
+
+/// S301-R2-N1: open the path to join it, append-only, without following a
+/// symlink and without waiting (a FIFO swapped in after the check would
+/// otherwise block the log thread waiting for a reader), and use it only if
+/// what was opened is a regular file. A **brake**: removing it joins more.
+fn open_regular_append(path: &Path) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .append(true)
+        .custom_flags((OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK).bits())
+        .open(path)?;
+    if file.metadata()?.file_type().is_file() {
+        Ok(file)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "daemon.log is not a regular file",
+        ))
     }
 }
 
@@ -559,8 +631,10 @@ fn staging(path: &Path) -> io::Result<File> {
         Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
         _ => {}
     }
+    // R301-R2-001: append, so after a rotation this daemon's writes land at
+    // the end even when a joined daemon appended in between, never over it.
     OpenOptions::new()
-        .write(true)
+        .append(true)
         .create_new(true)
         .mode(0o600)
         .open(path)
@@ -1246,10 +1320,143 @@ mod tests {
             "moved to .1"
         );
         fs::remove_file(root.join("daemon.log.1")).unwrap();
-        assert!(Rotation::adopt(&own, &path, 100, 3).is_some(), "unlinked");
+        // F251 (moth's R301-R2-002): a deleted file nothing recorded is foreign.
+        assert!(
+            Rotation::adopt(&own, &path, 100, 3).is_none(),
+            "unlinked, unrecorded"
+        );
+        let meta = own.metadata().unwrap();
+        fs::write(
+            root.join("daemon.log.trimmed"),
+            format!("1 2\n{} {}\n", meta.dev(), meta.ino()),
+        )
+        .unwrap();
+        assert!(
+            Rotation::adopt(&own, &path, 100, 3).is_some(),
+            "unlinked by a recorded trim"
+        );
         assert!(
             Rotation::adopt(&other, &path, 100, 3).is_none(),
             "another named file still is not"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// F251 (moth's R301-R2-001): after a rotation the rotator's fresh file is
+    /// append-only, so a joined daemon's lines written in between are never
+    /// overwritten by the rotator's next write.
+    #[test]
+    fn a_rotator_and_a_joined_daemon_never_overwrite_each_other() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-interleave");
+        // One line over the cap rotates once; the lines after it stay far
+        // below the cap, so nothing rotates them away before they are read.
+        let mut rotator = managed(&root, b"", 400, 3);
+        rotator
+            .write_line(
+                0,
+                format!("rotator before {}\n", "x".repeat(400)).as_bytes(),
+            )
+            .unwrap();
+        assert!(root.join("daemon.log.1").exists(), "the rotator rotated");
+        let path = root.join("daemon.log");
+        let mut joined = Shared {
+            outputs: vec![Output {
+                file: open_regular_append(&path).unwrap(),
+                rotation: None,
+            }],
+            repeats: Repeats::new(REPEAT_WINDOW, REPEAT_KEYS),
+        };
+        joined.write_line(0, b"joined one\n").unwrap();
+        rotator.write_line(0, b"rotator after\n").unwrap();
+        joined.write_line(0, b"joined two\n").unwrap();
+        rotator.write_line(0, b"rotator last\n").unwrap();
+        let lines: Vec<String> = payloads(&fs::read(&path).unwrap())
+            .into_iter()
+            .map(|line| String::from_utf8(line).unwrap())
+            .collect();
+        let at = |wanted: &str| lines.iter().position(|line| line == wanted);
+        let order = [
+            at("joined one\n"),
+            at("rotator after\n"),
+            at("joined two\n"),
+            at("rotator last\n"),
+        ];
+        assert!(order.iter().all(Option::is_some), "{lines:?}");
+        assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{lines:?}");
+        assert!(!root.join("daemon.log.2").exists(), "rotated once");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// F251: a trim records the file it unlinks, so a daemon whose launcher
+    /// opened the oversized log before another daemon trimmed it can still
+    /// prove that file was the managed log, and adopts it (then joins).
+    #[test]
+    fn a_trimmed_log_is_recorded_and_its_holders_still_adopt_it() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-trim-record");
+        let mut old = String::new();
+        for n in 0..100 {
+            old.push_str(&format!("old line {n:03}\n"));
+        }
+        let mut trimmer = managed(&root, old.as_bytes(), 100, 3);
+        let path = root.join("daemon.log");
+        let late = OpenOptions::new().append(true).open(&path).unwrap();
+        trimmer.sync(0);
+        assert_eq!(late.metadata().unwrap().nlink(), 0, "trimmed away");
+        assert!(Rotation::adopt(&late, &path, 100, 3).is_some());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// S301-R2-N1: a FIFO at the path is never joined, and opening it never
+    /// waits for a reader.
+    #[test]
+    fn a_fifo_at_the_path_is_never_joined_and_never_waits() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-fifo");
+        let fifo = root.join("daemon.log");
+        nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).unwrap();
+        let (done, finished) = mpsc::channel();
+        let probe = fifo.clone();
+        thread::spawn(move || done.send(open_regular_append(&probe).is_err()).unwrap());
+        assert_eq!(
+            finished.recv_timeout(Duration::from_secs(3)),
+            Ok(true),
+            "no reader: refused at once"
+        );
+        let reader = OpenOptions::new()
+            .read(true)
+            .custom_flags(OFlag::O_NONBLOCK.bits())
+            .open(&fifo)
+            .unwrap();
+        let error = open_regular_append(&fifo).expect_err("a FIFO with a reader");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        drop(reader);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// S301-R2-N2: the trim never reads through a symlink at the path.
+    #[test]
+    fn the_trim_never_follows_a_symlink() {
+        let root = pij_testkit::fresh_dir("pij-daemon-log-trim-link");
+        let elsewhere = root.join("elsewhere.txt");
+        fs::write(&elsewhere, "private line\n".repeat(100)).unwrap();
+        let path = root.join("daemon.log");
+        std::os::unix::fs::symlink(&elsewhere, &path).unwrap();
+        let rotation = Rotation {
+            path: path.clone(),
+            size: 1300,
+            cap: 100,
+            keep: 3,
+        };
+        assert!(rotation.keep_tail().is_err());
+        assert!(!root.join("daemon.log.1").exists(), "nothing copied");
+        assert_eq!(
+            fs::read_to_string(&elsewhere).unwrap(),
+            "private line\n".repeat(100)
+        );
+        assert!(
+            fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_symlink()
         );
         fs::remove_dir_all(root).unwrap();
     }
