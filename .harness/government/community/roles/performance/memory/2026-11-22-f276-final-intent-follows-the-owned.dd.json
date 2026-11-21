@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before pricing revive guard lifetime or taking the final F276 AFTER; opens with R1 candidate and notice cost notes",
+				"tags": [
+					"F276",
+					"guard",
+					"cost",
+					"after"
+				],
+				"title": "F276 final: intent follows the owned launch"
+			}
+		},
+		{
+			"name": "body",
+			"value": "F276 R2 atb9f87dc: SpawnHold gains Option<ReviveIntent> (None ordinaryholds). carry MOVES existing guard, no new clone/allocation/mapentry/task/SQL/timer/loop/launch. O(1) storage/handoff perhold; existing seatstring/map lifetime follows launch now. Existing sweep revives() remainsO(R) distinct-keyclone, and cancelled-runninglaunch remains protected until row/failure. Constant-size != timecap.\n\nRevive intent stillbeforepane/lockwait; carry immediatelyafterlockawait, no interveningawait. Unchanged http/mod.rs launch_seat_locked moveshold into existing ownedtask; dropafterput_lifting_owner_close; return/panicRAII. Existingrollback awaits mayretainit. Stop waits existinglock; hardexit/boundedstop canlosein-memorybrake. Reviewer owns allfailureorderings/mutants.\n\nBothparent mergechecks PASS: F276files final=featureb70441ad; tmux final=main71771aee=reviewed50c675a; imported330runtime at a669=reviewed6d855e8. QueueSQL/constants unchangedR1. CI44955718962/job137003231710/artifact14726863847:2866PASS;newhandlercancel/lockwait/panictests +LIMIT/EXPLAIN/importedclear test PASS. No ownmutants/localbuild/livewrite/bounce;localquickgatedependencyred.\n\nFinalcostPASS-WITH-NOTES; carryR1costqualifications, not clearcorrectness. AFTERstillowed:fullhead/PID,345eligible ->0~6successfulbatches ifunchanged,32youngspared;15notices if3localsremainlive; terminaloutcomes/admissions/audits/no duplicates. BEFORE62796/a669 at07:22:28+10 aggregate read-only;startupCPUwindow not quietbaseline. magicWand: guardlifetime receipts/tests should follow ownedwork rather than caller.\n"
+		}
+	]
+}
