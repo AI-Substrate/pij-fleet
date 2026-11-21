@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a1fdf6-3167-7b10-972d-f1f4a726cb41",
+				"date": "2026-11-21",
+				"head": "5c219c0b34c1f2e3e2253e68bbf96f8fca1a9631",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "performance",
+				"subject": "pr:320",
+				"writer": "pij-helpful-elephant",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Price complete failed-renewal retry: F260 queue transaction/failed-history scan plus the edge-write attempt under native lock, not only one spine write.",
+				"Keep ten-second bound scoped to gap scans; heartbeat retries and live lapse checks have their own cadence. Eventual renewal persistence is not immediate; ordering flagged to reviewer."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 320",
+					"exit_code": 0,
+					"log": "FINAL at5c219c0b34c1f2e3e2253e68bbf96f8fca1a9631;CLEAN;latest5checks pass;schema49;no migration"
+				},
+				{
+					"command": "gh run view 44899914282 --job136833437449 --log",
+					"exit_code": 0,
+					"log": "2807 Rust tests passed;upload artifact14705537000;33 relevant JUnit cases verified passing, including all3 F268 witnesses and6 spawn guards"
+				},
+				{
+					"command": "pij-rs --json ping and single-PID ps, two reads20s apart",
+					"exit_code": 0,
+					"log": "BEFOREb88e1df937/PID41653;20.020618s;spawns delta0;CPU+1.41s;RSS106784->104880KiB;no storm/retry workload or AFTER measured"
+				},
+				{
+					"command": "just spawn-rate --seconds 20",
+					"exit_code": 0,
+					"log": "Separate machine BEFORE123.9 launches/s,101.8/s sampled,no daemon descendants sampled;not PR attribution"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "8 dependency/ambient-tool failures;native/SDK pass;heavy stages skipped;C25 exact-head TS CI proof,no green local gate"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "ROUND 1 performance verdict: PASS-WITH-NOTES.\nSubject: pr:320\nHead: 5c219c0b34c1f2e3e2253e68bbf96f8fca1a9631\n\nThe gap-storm rate brake is genuine; there is no new periodic quiet-fleet tick or process-launch site. Held decisions add one durable event publication when their action is Told/Pending. Renewal retries use incoming heartbeats, not a new retry task. No demonstrated normal-use resource-cost breach blocks this head. The PR's renewal retry cost should include the repeated F260 queue transaction, and the ten-second cap must remain scoped to gap reconciliation, not all recovery work.\n\nVerified cost model:\n\n| Work | Rate and scaling |\n|---|---|\n| Gap reconciliation | One initial scan, then no next scan until at least10s AFTER the preceding scan COMPLETES. The start-to-start interval is therefore at least10s plus prior scan duration. In a sustained storm, at most0.1 full scans/s,6/min after startup; no periodic scan when gaps are absent. One one-shot sleep deadline per recovered gap; expired deadlines complete immediately, and completion refreshes the cutoff, avoiding an overdue-deadline spin. |\n| Scan reads | One live-Copilot roster call, then outstanding() per native seat N. That spine call uses FOUR indexed LIMIT1 seeks, one schema PRAGMA and read-snapshot begin/rollback, not one SQL statement. At the storm ceiling: at most0.4N seek statements/s,0.1N schema checks/s and0.1N read snapshots/s, plus roster and conditional decision work. |\n| Live lapse events | Existing subscribed-event delivery remains uncapped by the ten-second brake. A delivered lapse also checks outstanding() with four seeks before deciding. The existing follower receives/clones total broadcast events before filtering; no new subscriber was added. No claim that all recovery reads are limited to one scan/10s. |\n| Failed renewed-edge retry | The existing native heartbeat supplies the trigger. Default lease60s/divisor3 recommends20s between heartbeats, normally3 attempts/min per affected seat. This is a client recommendation, not a server-side request-rate limit. No incoming heartbeat means no retry. |\n| Complete merged retry | While the lapsed mark remains, every renewing heartbeat validates the recipient, calls recover_held, then tries the renewed event. Even after all bodies were returned, recover_held_native_deliveries performs its schema read and queue BEGIN IMMEDIATE/failed-history SELECT/COMMIT. A matched hold additionally gets its guarded UPDATE, payload decode and separately committed outcome. The edge is another spine-write attempt. All run under the native lock; \"one spine write per failed write\" omits this repeated queue work. |\n| Told/Pending decision | One added EventBus.publish and spine write transaction, plus a small action/at payload and broadcast to existing subscribers. After a successful held fact, later checks spare that lapse; failed persistence logs an error and can be re-attempted on future event/reconcile work, not on a new timer. remembered() still reads only acting AUTH_RECOVERY_KIND, so the30min window is not refreshed by a held fact. |\n\nSources: auth_recovery.rs:570-611,626-739; delivery/mod.rs:389-393,490-519,577-611,962-982; store/spine.rs:64-65,267-275,367-395. The full scan remains serial, so there is no scheduled scan backlog. The existing roster selection and eligible remedies still have their own row/transport costs. \"No new launch\" does not erase inherited restart/control/registration launches or the existing counted liveness fallback.\n\nNon-blocking notes:\n1. Correct complete retry accounting to include the empty/repeated F260 queue transaction and recipient-history scan. Bodies already returned to pending are not held again merely because the audit mark is reinserted; recovery's state/deadline guards remain.\n2. Retain the distinction between successful eventual renewal persistence and immediate persistence. Until another heartbeat successfully publishes the edge, the stale spine fact can remain. A gap scan can run at10s while the normal heartbeat recommendation is20s. This timing nuance was sent to the separate correctness reviewer for the dropped/undecided-lapse ordering; this performance verdict does not clear that review.\n3. Keep gap/pass/native-seat count and durations in an authorized AFTER receipt. The source bound and exact-head CI establish the limiter's shape, not its numerical CPU saving under live storm traffic.\n\nEvidence:\n- just pr-freeze320: FINAL at the full head, CLEAN, latest five checks passed, main/head schema49, no migration.\n- Exact-head CI44899914282/job136833437449, artifact14705537000 selected from its successful upload log:2,807 tests passed overall, six skipped. Independently parsed JUnit:33 relevant auth/lapse/renewal/F260/store/spawn cases passed, including a_gap_soon_after_a_reconcile_waits_out_the_interval_then_decides, a_lapse_decided_with_nothing_to_do_is_not_decided_again, a_renewal_the_spine_did_not_record_is_told_at_the_next_heartbeat and all six spawn-site guards.\n- The pause regression uses a1.5s test interval; production10s is independently confirmed from the source. I did not rerun mutants or simulate a live lapse/gap/renewal.\n- Existing shutdown ownership remains extension_lost.abort followed by await (lib.rs:388-389), rather than an extra polling task. No local shutdown witness was run; complete shutdown correctness remains the separate review.\n- Live BEFORE only: daemonb88e1df937/PID41653; UTC2026-11-21T12:01:10.379699Z to12:01:30.400389Z,20.020618s. All daemon launch counters flat. CPU+1.41s (7.04% of one core), RSS106,784->104,880KiB. No storm, failed-renewal or held-decision workload measured; no PR320 overhead/saving attributed to this mixed fleet window.\n- Separate subsequent just spawn-rate --seconds20:123.9 machine launches/s,101.8/s sampled, no daemon descendants sampled. This busy observer did not overlap the preceding CPU/RSS window; neither window is an AFTER or feature-attribution receipt.\n- harness boot ready=false (missing vitest); harness checks --quick exit1 for eight dependency/ambient-tool failures, native/SDK passing, heavy Rust/route/smoke skipped. No claimed green local gate; C25 exact-head TS CI proof, no install or dependency link.\n- No source edit, local Rust build, default/private daemon, bounce, pane input, live lapse/renewal or repair experiment. Worktree clean; performance/320 remains held until merge and other holdings are unchanged.\n\nPolicy/brakes: the lapse remains the existing POLICY input. The minimum interval delays rather than skips reconciliation; the held-decision fact spares already-decided work without moving the acting recovery window. These are BRAKES. The renewed-edge change retries audit truth; it adds no retention rule or new restart policy.\n\nHarness lesson: expose reconcile starts/completions/gaps and complete renewal-retry transaction work in the existing cost receipt. Count port calls separately from actual SQL/commit work and compare matched live cohorts, rather than treating a capped trigger as a cap on all recovery activity.\n"
+		}
+	]
+}
