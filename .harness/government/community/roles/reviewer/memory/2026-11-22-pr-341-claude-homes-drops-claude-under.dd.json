@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "When reviewing anything that consumes pij_harnesses::claude_homes() in the daemon, or Claude home discovery",
+				"tags": [
+					"review",
+					"claude",
+					"homes",
+					"transport",
+					"env"
+				],
+				"title": "PR 341: claude_homes() drops ~/.claude under CLAUDE_CONFIG_DIR"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR 341 f7cf59e BLOCK. claude_homes_from: a set CLAUDE_CONFIG_DIR REPLACES $HOME/.claude (intended for settings writes). pij-rs daemon bounce inherits the caller env (no env_clear), so a bounce from a cc-alt Claude seat gives the daemon homes without ~/.claude. Any daemon consumer of claude_homes() (UdsTransport since #341, claude_bind) must add $HOME/.claude itself. Security held: pid+start checked per home, token read from the record's own dir, cross-home ambiguity refuses. Mutants M1-M3 killed via git archive + shared-build run from the archive dir."
+		}
+	]
+}
