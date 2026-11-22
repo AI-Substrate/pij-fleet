@@ -1,0 +1,43 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"head": "1119b535f7cd7bac87f1da0931e5ff2cfbd4a559",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44970413200",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:336",
+				"writer": "pij-melodic-marlin",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 336",
+					"exit_code": 0
+				},
+				{
+					"command": "just pij-skill-check",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# VERDICT FAIL - PR #336\n\nBasis: 1119b535f7cd7bac87f1da0931e5ff2cfbd4a559, origin/main...HEAD.\nThe abbd0b5a..1119b535 delta changes only the authority documentation and\nthe skill sensor's pinned sentence; the reviewed Rust is unchanged.\n`just pr-freeze 336` reported FINAL at this full head: CLEAN, all five\nlatest checks passed, ready, no migration conflict, Delivers accepted.\nThis is the single review round, covering correctness, cost and security.\n\n## Findings\n\n1. **P2 - Close records a completed override even when its CAS refuses.**\n   `crates/daemon/src/http/lifecycle.rs:648-663` commits\n   `seat.prime-override` before the independently committed\n   `tombstone_if_unchanged` at line 676. A seat's normal end-of-turn\n   activity/context write changes the row between the expected-row read and\n   the CAS. The close then returns `E-RS-INCARNATION-CHANGED`, leaving the\n   seat live but a durable `operation: close` override fact. The existing\n   held-close retry loop (`crates/daemon/src/http/memory_turn.rs:593-620`)\n   explicitly expects this race and can append several override facts for\n   one eventual close. Commit the override fact and guarded tombstone in\n   the same owned transaction, or explicitly distinguish attempted/refused\n   actions from committed acts. A regression should force an intervening\n   activity write and assert no completed-override fact on a refused CAS.\n\n2. **P2 - The expanded actor predicate is not used to protect a project-prime target.**\n   `crates/store/src/role_assertion.rs:335-340` lets an acting prime bypass\n   a live foreign parent, then checks the target with old `is_prime`,\n   which only recognizes machine designation and role assertions\n   (`:77-83`), not `projects.prime_id` as new `acts_as_prime` does (`:94-103`).\n   Given project B's designated prime with no `prime` role and a live parent,\n   an unrelated prime can now link it as a worker and take its parent,\n   despite AC1/non-goals saying prime targets still refuse. The old path\n   refused this live-parent takeover. Protect targets using the same\n   approved definition of prime and add this live-parent, project-only\n   designation case.\n\n## Resolved scope\n\n- Role-only primes are deliberately authorized. The prime confirmed direct\n  Jordan approval and a role-only motivating caller. This is not a finding.\n- `docs/how/pij-rs-api.md:289` now names the approved role-only-prime\n  link/close exception.\n- No in-scope external-account security vulnerability found by the bounded\n  static security assessment. Same-user threats are excluded.\n- No new per-tick work or launch. Alt inference is per registration;\n  backfill is one pass after the daemon owns its port and before serving.\n\n## Evidence\n\n- `git diff --check origin/main...HEAD`: passed.\n- `just pij-skill-check`: passed at 1119b535 (one pre-existing advisory\n  protocol line-budget warning).\n- `harness boot --json`: advisory NOT-READY (dependency-free review worktree).\n- The following exact shared-build invocation passed at niceness 19,\n  four jobs, with the reviewed Rust unchanged at FINAL:\n\n  `PIJ_SHARED_TARGET=\"$(bash harness/scripts/cargo-target.sh)\" just shared-build -- test --locked -p pij-daemon --test prime_override_http --then test --locked -p pij-daemon --lib alt --then clippy --locked -p pij-daemon -p pij-harnesses -p pij-store --all-targets -- -D warnings`\n\n  Override tests: 3 passed. Alt-selected unit tests: 5 passed, including\n  registration inference and one-shot backfill. macOS clippy: passed.\n- Latest CI run 44970413200: check (22), check (24), rust-lint and\n  rust-test passed. Delivers run 44970413172 passed. TS proof is CI-only;\n  no dependencies were installed and no full local harness pass is claimed.\n- Initial CI check failure was the stale skill sensor requiring\n  \"Close requires self or the current recorded parent.\"; fixed at 1119b535.\n\n## Harness gift\n\n**magicWand:** The completed-close audit invariant needs a regression that interleaves a\nnormal activity write with the close CAS. This would turn the existing F194\nrace knowledge into deterministic protection for the new audit fact.\n\n**difficulties:** Positive actor-prime tests did not cover project-only\nprime targets; normal activity/CAS races did not exercise the new audit.\nThe stale authority documentation was clarified with the prime and fixed,\nalong with the skill sensor, in 1119b535.\n"
+		}
+	]
+}
