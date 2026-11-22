@@ -2981,6 +2981,16 @@
 					"seat": "pij-perfect-catshark",
 					"to": "2026-11-22T02:04:27.628Z",
 					"why": "#337 F281 single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-22T06:05:27.259Z",
+					"harness": "copilot",
+					"harness_session": "ab857425-92f5-430d-a3e1-677d7e4c4704",
+					"instance_key": "339",
+					"machine": "studio",
+					"seat": "pij-printed-stork",
+					"why": "#339 F284 p2 single review (amended C34; Jordan-approved)"
 				}
 			]
 		}
