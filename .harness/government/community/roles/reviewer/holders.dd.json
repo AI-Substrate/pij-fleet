@@ -2994,6 +2994,16 @@
 					"seat": "pij-printed-stork",
 					"to": "2026-11-22T06:15:01.014Z",
 					"why": "#339 F284 p2 single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-22T07:11:13.902Z",
+					"harness": "copilot",
+					"harness_session": "87673db3-1308-4424-97a7-d5a5bfdf59d8",
+					"instance_key": "340",
+					"machine": "studio",
+					"seat": "pij-cautious-quail",
+					"why": "#340 FYI-stall digest single review (amended C34; Jordan-approved)"
 				}
 			]
 		}
