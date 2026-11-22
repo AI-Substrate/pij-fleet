@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Open before touching the lapse/turn brake, shared-build's test limits or signal traps, federation receipts, or how the daemon chooses its bind",
+				"tags": [
+					"f279",
+					"f281",
+					"f284",
+					"shared-build",
+					"federation",
+					"bind",
+					"bash"
+				],
+				"title": "Lapse brake reads the pane late; shared-build stops silent tests; peers.toml listen; bash 3.2 loses TERM to a fresh job (F279, F281, F284)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- **F279 lapse brake.** Read a lapsed seat's turn from its pane at the LATE edge: re-read it right before the decision, never from a snapshot taken earlier. A stale read lets a turn that ended in between through. Every added check is a brake. The 60 s wait is held in memory and stated in the docs.\n- **F281 shared-build limits.** These are policies that act only on the run's own process group:\n  - a filtered `cargo test` is stopped 3 min after its first test binary starts;\n  - any test run silent for 2 min is stopped (`PIJ_SHARED_BUILD_TEST_IDLE`, 0 = off);\n  - an explicit `PIJ_SHARED_BUILD_TEST_LIMIT` replaces both.\n  Compile first with `PIJ_SHARED_BUILD_TEST_LIMIT=0 … --no-run`, then run with a short limit. A healthy test that prints nothing for over 2 min is stopped on purpose (Jordan).\n- **Open F281 follow-up, waiting on Jordan.** macOS bash 3.2 loses a TERM sent to a just-forked `set -m` job's group 22 times in 300; Linux bash 5.2 lost none in 300. The likely cause: the child still carries the parent's trap. `drain()` escalates to KILL only after 10 s, so the signal-sweep test (8 s budget) flakes. CI failed it on Linux too, so the cause there is not proven. Likely fix: re-send TERM on every tick. Repro: `/tmp/f281-repro/lost-term.sh` (macOS vs `docker run node:22-bookworm`).\n- **F284 receipt (#339).** Only `reqwest::Error::is_connect()` reads \"unreachable\": nothing was sent. Past the connect, the peer may already have the message, so the receipt says \"reply lost (it may have been delivered)\". A peer's Queued reads \"accepted by <alias>; …\". Show peer text without control characters and capped. The spine keeps the peer's receipt word for word.\n- **F284 bind.** The address comes from `--bind`, then `PIJ_RS_BIND`, then peers.toml `listen`, then the default. `insecure_listen` opts in only the file's own `listen`. `Config.insecure_bind` is `Option<InsecureOptIn>`, so the boot warning names the switch that opened the listener. The bind sets the daemon's ONE port, loopback included.\n- **Test gaps that bit me.** My filtered runs (`federation::`, `pairing::`) missed an http test that asserted the old receipt; CI caught it. Before pushing a change to any user-visible string, run the whole `pij-daemon --lib`. Also, a relative `edit` path resolves against the session's cwd, the MAIN checkout, not your worktree: always use absolute worktree paths.\n"
+		}
+	]
+}
