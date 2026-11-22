@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a200f3-21f9-7642-869a-ae41a29c6962",
+				"date": "2026-11-22",
+				"head": "4fd74261641c3c96327696642ca2e3d22e7cddb2",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:337",
+				"writer": "pij-perfect-catshark",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"N1 relays not stopped on signal/exit paths",
+				"N2 relays/monitor not at nice 19",
+				"N3 serial-mode last test line misattributed",
+				"N4 post-stop duplicate lines (bash 3.2)",
+				"N5 cargo -v Running rustc arms clocks",
+				"N6 no witness for cargo status through relay"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "harness/scripts/nice19.sh vitest run harness/scripts/shared-build.test.ts (temp copy, node_modules from main)",
+					"exit_code": 0,
+					"log": "31 passed; M1 killed, M2 killed, M3 survived"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# #337 (F281) review at 4fd7426: pass-with-notes\n\nNo blocker. Limits, filter detection, kill scope, quoting and ledger are right. Six notes for the author, none of them a normal-use bug.\n\n## Checked and holding\n- Kill scope (rule 6): only `-$child` (cargo's group), the monitor's group and the relay pids. No kill by pattern. INT, TERM and HUP mid-run: rc 130/143/129; monitor, relays, cargo group and lock all gone (probed).\n- cargo's status survives the relay: a fake `cargo test` exiting 101 makes the script exit 101 (probed).\n- FIFOs sit inside the lock dir, which `mkdir -m 0700` creates atomically. No predictable-name race, and `rm -rf` of the lock removes them.\n- Stop message: `printf %s` of the last test line and the args. No eval, no injection.\n- No polling: the monitor blocks in `read -t` up to the nearest deadline.\n- has_filter: probed `-v`, `--no-fail-fast`, `--exact`, `--ignored`, `--skip=a`, `--message-format json`, `-Zunstable-options --format json` (none filter) and `--include-ignored foo` (filters). All correct.\n- Privacy: no paths, accounts or emails in the added lines.\n- Ledger: diff against current origin/main `docs/difficulties.md` is exactly the D-F281-1 row. Clean resolution.\n- Mutants (mine): M1, idle clock armed from the start instead of the first `Running` line: KILLED. M2, `--skip` dropped from the value list: KILLED. M3: see N6.\n\n## Notes (author fixes; prime checks)\n- N1, exit paths: `on_signal` and `on_exit` never stop the relays. A signal that lands after the relays fork but before cargo opens the FIFOs leaves both relays blocked forever in `open()` on FIFOs that `rm -rf` has already unlinked: two leaked bash processes, no CPU. Adjacent case observed: an INT about 40 ms in left the fake cargo and both relays running after the lock was released. The cargo half of that window predates this PR (main has `cargo &` then `child=$!`); leaking the relays is new. Fix: after drain, `kill -TERM -- -$pid` for each relay group in both traps.\n- N2, cost, rule 5 letter: the relays and the monitor run at the caller's niceness. ps showed them at `S` next to cargo at `SN`. Relay CPU is about 4 s per MB: 40k lines (2.3 MB) took 19.9 s wall and 9.4 s CPU from a nice-19 caller. A real workspace run is about 3k lines, so under 1 s. Fix: renice the relays and the monitor to 19 (once per run), or state the exception in AGENTS.md.\n- N3, wrong attribution: serial libtest (`--test-threads=1`) prints `test b ... ` with no newline until b ends, and prints no 60 s warning. The relay holds that partial line, so the idle stop message names the PREVIOUS test (`last test line: test a ... ok`) while b is the one hung. Observed. Fix: call it the last completed test line, or have the monitor track a partial `test ` prefix.\n- N4, cosmetic: once the monitor exits (a limit fell), the relay's `printf >&7` fails, and bash 3.2 later flushes that line's stdio buffer to the relay's own fd. The result is duplicate lines (`test b_hangs ... ` twice) and stray blank lines after a stop. Observed. Fix: on the first failed write, close fd 7 and stop forwarding.\n- N5, arming (reasoned): `*\"Running \"*` also matches the compile lines `cargo test -v` prints (`Running \\`rustc ...\\``). A verbose run therefore arms the idle and filtered clocks while still compiling, and a rustc silent for over 2 min under load gets stopped. Fix: match only cargo's test-binary line, for example require that no backtick follows `Running `.\n- N6, witness gap: M3 (`return 0` in place of `return \"$status\"` on the relay path) SURVIVES all 31 tests. The real code is right (101 probed), but nothing witnesses it. Add one test: a failing `cargo test` exits with cargo's status.\n\nPolicy note (not a finding): with libtest's 60 s warning, a healthy single test silent for more than about 180 s (multi-thread) or 120 s (serial) is stopped. That is Jordan's strict-on-purpose ruling, so it should be stated as such.\n"
+		}
+	]
+}
