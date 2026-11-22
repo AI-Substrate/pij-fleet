@@ -1,0 +1,62 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20218-46fb-77a1-9487-e656053edef7",
+				"date": "2026-11-22",
+				"head": "e75db5dcc58321a33dd90b5fe38f901dde6bfd88",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/340",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:340",
+				"writer": "pij-cautious-quail",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 340",
+					"exit_code": 0,
+					"log": "pr340-freeze.log"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-core --lib fyi_watch --then test --locked -p pij-daemon --lib -- stall",
+					"exit_code": 0,
+					"log": "initial exact-head control receipt: 6 core, 15 daemon pass"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib -- stall",
+					"exit_code": 101,
+					"log": "pr340-mutants.log: both named mutant assertions fail"
+				},
+				{
+					"command": "just shared-build -- test --locked -p pij-daemon --lib pr340 -- --nocapture",
+					"exit_code": 101,
+					"log": "pr340-carrier-controls.log: 3 controls pass, deliberate same-clock witness fails"
+				},
+				{
+					"command": "harness checks --quick",
+					"exit_code": 1,
+					"log": "pr340-harness-checks.json: C25 local dependency limitation"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# PR 340 review\n\n**Verdict: pass-with-notes** at `e75db5dcc58321a33dd90b5fe38f901dde6bfd88`. One C34 round; no normal-use correctness, cost or security block found.\n\n## Correctness\n\n`fyi_stalls` groups only each seat's selected scope recipients, sends once per target, and settles claims individually. A returned refusal/error releases every affected claim when no target accepted; any accepted target preserves the existing once-per-backlog behavior. The isolated probe tombstoned the recipient after scope selection: both claims released, the same-ID retry queued one digest, and another round sent nothing. An ineligible candidate is skipped before claiming. The three-seat regression covers one send, three claims, quiet repetition, and clear/re-stall.\n\nThe notice keeps complete entries, orders oldest first, and counts omitted seats correctly. Existing 40-long-ID coverage and an independent 2..79-seat Unicode/control-text boundary probe passed within the 1,746-byte notice budget, reserving space for the 2,048-byte delivered limit.\n\n**C34 follow-up, non-blocking:** distinct multi-seat batches to one target at the same `now_ms` collide at `fyi-stall:digest:<target>:<ms>` (`crates/daemon/src/pa_presence.rs`, message-ID construction). The actual-carrier probe produced one inbox message for two distinct batches; the second batch's claims were settled despite no second carrier. The production scheduler has one non-overlapping round every 60 seconds, so this is a clock-reuse assumption, not a demonstrated normal-use block. A batch identity in the key would remove it if this hardening is approved. Failed-before-admission same-ID retry works; ambiguous errors after admission retain the pre-existing best-effort retry limitation.\n\nRecipients are the round's role/scope snapshot, not an atomic role revalidation at admission. Ordinary target disappearance fails delivery and re-arms claims. Abrupt process loss between claims and sends retains the documented loss-over-duplicate tradeoff; batching widens its unsent set, while graceful shutdown drains the round.\n\n## Security and privacy\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | No vulnerabilities found | - |\n\nOnly live watched PAs or designated/role primes selected for each stall receive it; grouping does not widen scope. Senders remain attributed, first lines are fenced at 100 source characters, and controls/quotes/backslashes are escaped rather than emitted raw. The complete five-file public diff adds no account names, emails, machine-specific paths, secrets or dependency changes. C33 applies.\n\n## Cost and brake classification\n\nThe existing watchdog remains one round per 60 seconds. For N newly stalled seats sharing a target, sends fall from N to at most one; with T targets, at most T sends. No new scheduled loop, timer, process-launch site or store read. There are additional finite in-process grouping passes and a seat sort; all due FYI bodies are retained and cloned for notices, so temporary memory grows with the due backlog rather than one seat's backlog.\n\nRead-only live baseline: daemon build `e8da3f91a5`, spawn counter 2,284 to 2,351 over 21.414509 seconds (3.13/s); deltas were community ddocs 2, community git 5, and existing staged-submit tmux operations 60. `just spawn-rate --seconds 20`: 326.2 new processes/s machine-wide, daemon-descendant lower bound 3.3/s. These are ambient baseline receipts, not a deployed before/after measurement of this head. No bounce or deployment performed.\n\nThe individual eligibility exclusions are **brakes**. PA-versus-prime fallback is a **routing policy**: filtering out all PAs can substitute the prime, so the whole function is not globally monotonic in its recipient set.\n\n## Item 2 recommendation\n\nPrefer (c), an explicit operator/voice opt-out from automatic watchdog wakes, only after approval; keep (a) as immediate operating guidance. Do not infer that intent from role age in (b): a newly assigned real PA is exactly when supervision may be needed, and a grace period merely delays the same unwanted wake. Keep the marker independent of role authority, with explicit fallback/no-target behavior and no new polling or launch.\n\n## Evidence\n\n- `just pr-freeze 340`: FINAL at this exact head; all five checks pass. CI run `44996026279` has passing Node 22/24, Rust lint and Rust tests; delivers run `44996026163` passes.\n- Exact-head archive: `just shared-build -- test --locked -p pij-core --lib fyi_watch --then test --locked -p pij-daemon --lib -- stall`: 6 core and 15 daemon tests pass.\n- Independent budget, ineligible-target and failed-digest recovery probes pass. Both requested mutants were killed at their intended assertions: three sends instead of one, and invalid recipients accepted. The mutant run also hit an unrelated background-startup assertion; that test passes in the initial and restored controls.\n- After restoring the guards, `just shared-build -- test --locked -p pij-core --lib fyi_watch --then test --locked -p pij-daemon --lib -- stall`: 7 core and 15 daemon tests pass. The carrier controls drain and acknowledge the entire serialized inbox, not just one claim page.\n- `just shared-build -- test --locked -p pij-daemon --lib pr340 -- --nocapture`: ineligible target, failed-digest retry and distinct-next-round carriers pass; only the deliberate same-clock witness fails (3 pass, 1 fail, exit 101).\n- Same-clock actual-carrier probe: expected two carriers, observed one; assertion failure, exit 101. This is the non-blocking follow-up above, not a mutant kill.\n- `harness boot`: dependency-limited, Rust-only work allowed. `harness checks --quick`: eight local dependency/ambient-tool failures; pij-skill, copilot-native and copilot-sdk pass. TypeScript proof remains exact-head CI-only under C25; no dependency installation/linking.\n\nThe detached review worktree remains at the exact head without product edits. Mutations/probes ran only in an owned git archive, with the shared-build lock, niceness 19, four jobs and `CARGO_INCREMENTAL=0`. Only the owned archive is cleaned; no pattern kills or shared-root deletion. Reviewer/340 remains held.\n\n**Harness lesson:** verify all distinct delivered carriers, not merely a successful `queued` receipt or one serial inbox page. A duplicate pending queue key can return `queued` while retaining the old payload. Keep a same-key negative control beside a distinct-round positive control.\n"
+		}
+	]
+}
