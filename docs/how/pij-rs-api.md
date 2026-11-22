@@ -357,6 +357,24 @@ A match reports `spawned pij worker <id>`. Otherwise the tool reports `spawned, 
 
 Nothing is pressed and nothing is killed. The F211 wait stays open, so if someone answers the prompt in the pane, the seat registers and its parent gets the usual one notice. `pij-rs spawn --trust-folder` (HTTP `"trust_folder":true`) answers instead: it reads which row is highlighted, presses one key toward the trust row (Up or Down), and Enter only on it, waiting 1 s between keys for the prompt to redraw. It refuses, pressing nothing, when no highlighted row is visible. It needs the wait, so it can't be combined with `--no-wait`. A prompt is matched only on whole rows below its heading row (Copilot's question, Claude's `Accessing workspace:`), so prose quoting them never matches. Cost: no new launch. The detection reads the capture the wait already takes, and `--trust-folder` presses at most one key a second, only during a spawn wait that asked for it.
 
+## Harness alts: `spawn --alt` (F280)
+
+A harness can be started an alternate way, named in `~/.pij-rs/harness-alts.toml` (the daemon's state directory). One table per alt, `[<harness>.<name>]`:
+
+```toml
+[claude.1]
+env = { CLAUDE_CONFIG_DIR = "~/.claude-alt" }   # a second Claude setup
+# bin = "/absolute/path/to/claude"               # replaces the harness name
+# args = ["--some-flag"]                          # appended after pij's own
+```
+
+- **Fields.** `env` (strings), `bin` (absolute; may not name another harness, and refuses together with `--bin`) and `args`. A leading `~` in an env value or `bin` is `$HOME`. Names are 1 to 32 of `A-Za-z0-9._-`. An env key may not start with `PIJ_`. pij's own launch flags are unchanged (a Claude seat already gets `--dangerously-skip-permissions`). The alt's env goes on the `env` argv after the seat's identity and before pij's own harness variables, so pij's win; like them, it is visible in `ps`, so keep secrets out of it.
+- **Spawn.** `pij-rs spawn --harness claude --alt 1` reads the file at that spawn. An alt not in it refuses `E-RS-ALT-UNKNOWN`, naming the file and the harness's alts; an unreadable or invalid file refuses `E-RS-ALT-CONFIG`. Nothing is launched. A spawn without `--alt` never reads the file.
+- **Recorded on the seat.** The row keeps `alt: {name, home}` (`home`: the Claude home the alt's `CLAUDE_CONFIG_DIR` names; column `seats.alt`, migration 0051). `pij-rs state` prints `alt: <name>`, and `pij list` shows the harness as `claude alt:1`.
+- **Revive** relaunches with the recorded alt, re-reading the file, so edits apply (a moved Claude home then resumes from the new home). An alt since removed, or an unreadable file, refuses before anything is written: the seat is not tombstoned and never relaunched with the default.
+- **Claude homes.** A spawned Claude seat with an alt home binds from `<home>/sessions`. Every existing home a Claude alt names is also one of pij's Claude homes, so the daemon installs its hooks and inbound setting there at start and reads its transcripts; a home added later gets them at the next daemon start, and `just doctor`'s claude-hooks rows show it until then.
+- **Cost.** No loop, timer or launch. The file is read by a spawn with `--alt`, twice by a revive of an alt seat, and once per Claude-homes discovery (daemon start, the doctor commands, revive `--ask`/`--cheap`).
+
 ## Copilot cache proxy gate (plan 229)
 
 Workstream 004 s03 (PRD 004, blueprint 003). A Copilot seat on a Claude model can run through the `pij-rs cache-proxy` sidecar, which gives it a 1-hour prompt cache. The daemon reads only the sidecar's status route, `GET /__pij/status` on `http://127.0.0.1:7471` (`PIJ_CACHE_PROXY_URL` overrides it for tests, read once at daemon start; only a loopback `http://` URL is accepted). It never sees the token.

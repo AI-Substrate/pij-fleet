@@ -2,6 +2,7 @@
 //! and interaction-safety quirks. Drift belongs here, once per harness.
 
 mod adapter;
+pub mod alts;
 mod claude_settings;
 pub mod codex;
 mod composer;

@@ -593,17 +593,17 @@ answer = "Header `❄ <seat> is cold (<ctx>, idle <dur>). Options:`, then one al
 
 [[fixture]]
 path = "golden/cli/list-sized.json"
-sha256 = "68e43269277ba495dc46feea6693251542408fd8ea64527a0b3e8f6a3dfca619"
-bytes = 1668
-note = "Plan 160: a /v1/seats?sizes=true payload. A cold Claude seat, a warm working OMP seat, a large Copilot seat with an unknown cache TTL that the guard warns about (`coldWake.warning`, sizeColumns marker ⚠, F214), a Copilot seat with unknown context, a Copilot seat whose native receiver lease lapsed (`nativeReceiver`, F195), a working Copilot seat with a standing dialog stall (plan 219), a remote seat without size columns, and an unavailable peer."
+sha256 = "d3a6a0ce26581aaafb22a0519ffd512565119e81e649ecdbcc07905afa9aa0b6"
+bytes = 1727
+note = "Plan 160: a /v1/seats?sizes=true payload. A cold Claude seat, a warm working OMP seat, a large Copilot seat with an unknown cache TTL that the guard warns about (`coldWake.warning`, sizeColumns marker ⚠, F214), a Copilot seat with unknown context, a Copilot seat whose native receiver lease lapsed (`nativeReceiver`, F195), a working Copilot seat with a standing dialog stall (plan 219), an `alt` on the cold Claude seat (F280), a remote seat without size columns, and an unavailable peer."
 answer = "Input for pij list's human table: both the Rust CLI (pij_cli::roster::render_table) and the TS shim (renderRosterTable) must render list-sized.txt from it."
 
 [[fixture]]
 path = "golden/cli/list-sized.txt"
-sha256 = "341f6e94dbac4164bf620c1cc4983f233451eeca60f4553349a7f4b87af8751e"
-bytes = 647
+sha256 = "e4031f34d1cda3544554fa58afdb717e92601d7b11858041dbe91c2dbfbbcb3c"
+bytes = 687
 note = "Plan 160: pij list's human table rendered from list-sized.json."
-answer = "Columns SEAT, HARNESS, STATE, CTX, IDLE, CACHE padded two spaces apart. ❄ marks a row the guard would refuse, ⚠ a row it would warn about (F214); any other marker text renders as no marker. A seat with a `dialog` shows `blocked on a dialog (<key>)` as its STATE (plan 219). A seat with `nativeReceiver` appends it to its STATE after a comma (`idle, receiver lapsed 39m`, F195). A remote seat shows `id@machine` and `-` sizes. Unavailable peers are listed after the rows. No trailing newline."
+answer = "Columns SEAT, HARNESS, STATE, CTX, IDLE, CACHE padded two spaces apart. ❄ marks a row the guard would refuse, ⚠ a row it would warn about (F214); any other marker text renders as no marker. A seat with a `dialog` shows `blocked on a dialog (<key>)` as its STATE (plan 219). A seat with `nativeReceiver` appends it to its STATE after a comma (`idle, receiver lapsed 39m`, F195). A seat with an `alt` shows `<harness> alt:<name>` as its HARNESS (F280). A remote seat shows `id@machine` and `-` sizes. Unavailable peers are listed after the rows. No trailing newline."
 
 [[fixture]]
 path = "golden/address/cases.json"

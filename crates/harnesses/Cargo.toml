@@ -11,6 +11,9 @@ workspace = true
 async-trait = { workspace = true }
 pij-core = { workspace = true }
 serde_json = { workspace = true }
+# F280: `harness-alts.toml`, read at spawn and revive only.
+serde = { workspace = true }
+toml = { workspace = true }
 sha2 = { workspace = true }
 # Plan 182 (ADR 0001): `local-offset` is libc `localtime_r`, the conversion `ps`
 # applies to a start instant, so in-process liveness answers in the same local

@@ -1598,6 +1598,19 @@ async fn launch_owned(
     if session == pij_tmux::CONTROL_SESSION {
         return control_session_refused(command_name);
     }
+    // F280: an alt is read from the file now; a refusal launches nothing.
+    let alt = match request.alt.as_deref() {
+        None => None,
+        Some(name) => match pij_harnesses::alts::resolve(
+            &state.services.harness_alts,
+            pij_harnesses::alts::home().as_deref(),
+            request.harness,
+            name,
+        ) {
+            Ok(alt) => Some(alt),
+            Err(refusal) => return alt_refused(command_name, &refusal),
+        },
+    };
 
     // The caller's spawn guard keeps classification, observed launch, and the
     // descriptor write in one daemon-local critical section. F255: a keyed
@@ -1699,6 +1712,7 @@ async fn launch_owned(
         accept_inbound: request.accept_inbound,
         resume: request.resume.clone(),
         copilot_provider,
+        alt: alt.clone(),
     }) {
         Ok(plan) => plan,
         Err(error) => return refused(command_name, error),
@@ -1814,6 +1828,10 @@ async fn launch_owned(
     descriptor.provider = plan.provider;
     descriptor.effort = plan.effort;
     descriptor.cache_proxy = cache_proxy;
+    descriptor.alt = alt.map(|alt| pij_core::model::SeatAlt {
+        name: alt.name,
+        home: alt.claude_home,
+    });
     // A resumed launch keeps its conversation key, so no later registration can
     // mistake the relaunch for a different conversation (plan 156 rule 3).
     descriptor.harness_session = request.resume;
@@ -4490,6 +4508,7 @@ fn state_card(
             proc_start: seat.proc.map(|proc| proc.proc_start),
             cwd: seat.folder,
             harness: seat.harness,
+            alt: seat.alt,
             extension_build: seat.extension_build,
             extension_path: seat.extension_path,
             role: seat.role,
@@ -5381,6 +5400,14 @@ pub(crate) fn refused(command: &str, reason: impl std::fmt::Display) -> Response
         StatusCode::BAD_REQUEST,
         &Envelope::<()>::refused(command, ErrorKind::Refused, reason.to_string()),
     )
+}
+
+/// F280: a spawn's or revive's alt is unknown or its file unreadable.
+pub(crate) fn alt_refused(command: &str, refusal: &pij_harnesses::alts::AltRefusal) -> Response {
+    let mut answer: Envelope<()> =
+        Envelope::refused(command, ErrorKind::Refused, refusal.message.clone());
+    answer.details = Some(serde_json::json!({ "code": refusal.code }));
+    envelope(StatusCode::BAD_REQUEST, &answer)
 }
 
 /// The stable code for a claim on a retired seat's id (#44). A client that chose
