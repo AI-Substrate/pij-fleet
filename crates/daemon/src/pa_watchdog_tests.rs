@@ -3446,6 +3446,158 @@ async fn a_seat_idle_on_held_fyis_is_reported_to_its_pa_once_per_backlog() {
     );
 }
 
+/// Jordan, 2026-11-22: one FYI fan-out left 40 seats stalled, and their PA was
+/// woken once per seat. One round's stalls reach a target as one digest
+/// naming every seat; a seat still stalled next round is not reported again;
+/// one that clears and stalls again is, on its own.
+#[tokio::test]
+async fn seats_stalled_in_one_round_reach_their_pa_as_one_digest() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &pa).await;
+    let stalled = ["pij-idle", "pij-idle-b", "pij-idle-c"];
+    for id in &stalled[1..] {
+        services
+            .registry
+            .put(seat(id, &repos.path("main"), Some("pij-prime")))
+            .await
+            .unwrap();
+    }
+    for id in stalled {
+        hold(
+            &services,
+            id,
+            &format!("{id}-1"),
+            &format!("main is red, says {id}"),
+        )
+        .await;
+        hold(&services, id, &format!("{id}-2"), "withdrawn").await;
+    }
+    let watchdog = PaWatchdog::default();
+    let start = now_ms();
+
+    let due = watchdog
+        .round(&services, INTERVAL, start + 16 * MINUTE)
+        .await
+        .unwrap();
+    let sent = kind_of(&due, "fyi-stall");
+    assert_eq!(sent.len(), 1, "one send per target: {due:?}");
+    let (_, to, mut subjects) = sent[0].clone();
+    subjects.sort();
+    assert_eq!(
+        (to.as_str(), subjects),
+        ("pij-pa", stalled.map(String::from).to_vec())
+    );
+    let told = handed(&services, "pij-pa").await;
+    assert_eq!(told.len(), 1, "{told:?}");
+    let body = &told[0].body;
+    assert!(body.len() <= 2_048, "{} bytes", body.len());
+    assert!(
+        body.starts_with("[pij watchdog] 3 seats have held"),
+        "{body}"
+    );
+    for id in stalled {
+        assert!(
+            body.contains(&format!(
+                "- {id}: 2 FYIs, oldest 16m ago, from pij-busy: \"main is red, says {id}\""
+            )),
+            "{body}"
+        );
+    }
+    let stall_claims: Vec<String> = claims(&services)
+        .await
+        .into_iter()
+        .filter(|claim| claim.starts_with("fyi-stall:"))
+        .collect();
+    assert_eq!(
+        stall_claims.len(),
+        3,
+        "claims stay per seat: {stall_claims:?}"
+    );
+
+    let again = watchdog
+        .round(&services, INTERVAL, start + 17 * MINUTE)
+        .await
+        .unwrap();
+    assert!(kind_of(&again, "fyi-stall").is_empty(), "once per stall");
+    assert!(handed(&services, "pij-pa").await.is_empty());
+
+    services
+        .delivery
+        .claim_fyis(&"pij-idle-b".into(), "hook:claude")
+        .await
+        .unwrap();
+    let cleared = watchdog
+        .round(&services, INTERVAL, start + 18 * MINUTE)
+        .await
+        .unwrap();
+    assert!(kind_of(&cleared, "fyi-stall").is_empty(), "{cleared:?}");
+    hold(&services, "pij-idle-b", "b-3", "verdict: pass").await;
+    hold(&services, "pij-idle-b", "b-4", "merged").await;
+    let restalled = watchdog
+        .round(&services, INTERVAL, start + 40 * MINUTE)
+        .await
+        .unwrap();
+    assert_eq!(
+        kind_of(&restalled, "fyi-stall"),
+        vec![(
+            "fyi-stall".into(),
+            "pij-pa".into(),
+            vec!["pij-idle-b".into()]
+        )]
+    );
+    let told = handed(&services, "pij-pa").await;
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(
+        told[0].body.contains("pij-idle-b has held 2 FYIs"),
+        "{told:?}"
+    );
+}
+
+/// Review of #340: two distinct digests to one target in the same
+/// millisecond are two messages, never one queue key that keeps the first.
+#[tokio::test]
+async fn two_digests_to_one_target_in_one_millisecond_are_both_delivered() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &pa).await;
+    for id in ["pij-idle-b", "pij-idle-c", "pij-idle-d"] {
+        services
+            .registry
+            .put(seat(id, &repos.path("main"), Some("pij-prime")))
+            .await
+            .unwrap();
+    }
+    let watchdog = PaWatchdog::default();
+    let at = now_ms() + 16 * MINUTE;
+    let batches = [["pij-idle", "pij-idle-b"], ["pij-idle-c", "pij-idle-d"]];
+    for pair in batches {
+        for id in pair {
+            hold(&services, id, &format!("{id}-1"), &format!("from {id}")).await;
+            hold(&services, id, &format!("{id}-2"), "withdrawn").await;
+        }
+        let sent = kind_of(
+            &watchdog.round(&services, INTERVAL, at).await.unwrap(),
+            "fyi-stall",
+        );
+        assert_eq!(sent.len(), 1, "{sent:?}");
+    }
+    let told = handed(&services, "pij-pa").await;
+    assert_eq!(told.len(), 2, "one carrier per batch: {told:?}");
+    for (message, pair) in told.iter().zip(&batches) {
+        for id in pair {
+            assert!(
+                message.body.contains(&format!("\"from {id}\"")),
+                "{message:?}"
+            );
+        }
+    }
+}
+
 async fn to_pa(services: &crate::Services, msg_id: &str) {
     services
         .delivery
