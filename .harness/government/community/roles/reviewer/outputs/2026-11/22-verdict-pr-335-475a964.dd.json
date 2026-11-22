@@ -1,0 +1,46 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"head": "475a964c6bf7359b7442a56c19473a983451d91c",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44966122135",
+				"result": "pass",
+				"role": "reviewer",
+				"subject": "pr:335",
+				"writer": "pij-strong-aardwolf",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"Prime: run the agreed live cc-alt spawn/close/revive canary after merge and bounce."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 335",
+					"exit_code": 0
+				},
+				{
+					"command": "cargo nextest run --locked --workspace --profile ci",
+					"exit_code": 0,
+					"log": "https://github.com/AI-Substrate/pij-fleet/actions/runs/44966122135/job/137035428361"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "VERDICT PASS: PR #335, correctness review, round 2\nHead: 475a964c6bf7359b7442a56c19473a983451d91c\n\nR335-01 resolved. registration.rs:1407-1412 carries the alt only when the successor has no alt and its same-harness predecessor has the same verified nonempty process identity. The existing spawned_seat_prebind_and_spawn_correlation_are_unchanged regression now stamps SeatAlt and asserts preservation across the initial bind and /new successor. Without the R1 fix, the successor assertion would compare None against Some(SeatAlt).\n\nThe range-diff from 8966b780 is confined to that carry/regression and the two architecture metadata snapshots: 3 files, 36 added lines. The snapshots gain only the new pij-harnesses serde/toml normal dependency edges, resolving the two original-head CI failures.\n\nReviewed contracts:\n- Spawn resolves the requested harness/name from the file; unknown, unreadable, invalid, or conflicting executable configurations refuse before a harness launch or seat write.\n- Migration 0051 persists SeatAlt as nullable JSON; the store round-trip and initial registration preserve it, and same-process new/fork successors now do too.\n- Revive checks the recorded alt before durable writes, then relaunches with the re-read config. The removed-alt HTTP regression asserts no launch and an unchanged seat row.\n- Claude binding selects the recorded alt home/sessions instead of the default. Existing configured Claude homes are included in startup hook/inbound/transcript discovery. Leading ~ and ~/ expand in env values and executable paths; the existing default-launch behavior is preserved.\n- Cost: zero added process launches, zero added config reads per tick. Spawn with alt reads once; revive with alt reads twice; Claude-home discovery reads once per call at startup/explicit commands. The existing binder runs every delivery_interval_secs (default 5 s), still one sessions-directory read per pending Claude seat per pass: P/5 directory reads per second for P pending seats, no new per-seat launch. The inheritance fix only clones a field at registration.\n\nLocal proof limitations: this detached review worktree has no node_modules; harness boot reports NOT-READY and harness checks --quick cannot run TS-dependent stages. C25 keeps TS proof in exact-head CI, not a symlink or install. The local shared-build batch was cancelled before compilation while waiting on another seat's lock, so it is not test or macOS clippy proof. No production bounce, live alternate launch, or before/after deployed comparison was performed; the prime owns the agreed post-merge cc-alt canary.\n\nHarness gift: R335-01 is now encoded in the existing native /new regression rather than only documented. Remaining friction (deferred, not a product block): readonly review readiness should point to exact-head CI when dependencies are absent, and review commands should consume immutable full SHAs rather than FETCH_HEAD.\n\nFinal proof:\n- just pr-freeze 335: exit 0, FINAL at this exact full head; GitHub/remote agree, base main, CLEAN, all latest checks pass, migration 0051 is above main's 0050.\n- CI run 44966122135 at this head: Node 22 and 24 checks, Rust lint, and Rust tests passed; delivers passed in its separate workflow.\n- cargo nextest run --locked --workspace --profile ci: 2874 tests passed, 6 skipped.\n- Successful rust-test job 137035428361 uploaded JUnit artifact 14731364371. The receipt confirms all twelve selected tests ran and passed: the three alts parser/refusal tests; alt argv/bin/args; configured homes; Claude alt binding; HTTP spawn/refusal; HTTP revive/no-write refusal; same-process /new inheritance; store round-trip; and both architecture-fixture tests.\n- git diff --check origin/main...HEAD: passed. The detached checkout is clean at the reviewed head.\n\nNo remaining correctness findings. The agreed live cc-alt spawn/close/revive canary remains with the prime after merge and bounce; it is not claimed as pre-merge proof.\n"
+		}
+	]
+}
