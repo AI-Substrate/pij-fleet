@@ -58,63 +58,16 @@ impl SqliteRegistry {
                 owned_write(async move {
                     require_current_schema(&pool).await?;
                     let mut tx = begin_write(&pool).await?;
-                    if let Some(expected) = expected.as_ref() {
-                        let row = sqlx::query("SELECT * FROM seats WHERE id = ?1")
-                            .bind(seat.as_str())
-                            .fetch_optional(&mut *tx)
-                            .await
-                            .map_err(adapter_error)?;
-                        let current = row.as_ref().map(row_to_descriptor).transpose()?;
-                        if current.as_ref() != Some(expected) {
-                            tx.rollback().await.map_err(adapter_error)?;
-                            return Err(PijError::GovernanceRefused {
-                                code: "E-RS-INCARNATION-CHANGED".to_string(),
-                                record: seat.to_string(),
-                            });
-                        }
-                    }
-                    let mut event = tombstone_event(&seat, &reason, expected.as_ref())?;
-                    // Plan 158: a retired seat's held FYIs can never ride along, so
-                    // they are dropped in the same transaction and the tombstone
-                    // records how many. Close, reap and revive all pass through here.
-                    let dropped = sqlx::query(
-                        "UPDATE fyis SET state = 'dropped', settled_at_ms = ?2, \
-                         settled_via = 'tombstone' WHERE recipient = ?1 AND state = 'pending'",
-                    )
-                    .bind(seat.as_str())
-                    .bind(event.at as i64)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(adapter_error)?
-                    .rows_affected();
-                    record_dropped_fyis(&mut event, dropped)?;
-                    // Plan 196: a retired seat's open number claims are released
-                    // in the same transaction; the numbers stay burned.
-                    crate::claims::release_for_seat(&mut tx, seat.as_str(), event.at as i64)
-                        .await?;
-                    let seq = append_in_transaction(&mut tx, &event).await?;
-                    // A retired seat's turn is over: `working` must not outlive it.
-                    let affected = sqlx::query(
-                        "UPDATE seats SET tombstoned_at = ?2, tombstone_reason = ?3, \
-                 native_extension_delivery = 0, seq = ?4, \
-                 state = CASE WHEN state = 'working' THEN 'idle' ELSE state END WHERE id = ?1",
-                    )
-                    .bind(seat.as_str())
-                    .bind(event.at as i64)
-                    .bind(&reason)
-                    .bind(seq.0 as i64)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(adapter_error)?
-                    .rows_affected();
-                    if affected == 0 {
+                    let Some(event) =
+                        tombstone_in_transaction(&mut tx, &seat, &reason, expected.as_ref())
+                            .await?
+                    else {
                         // Unconditional intent keeps its original absence refusal. The
                         // guarded path already checked presence under this transaction.
                         tx.rollback().await.map_err(adapter_error)?;
                         return Err(PijError::NoRegistryEntry { seat, store });
-                    }
+                    };
                     tx.commit().await.map_err(adapter_error)?;
-                    event.seq = Some(seq);
                     Ok((event, None))
                 })
                 .await
@@ -122,6 +75,72 @@ impl SqliteRegistry {
             .await
             .map(|(seq, _)| seq)
     }
+}
+
+/// Tombstone `seat` inside the caller's transaction, returning its committed-
+/// sequence `seat.tombstone` event, or `None` when no row was there. With
+/// `expected`, the current row must equal it, else `E-RS-INCARNATION-CHANGED`
+/// before anything is written. Shared by every tombstone and F282's prime
+/// close, which appends its audit fact in the same transaction. On an error
+/// the caller drops (rolls back) the transaction.
+pub(crate) async fn tombstone_in_transaction(
+    tx: &mut sqlx::SqliteConnection,
+    seat: &SeatId,
+    reason: &str,
+    expected: Option<&SeatDescriptor>,
+) -> Result<Option<Event>> {
+    if let Some(expected) = expected {
+        let row = sqlx::query("SELECT * FROM seats WHERE id = ?1")
+            .bind(seat.as_str())
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(adapter_error)?;
+        let current = row.as_ref().map(row_to_descriptor).transpose()?;
+        if current.as_ref() != Some(expected) {
+            return Err(PijError::GovernanceRefused {
+                code: "E-RS-INCARNATION-CHANGED".to_string(),
+                record: seat.to_string(),
+            });
+        }
+    }
+    let mut event = tombstone_event(seat, reason, expected)?;
+    // Plan 158: a retired seat's held FYIs can never ride along, so
+    // they are dropped in the same transaction and the tombstone
+    // records how many. Close, reap and revive all pass through here.
+    let dropped = sqlx::query(
+        "UPDATE fyis SET state = 'dropped', settled_at_ms = ?2, \
+         settled_via = 'tombstone' WHERE recipient = ?1 AND state = 'pending'",
+    )
+    .bind(seat.as_str())
+    .bind(event.at as i64)
+    .execute(&mut *tx)
+    .await
+    .map_err(adapter_error)?
+    .rows_affected();
+    record_dropped_fyis(&mut event, dropped)?;
+    // Plan 196: a retired seat's open number claims are released
+    // in the same transaction; the numbers stay burned.
+    crate::claims::release_for_seat(&mut *tx, seat.as_str(), event.at as i64).await?;
+    let seq = append_in_transaction(&mut *tx, &event).await?;
+    // A retired seat's turn is over: `working` must not outlive it.
+    let affected = sqlx::query(
+        "UPDATE seats SET tombstoned_at = ?2, tombstone_reason = ?3, \
+         native_extension_delivery = 0, seq = ?4, \
+         state = CASE WHEN state = 'working' THEN 'idle' ELSE state END WHERE id = ?1",
+    )
+    .bind(seat.as_str())
+    .bind(event.at as i64)
+    .bind(reason)
+    .bind(seq.0 as i64)
+    .execute(&mut *tx)
+    .await
+    .map_err(adapter_error)?
+    .rows_affected();
+    if affected == 0 {
+        return Ok(None);
+    }
+    event.seq = Some(seq);
+    Ok(Some(event))
 }
 
 fn adapter_error(error: sqlx::Error) -> PijError {

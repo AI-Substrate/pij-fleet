@@ -584,6 +584,7 @@ enum Command {
         args: Vec<String>,
     },
     /// Take a seat as your child and stamp its role: `link <seat> --role <pm|worker|pa>`.
+    /// A prime takes any seat, from a live parent too (F282).
     Link {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -599,7 +600,8 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Tombstone a seat owned by this caller without killing its process or pane.
+    /// Tombstone a seat owned by this caller (a prime: any seat, F282) without
+    /// killing its process or pane.
     Close {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,

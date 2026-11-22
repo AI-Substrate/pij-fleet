@@ -276,7 +276,7 @@ for marker in \
   'Link takes a seat with no live parent, or re-roles one you parent.' \
   'pij adopt "$TMUX_PANE" --harness <h> ${PIJ_PARENT_ID:+--parent "$PIJ_PARENT_ID"}' \
   'recorded `parent`, not a spawnedBy fallback' \
-  'Close requires self or the current recorded parent.' \
+  'Close requires self, the current recorded parent, or a prime (F282, any seat).' \
   '`--scope local`' \
   'Legacy `--role`, `--prime` and `--archived` remain refused.' \
   'Both shim and native `pij-rs list --here` select the caller' \

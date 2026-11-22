@@ -43,7 +43,7 @@ pub use orchestration::{
 pub use outputs::{CommunityOutput, OUTPUT_KINDS};
 pub use queue::SqliteQueue;
 pub use registry::SqliteRegistry;
-pub use role_assertion::{Placement, PlacementCommit};
+pub use role_assertion::{PRIME_OVERRIDE_EVENT, Placement, PlacementCommit, prime_override_event};
 pub use role_requests::{
     CARRIED_EVENT, CARRY_STARTED_EVENT, CarriedMail, CloseOutcome, ClosedOrOpen, ClosedRoleRequest,
     LIMIT_CLAIM_LEASE_MS, LimitClaim, LimitStage, REQUESTS_LIST_LIMIT, ReplyMode, RequestState,
