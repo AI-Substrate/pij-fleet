@@ -3002,7 +3002,10 @@
 					"harness_session": "87673db3-1308-4424-97a7-d5a5bfdf59d8",
 					"instance_key": "340",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-cautious-quail",
+					"to": "2026-11-22T07:37:21.583Z",
 					"why": "#340 FYI-stall digest single review (amended C34; Jordan-approved)"
 				}
 			]
