@@ -1,0 +1,35 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20241-0672-7050-a786-e0e9ccf6aae5",
+				"date": "2026-11-22",
+				"head": "f7cf59e2f0506b814972df4732eddb70e6576d8a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:341",
+				"writer": "pij-selective-moose",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "# #341 reviewer verdict at f7cf59e: BLOCK (one narrow finding)\n\n## F001 (P1, normal-use regression): a daemon started under CLAUDE_CONFIG_DIR stops searching ~/.claude\n`UdsTransport::new(pij_harnesses::claude_homes(), ..)` (crates/daemon/src/lib.rs:675). `claude_homes()` calls\n`claude_homes_from(CLAUDE_CONFIG_DIR, HOME)` (claude_settings.rs:121-136): a set CLAUDE_CONFIG_DIR REPLACES `$HOME/.claude`\n(`else if`), and `configured_*` test at claude_settings.rs:1763 asserts exactly `[configured, .claude-alt]`. That rule is\nintended for settings writes, but for the transport it is new: main hardcoded `$HOME/.claude/sessions` unconditionally.\n`pij-rs daemon bounce` launches the daemon with the caller's env (crates/cli/src/bounce/mod.rs:294-308, no env_clear/env_remove),\nand a Claude alt seat's shell carries CLAUDE_CONFIG_DIR=~/.claude-alt. So a bounce (or `just bounce-rs`) run from any cc-alt\nseat yields homes = [~/.claude-alt] (+ alts.toml homes; this machine has none naming ~/.claude): every DEFAULT-home Claude seat\nthen misses its record and falls back to tmux typing, the mirror image of the bug this PR fixes. Not a misdelivery (brakes hold),\na silent degradation. Fix (small): the transport's list always includes `$HOME/.claude` (e.g. chain `claude_homes_from(None, HOME)`\ninto the list in lib.rs; `from_sessions_dirs` already dedupes by canonical path), plus a test that a configured CLAUDE_CONFIG_DIR\nstill searches `$HOME/.claude`. Also correct docs/how/pij-rs-api.md, which states `~/.claude` is always searched.\n\n## Security (pass)\n- pid+start identity is applied per home: the exact loop checks record.pid, observed.local == proc_start and (live_endpoint)\n  observed.utc == recorded for EVERY dir; a stale/forged `<pid>.json` in another home with a different start is skipped. A record\n  matching both pid and start names the same process, so no cross-seat steer.\n- Pane fallback: every candidate must be live by its own pid's start; two live owners across homes return None (verified by mutant).\n- Peer token comes from the SAME dir as the record (`matching_peer_token(dir, ..)`), never mixed across homes.\n- messagingSocketPath is not validated (no owner/symlink check). Pre-existing on main, same-user trust boundary; not widened in kind.\n- Homes come from the daemon's env, `~/.claude-alt` if it exists, and `~/.pij-rs/alts.toml` claude homes. No repo-local file can\n  add one; a same-user seat that edits alts.toml already owns everything. Note for security role, not a finding.\n\n## Correctness\n- Order deterministic: homes in claude_homes() order; exact match is first valid home (only one process can match pid+start).\n  Ambiguity is a refusal, not first-match.\n- Homes are fixed at construction (boot). An alt home added to alts.toml later is searched only after a daemon bounce.\n\n## Cost (confirmed)\nPer Claude probe: up to one `<pid>.json` open per home, else one read_dir per home; plus the pre-existing one read_dir of the\nmatched home for its peer key (`matching_peer_token`, omitted from the PR's table, unchanged). One canonicalize per home at boot.\nNo launches, no per-tick or per-seat loop added; spawn_sites unaffected.\n\n## Mutation (own, archive of HEAD, shared-build nice 19; baseline 34/34)\n- M1 cross-home ambiguity `return None` -> `continue`: KILLED (two_live_owners_..._across_two_homes, two_live_pane_records_...).\n- M2 dedupe removed: KILLED (one_home_named_twice_is_searched_once).\n- M3 exact-pid loop first home only: KILLED (an_alt_home_seat_is_found_on_its_socket_by_pid_and_by_pane).\nAll by assertion, not compile failure. Temp archive removed.\n\n## Privacy\nNo emails, account names or absolute machine paths in the diff (only `~/.claude*`).\n\n## Follow-up (a) claude_bind.rs:168\nNarrow: only daemon-SPAWNED pending Claude seats (spawn_id set, no proc) use it; a spawn through an alt names alt.home and is\nhandled. An alt-less seat lands in a CLAUDE_CONFIG_DIR home only when the daemon itself runs with that env, i.e. the same root\ncause as F001. Worth proposing to Jordan together with F001 (one rule: which homes the daemon considers, independent of its own\nenv), not as a separate urgent bug.\n"
+		}
+	]
+}
