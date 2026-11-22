@@ -337,6 +337,29 @@ describe("pij-rs HTTP client", () => {
 		}
 	});
 
+	// F284 (outage): a paired daemon's first frame is a peer_state. The stream
+	// threw on it, reconnected, and met it again for ever: no message arrived.
+	it("delivers the message behind a peer_state frame without dropping the stream", async () => {
+		const fetchMock = vi.fn(async () => new Response(fixture("events-v1-peer-state.ndjson")));
+		const client = new PijDaemonClient(
+			{ addr: "127.0.0.1:7461", stateDir: "/tmp/state" },
+			"secret",
+			{ ...deps(fetchMock as typeof fetch), readFile: async () => "secret" },
+		);
+		const frames: string[] = [];
+		const errors: Error[] = [];
+		const stop = await client.watchEvents(
+			(frame) => frames.push(frame.event.kind),
+			(error) => errors.push(error),
+		);
+		try {
+			await vi.waitFor(() => expect(frames).toEqual(["message.pushed"]));
+			expect(errors).toEqual([]);
+		} finally {
+			stop();
+		}
+	});
+
 	it("reconnects with the complete cursor map and refreshes the daemon key", async () => {
 		const stateDir = root();
 		writeFileSync(join(stateDir, "daemon.key"), "old-key\n");

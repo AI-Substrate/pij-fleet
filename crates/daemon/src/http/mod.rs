@@ -4860,6 +4860,13 @@ struct EventQuery {
     /// URL-encoded JSON object: `{\"desktop\":12,\"laptop\":7}`.
     since: Option<String>,
     scope: Option<String>,
+    /// F284: `peer_state=true` asks for `peer_state` frames (a peer's
+    /// connection, lag and reset) beside the events. Opt-in: a reader that
+    /// knows only event frames (the OMP extension, as shipped) dropped the
+    /// stream on the first one and reconnected for ever, so no message
+    /// reached it while this daemon was paired.
+    #[serde(default)]
+    peer_state: bool,
 }
 
 async fn events(State(state): State<AppState>, Query(query): Query<EventQuery>) -> Response {
@@ -4950,7 +4957,12 @@ async fn events(State(state): State<AppState>, Query(query): Query<EventQuery>) 
     // the federation workers rather than running inline here.
     let remote = match (&state.federation, query.scope.as_deref()) {
         (Some(federation), scope) if scope != Some("local") => {
-            Some(federation.subscribe_remote(&cursors))
+            let peer_state = query.peer_state;
+            Some(
+                federation
+                    .subscribe_remote(&cursors)
+                    .filter(move |frame| peer_state || matches!(frame, StreamFrame::Event { .. })),
+            )
         }
         _ => None,
     };
