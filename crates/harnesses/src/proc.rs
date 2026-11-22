@@ -528,6 +528,42 @@ pub fn claude_session_of(
         .map(|record| record.session_id)
 }
 
+/// F283: the Claude home `host` runs under, from its own record: the home
+/// whose `sessions/<pid>.json` names `host`'s pid with its observed start.
+/// Claude writes that record under its configuration home, so this is the
+/// process's `CLAUDE_CONFIG_DIR` (or `~/.claude`). One file read per home.
+#[must_use]
+pub fn claude_session_home(
+    homes: &[std::path::PathBuf],
+    host: pij_core::model::ProcIdentity,
+    utc_offset_minutes: i32,
+) -> Option<std::path::PathBuf> {
+    homes
+        .iter()
+        .find(|home| {
+            let path = home.join("sessions").join(format!("{}.json", host.pid));
+            std::fs::read(path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                .is_some_and(|record| {
+                    record.get("pid").and_then(serde_json::Value::as_u64)
+                        == Some(u64::from(host.pid))
+                        && record
+                            .get("procStart")
+                            .and_then(serde_json::Value::as_str)
+                            .is_some_and(|start| {
+                                process_start_matches_utc_record(
+                                    start,
+                                    host.proc_start,
+                                    utc_offset_minutes,
+                                )
+                                .unwrap_or(false)
+                            })
+                })
+        })
+        .cloned()
+}
+
 /// Compare Claude's UTC `procStart` row with the local-wall-time identity from [`ProcLiveness`].
 ///
 /// # Errors

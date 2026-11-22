@@ -982,7 +982,10 @@ mod tests {
         assert_eq!(status, 403, "{refused}");
         assert_eq!(refused["details"]["code"], "E-RS-OWNERSHIP");
         let (status, live) = close(addr, "pij-prime", "pij-live-orphan").await;
-        assert_eq!(status, 200, "F282: a live seat is the prime's to close: {live}");
+        assert_eq!(
+            status, 200,
+            "F282: a live seat is the prime's to close: {live}"
+        );
         assert!(
             live["data"]["process"]
                 .as_str()

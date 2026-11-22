@@ -6,11 +6,11 @@
     {
       "name": "meta",
       "value": {
-        "title": "A prime may link and close any seat",
+        "title": "A prime may link and close any seat; hand-started Claude seats get their alt",
         "slug": "prime-link-close",
         "ordinal": 234,
         "status": "ready",
-        "summary": "F282 (Jordan, 2026-11-22: 'yes, in any repo'). `pij link` and `pij close` refused a prime unless it was the seat or its recorded parent, even when that parent was cold. A prime now may, audited on the seat's history and told to a live prior parent.",
+        "summary": "F282 (Jordan, 2026-11-22: 'yes, in any repo'). `pij link` and `pij close` refused a prime unless it was the seat or its recorded parent, even when that parent was cold. A prime now may, audited on the seat's history and told to a live prior parent. F283 (same PR): a Claude seat started by hand on an alt's home records that alt at registration and at daemon start.",
         "backpressure": "assets/backpressure.dd.json#rows"
       }
     },
@@ -65,6 +65,18 @@
           "claim": "Docs: pij-rs-api § seat roles, the pij skill (invariant 7, link/close rows, peer and ops routes, delegate), and the CLI help say it.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "F283: a Claude seat that registers or adopts with no alt records the one configured Claude alt whose home (canonicalised) holds its process's own session record (`<home>/sessions/<pid>.json` with its start, which Claude writes under `CLAUDE_CONFIG_DIR`); zero or two matching alts leave it unset. No process-environment read and no launch: adopt already reads that record.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "F283: a one-shot pass at daemon start gives every live, bound Claude seat with no alt its inferred alt, because a running Claude seat re-adopts only at its next session start.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         }
       ]
     },
@@ -106,7 +118,7 @@
     {
       "name": "execution_guardrails",
       "value": [
-        "Cost: no loop, timer or launch. One indexed `projects` read per link from a live foreign parent (inside its transaction) and per close by a non-owner; one FYI per override."
+        "Cost: no loop, timer or launch. F282: one indexed `projects` read per link from a live foreign parent (inside its transaction) and per close by a non-owner; one FYI per override. F283: one alts-file read per Claude registration with no alt, then (only when a Claude alt names a home) one session file per Claude home; one such pass at daemon start."
       ]
     }
   ]

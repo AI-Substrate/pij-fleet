@@ -36,6 +36,7 @@ _Empty._
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | tk-0001 | Store predicate, link override and audit; close authority, audit, notice; tests; docs | — | ph-f282 | [x] checked | — | — | [x] 1/1 [tk-0001](#tk-0001) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria) |
+| tk-0002 | F283: infer a Claude seat's alt at registration and in a daemon-start pass | — | ph-f282 | [x] checked | — | — | [x] 1/1 [tk-0002](#tk-0002) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0007](../../../plan.dd.md#acceptance-criteria) |
 
 <a id="done-when"></a>
 
@@ -46,3 +47,9 @@ _Empty._
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
 | dw-0001 | prime_override_http passes; non-prime refusals unchanged | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
+
+### tk-0002
+
+| id | assertion | state | pressure |
+| --- | --- | --- | --- |
+| dw-0002 | registration and backfill tests pass and fail on main | [x] checked | [bp-0004](../../backpressure.dd.md#rows) |

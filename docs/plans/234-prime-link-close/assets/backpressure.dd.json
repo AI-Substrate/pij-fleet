@@ -43,6 +43,16 @@
           "proof": "Reviewer reads the docs.",
           "state": "checked",
           "probe": "docs"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC6-7",
+          "phase": "ph-f282",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "registration.rs tests a_claude_seat_on_one_alts_home_registers_with_that_alt (one alt, symlinked alt, default-home alt, two alts) and the_start_backfill_records_a_running_seats_alt; both fail on main 968af04d.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon --lib alt"
         }
       ]
     },

@@ -1182,6 +1182,17 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
     };
     let services = build_services(&bound_config, &pane_signal_dir).await?;
     let control_tmux = Arc::clone(&services.tmux);
+    // F283: Claude seats started by hand on an alt's home before this daemon
+    // get that alt now, once, rather than at their next registration.
+    let backfilled = registration::backfill_claude_alts(
+        services.registry.as_ref(),
+        &services.claude_homes,
+        &services.harness_alts,
+    )
+    .await;
+    if backfilled > 0 {
+        eprintln!("pij-rs: recorded the alt of {backfilled} hand-started Claude seat(s)");
+    }
 
     // 4. Resolve this machine's identity. FALLIBLE, and therefore BEFORE the
     //    publish: hostname lookup can fail and a configured alias can be empty.

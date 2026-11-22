@@ -635,7 +635,8 @@ fn router_with_optional_federation(
     .with_native_delivery(Arc::clone(&services.delivery))
     .with_spawn_waits(Arc::clone(&services.spawn_waits))
     .with_return_hook(crate::delivery::role_send::return_hook(&services))
-    .with_carry_hook(crate::carry::carry_hook(&services));
+    .with_carry_hook(crate::carry::carry_hook(&services))
+    .with_harness_alts(services.harness_alts.clone());
     let state = AppState {
         services,
         auth: config.auth,

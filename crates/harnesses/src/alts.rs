@@ -107,6 +107,26 @@ impl HarnessAlts {
             .filter_map(|(_, alt)| alt.claude_home.as_ref().map(PathBuf::from))
             .collect()
     }
+
+    /// F283: the one Claude alt whose home is `home`, both canonicalised
+    /// (symlinks and `..` resolved; a path that can't be resolved is compared
+    /// as written). `None` when no alt or more than one alt names it.
+    #[must_use]
+    pub fn claude_alt_for_home(&self, home: &Path) -> Option<&Alt> {
+        let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or(path.to_path_buf());
+        let home = canonical(home);
+        let mut matches = self.iter().filter(|(harness, alt)| {
+            *harness == Harness::Claude
+                && alt
+                    .claude_home
+                    .as_deref()
+                    .is_some_and(|named| canonical(Path::new(named)) == home)
+        });
+        match (matches.next(), matches.next()) {
+            (Some((_, alt)), None) => Some(alt),
+            _ => None,
+        }
+    }
 }
 
 /// The file's path under `state_dir`.
