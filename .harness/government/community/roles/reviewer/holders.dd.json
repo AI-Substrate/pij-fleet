@@ -2989,7 +2989,10 @@
 					"harness_session": "ab857425-92f5-430d-a3e1-677d7e4c4704",
 					"instance_key": "339",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-printed-stork",
+					"to": "2026-11-22T06:15:01.014Z",
 					"why": "#339 F284 p2 single review (amended C34; Jordan-approved)"
 				}
 			]
