@@ -310,11 +310,24 @@ impl RoleService {
                     role_changed: commit.role_changed,
                     seqs: commit.events.iter().filter_map(|event| event.seq).collect(),
                     descriptor: commit.descriptor,
+                    taken_from: commit.taken_from,
                 };
                 Ok((commit.events, receipt))
             })
             .await
             .map_err(|error| placement_error(actor, &target, error))
+    }
+}
+
+impl RoleService {
+    /// F282: may `seat` act as a prime over any seat (link or close)? The
+    /// machine's designated prime, a seat whose role is `prime`, or any
+    /// project's recorded prime.
+    ///
+    /// # Errors
+    /// Store/schema failures.
+    pub async fn acts_as_prime(&self, seat: &SeatId) -> Result<bool> {
+        self.roles.acts_as_prime(seat).await
     }
 }
 
@@ -339,6 +352,9 @@ pub struct PlacementReceipt {
     pub role_changed: bool,
     /// Committed event sequences, in order.
     pub seqs: Vec<Seq>,
+    /// F282: the live parent a prime took the seat from, when it did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub taken_from: Option<SeatId>,
     /// The committed seat row, for the spawn response.
     #[serde(skip)]
     pub descriptor: SeatDescriptor,
@@ -642,7 +658,22 @@ pub(crate) async fn link(
         .place(&actor.id, Placement::Link(seat), &role)
         .await
     {
-        Ok(receipt) => envelope(StatusCode::OK, &Envelope::ok(LINK, receipt)),
+        Ok(receipt) => {
+            // F282: the live parent a prime took the seat from hears it once.
+            if let Some(parent) = &receipt.taken_from {
+                super::lifecycle::tell_prior_parent(
+                    &state,
+                    parent,
+                    &actor.id,
+                    format!(
+                        "pij: prime {} took your seat {} as its own child (role {}); it is no longer yours",
+                        actor.id, receipt.seat, receipt.role
+                    ),
+                )
+                .await;
+            }
+            envelope(StatusCode::OK, &Envelope::ok(LINK, receipt))
+        }
         Err(error) => error.into_response(LINK),
     }
 }

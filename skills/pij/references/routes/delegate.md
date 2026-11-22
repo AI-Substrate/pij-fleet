@@ -76,4 +76,4 @@ read `notes`, then either re-delegate a narrowed packet or take it over.
 |---|---|
 | Ready but inference fails | corroborate the exact model with the host catalog/footer and real canary (§ C2/C4); models shim is unported |
 | No done-report for a long time | trust push (§ C7); inspect the actual host transcript/pane only for a known-broken transport, never native event tail as a transcript |
-| Close refuses | only self/current recorded parent may tombstone; no `--force` escape, terminal teardown is separate |
+| Close refuses | only self, the current recorded parent or a prime (F282) may tombstone; no `--force` escape, terminal teardown is separate |

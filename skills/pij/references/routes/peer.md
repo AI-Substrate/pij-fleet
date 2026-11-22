@@ -22,7 +22,7 @@ pij node show <seat> --json
 
 For an OMP seat, `pij whoami` reports the loaded OMP extension's `extension_build` and real `extension_path`; for a Pi seat it reports that Pi runtime's loaded extension. Current-daemon null means a pre-144/unreported build (older daemons omit the keys), never infer it from the seat cwd or today's HEAD. Use `pij list --json` for roster build identity.
 
-Parent is the rs descriptor's recorded `parent`, not a spawnedBy fallback. **Roles come from above: pass `--role pm|worker|pa` on the placement call.** On spawn, you become the parent and the role is stamped in the spawn's own transaction. For a hand-started seat (or an omp/pi `pij_spawn` child, pij-fleet#25) run `pij link <seat> --role <r>` after its ready-ping. Link takes a seat with no live parent, or re-roles one you parent. A live foreign parent refuses `E-RS-OWNERSHIP`; a prime or your own ancestor also refuses. Roles are never inferred or backfilled. `tree` still refuses.
+Parent is the rs descriptor's recorded `parent`, not a spawnedBy fallback. **Roles come from above: pass `--role pm|worker|pa` on the placement call.** On spawn, you become the parent and the role is stamped in the spawn's own transaction. For a hand-started seat (or an omp/pi `pij_spawn` child, pij-fleet#25) run `pij link <seat> --role <r>` after its ready-ping. Link takes a seat with no live parent, or re-roles one you parent. A live foreign parent refuses `E-RS-OWNERSHIP`, unless you are a prime (F282: a prime takes any seat, audited as `seat.prime-override`, and the prior parent gets one FYI); linking a prime or your own ancestor also refuses. Roles are never inferred or backfilled. `tree` still refuses.
 
 Verified external/paneless seats use `pij inbox register --json`, then `pij inbox --wait` from the same native host/session (C1). Native admission derives the matching long-lived host incarnation, never the short-lived CLI's pid; missing/conflicting evidence refuses. Paneless adopt remains unported. Never guess/discover a pane or start a competing extension receiver.
 
@@ -132,7 +132,7 @@ pij close <seat> [--reason <text>] --json
 pij reap --dry-run --json
 ```
 
-Close requires self or the current recorded parent. It tombstones the seat and preserves history, **not pane/process teardown**; no `--force`. Healthy peers should be compacted/reused. A separately authorized owner handles terminal teardown after actual liveness evidence; reap is conservative stale-record repair (ops route), not a killer.
+Close requires self, the current recorded parent, or a prime (F282, any seat). It tombstones the seat and preserves history, **not pane/process teardown**; no `--force`. Healthy peers should be compacted/reused. A separately authorized owner handles terminal teardown after actual liveness evidence; reap is conservative stale-record repair (ops route), not a killer.
 
 The daemon's **death sweep** runs every **5s** by default (`PIJ_RS_DEATH_SWEEP_MS`, milliseconds). It applies the same conservative rule as `pij-rs reap --dry-run`: `Dead`/`Recycled` process plus recorded pane absent; unknown evidence is not death. It writes one `seat.tombstone` with `reason: "observed-dead"` and the process/pane observation, then **pushes an obituary to the recorded parent** through the existing delivery service. The sender is the same daemon-owned `pij-bg` virtual actor used for bg completion (`pij_core::BG_ACTOR`), not a second identity. Do not poll for child death.
 

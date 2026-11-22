@@ -1,0 +1,113 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "A prime may link and close any seat",
+        "slug": "prime-link-close",
+        "ordinal": 234,
+        "status": "ready",
+        "summary": "F282 (Jordan, 2026-11-22: 'yes, in any repo'). `pij link` and `pij close` refused a prime unless it was the seat or its recorded parent, even when that parent was cold. A prime now may, audited on the seat's history and told to a live prior parent.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Link refused a live foreign parent's seat and close refused anyone but self or parent (F175 let a project's prime close only a dead parentless seat). A prime could not take or retire a seat whose parent was cold or busy elsewhere. One store predicate now names who acts as a prime, and both verbs consult it."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A prime can take or retire any seat without the parent's cooperation.",
+        "Every override is on the record and the displaced parent is told."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "No process or pane teardown on close.",
+        "No change for non-primes.",
+        "No change to who may be linked (a prime or the caller's ancestor still refuses)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "A caller that acts as a prime may `pij link` any live seat, taking it from a live recorded parent in any project, and `pij close` any seat. \"Acts as a prime\" is one store predicate, `acts_as_prime`: the store's existing `is_prime` (the machine's current `prime_designation`, or a `seat_roles` role of `prime`) or any project's `projects.prime_id` (what F175's close rule already read). A target that is itself a prime, or the caller's ancestor, is still refused on link.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Every such act appends `seat.prime-override` on the seat's history, `{operation, prime, seat, prior_parent}`: a link in the placement's own transaction, a close before its tombstone (persist before mutate). A prime acting on its own child or itself appends none; a repeat close appends none.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "A live prior parent other than the prime gets one FYI naming the prime and the act; a dead or absent parent gets none.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Non-primes are refused exactly as before (`E-RS-OWNERSHIP`), and close still only tombstones: no process or pane is killed.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Docs: pij-rs-api § seat roles, the pij skill (invariant 7, link/close rows, peer and ops routes, delegate), and the CLI help say it.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-f282",
+          "title": "Prime link and close shipped",
+          "brief": "One PR: store predicate + override event in the link transaction; close authority, audit and notice; tests both sides; docs.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Link authority lives in the store transaction `place_seat_committed` (crates/store/src/role_assertion.rs), refusing `E-RS-OWNERSHIP` for a live foreign parent. Close authority is `may_close` (crates/daemon/src/http/lifecycle.rs): self, parent, or F175's `prime_closes_dead_orphan` (a project's `prime_id`, parentless dead seats only), which this plan subsumes and removes. Primes in the store: `is_prime` (designation or role `prime`), `projects.prime_id`."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A prime closes a busy seat by mistake.",
+          "likelihood": "Low",
+          "impact": "Medium",
+          "mitigation": "Close only tombstones (revive restores it); the act is audited and the parent told."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: no loop, timer or launch. One indexed `projects` read per link from a live foreign parent (inside its transaction) and per close by a non-owner; one FYI per override."
+      ]
+    }
+  ]
+}

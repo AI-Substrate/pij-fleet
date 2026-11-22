@@ -1,0 +1,61 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 234 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-3",
+          "phase": "ph-f282",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "crates/daemon/tests/prime_override_http.rs on a real store: each kind of prime links from a live parent (fact, FYI count), a prime closes another's child (fact, FYI, no kill), repeat/own acts add nothing. Fails on the pre-fix tree (403).",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon --test prime_override_http"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4",
+          "phase": "ph-f282",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Same file: a non-prime is refused link and close, row unchanged, no fact, no FYI; lifecycle unit test keeps the outsider refusal.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC5",
+          "phase": "ph-f282",
+          "mode": "ABSENT",
+          "tier": "human-judgement",
+          "proof": "Reviewer reads the docs.",
+          "state": "checked",
+          "probe": "docs"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        }
+      ]
+    }
+  ]
+}
