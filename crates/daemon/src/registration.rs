@@ -164,6 +164,9 @@ pub(crate) struct RegistrationService {
     carried: Option<CarryHook>,
     /// F197: parent pids, read in-process, for the pane-holder-child brake.
     parents: ParentReader,
+    /// F283: `harness-alts.toml`, to infer the alt of a Claude seat that
+    /// registers without one. Absent in services that never infer.
+    harness_alts: Option<PathBuf>,
 }
 
 /// What a registration that brought a seat back calls (F193).
@@ -229,7 +232,14 @@ impl RegistrationService {
             returned: None,
             carried: None,
             parents: Arc::new(real_parent),
+            harness_alts: None,
         }
+    }
+
+    /// F283: infer a Claude seat's alt from `file` at registration.
+    pub(crate) fn with_harness_alts(mut self, file: PathBuf) -> Self {
+        self.harness_alts = Some(file);
+        self
     }
 
     /// The registration counters alone (plan 211); `ping` reads [`Self::counts`].
@@ -1411,6 +1421,21 @@ impl RegistrationService {
         {
             descriptor.alt = previous.alt.clone();
         }
+        // F283: a Claude seat started by hand with an alt's home records that
+        // alt, so revive relaunches it there. The home is the one holding the
+        // process's own session record; exactly one configured alt must name it.
+        if descriptor.alt.is_none()
+            && harness == Harness::Claude
+            && let (Some(file), Some(host)) = (self.harness_alts.clone(), proc)
+        {
+            let homes = self.claude_homes.clone();
+            descriptor.alt = tokio::task::spawn_blocking(move || {
+                infer_claude_alt(&claude_alts(&file)?, &homes, host)
+            })
+            .await
+            .ok()
+            .flatten();
+        }
         // Plan 229: a seat's cache-proxy route describes the launch that set
         // its environment, so it holds only for that launch's process (the
         // spawned incarnation binding, or the same process re-registering).
@@ -2371,6 +2396,90 @@ fn native_observer(reads: Arc<attempts::Reads>) -> impl FnMut(u32) -> ObserveFut
     }
 }
 
+/// F283: `file`'s alts when it names any Claude home; `None` otherwise (no
+/// file, an unreadable one, or no Claude alt with a home), so callers then
+/// read no session record at all.
+pub(crate) fn claude_alts(file: &Path) -> Option<pij_harnesses::alts::HarnessAlts> {
+    let alts = pij_harnesses::alts::load(file, pij_harnesses::alts::home().as_deref()).ok()?;
+    (!alts.claude_homes().is_empty()).then_some(alts)
+}
+
+/// F283: the alt a hand-started Claude process runs under. Its home is the
+/// one in `homes` holding its own `sessions/<pid>.json` with its start (Claude
+/// writes it under `CLAUDE_CONFIG_DIR`); the alt is the one configured Claude
+/// alt naming that home. `None` when the record is not found, or zero or two
+/// alts name the home. Blocking: one file read per home.
+pub(crate) fn infer_claude_alt(
+    alts: &pij_harnesses::alts::HarnessAlts,
+    homes: &[PathBuf],
+    host: ProcIdentity,
+) -> Option<pij_core::model::SeatAlt> {
+    let offset = pij_harnesses::proc::local_utc_offset_minutes().ok()?;
+    let home = pij_harnesses::proc::claude_session_home(homes, host, offset)?;
+    let alt = alts.claude_alt_for_home(&home)?;
+    Some(pij_core::model::SeatAlt {
+        name: alt.name.clone(),
+        home: alt.claude_home.clone(),
+    })
+}
+
+/// F283: once at daemon start, give each live, bound Claude seat with no alt
+/// the alt its process runs under ([`infer_claude_alt`]), so seats started by
+/// hand before this daemon are revived in their own home without waiting for
+/// their next registration. Returns how many it set; a store error is logged
+/// and ends the pass. Runs before the daemon serves, after it owns the store.
+pub(crate) async fn backfill_claude_alts(
+    registry: &dyn Registry,
+    homes: &[PathBuf],
+    file: &Path,
+) -> usize {
+    let filter = SeatFilter {
+        harness: Some(Harness::Claude),
+        live_only: true,
+        ..SeatFilter::default()
+    };
+    let seats = match registry.list(filter).await {
+        Ok(seats) => seats,
+        Err(error) => {
+            eprintln!("pij-rs: claude alt backfill: {error}");
+            return 0;
+        }
+    };
+    let pending: Vec<SeatDescriptor> = seats
+        .into_iter()
+        .filter(|seat| seat.alt.is_none() && seat.tombstoned_at.is_none() && seat.proc.is_some())
+        .collect();
+    if pending.is_empty() {
+        return 0;
+    }
+    let (file, homes) = (file.to_path_buf(), homes.to_vec());
+    let inferred = tokio::task::spawn_blocking(move || {
+        let Some(alts) = claude_alts(&file) else {
+            return Vec::new();
+        };
+        pending
+            .into_iter()
+            .filter_map(|mut seat| {
+                seat.alt = infer_claude_alt(&alts, &homes, seat.proc?);
+                seat.alt.is_some().then_some(seat)
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
+    let mut set = 0;
+    for seat in inferred {
+        match registry.put(seat).await {
+            Ok(_) => set += 1,
+            Err(error) => {
+                eprintln!("pij-rs: claude alt backfill: {error}");
+                return set;
+            }
+        }
+    }
+    set
+}
+
 #[cfg(target_os = "linux")]
 async fn observe_native_process(
     pid: u32,
@@ -2950,6 +3059,162 @@ mod tests {
             ),
             "{result:?}"
         );
+    }
+
+    /// F283: `00:57:34` local on 2026-10-15 as the daemon reads a start;
+    /// Claude records it in UTC as `Thu Oct 15 00:57:34 2026`.
+    fn alt_host() -> ProcIdentity {
+        let offset = i64::from(pij_harnesses::proc::local_utc_offset_minutes().expect("offset"));
+        let minutes = 57 + offset;
+        let day = 15 + minutes.div_euclid(1_440);
+        let minute_of_day = minutes.rem_euclid(1_440);
+        ProcIdentity {
+            pid: 4343,
+            proc_start: 20_261_000_000_000
+                + u64::try_from(day).unwrap() * 1_000_000
+                + u64::try_from(minute_of_day / 60).unwrap() * 10_000
+                + u64::try_from(minute_of_day % 60).unwrap() * 100
+                + 34,
+        }
+    }
+
+    /// A default Claude home and an alt home whose `sessions/4343.json` is
+    /// [`alt_host`]'s own record, plus a symlink to the alt home.
+    struct AltHomes {
+        root: std::path::PathBuf,
+        default: std::path::PathBuf,
+        alt: std::path::PathBuf,
+        link: std::path::PathBuf,
+        file: std::path::PathBuf,
+    }
+
+    impl AltHomes {
+        fn new() -> Self {
+            let root = pij_testkit::fresh_dir("pij-f283-homes");
+            let (default, alt) = (root.join(".claude"), root.join("claude-alt"));
+            for home in [&default, &alt] {
+                fs::create_dir_all(home.join("sessions")).unwrap();
+            }
+            fs::write(
+                alt.join("sessions/4343.json"),
+                serde_json::json!({"pid": 4343, "sessionId": SESSION,
+                    "procStart": "Thu Oct 15 00:57:34 2026", "tmux": "main:@1.%137"})
+                .to_string(),
+            )
+            .unwrap();
+            let link = root.join("alt-link");
+            std::os::unix::fs::symlink(&alt, &link).unwrap();
+            let file = root.join("harness-alts.toml");
+            Self {
+                root,
+                default,
+                alt,
+                link,
+                file,
+            }
+        }
+
+        fn configure(&self, alts: &[(&str, &std::path::Path)]) {
+            let text: String = alts
+                .iter()
+                .map(|(name, home)| {
+                    format!(
+                        "[claude.{name}]\nenv = {{ CLAUDE_CONFIG_DIR = \"{}\" }}\n",
+                        home.display()
+                    )
+                })
+                .collect();
+            fs::write(&self.file, text).unwrap();
+        }
+
+        fn homes(&self) -> Vec<std::path::PathBuf> {
+            vec![self.default.clone(), self.alt.clone()]
+        }
+    }
+
+    impl Drop for AltHomes {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// F283: a hand-started Claude seat whose own session record is in the
+    /// home of exactly one configured alt registers with that alt (a symlink
+    /// in the config is resolved); none or two matching alts leave it unset.
+    #[tokio::test]
+    async fn a_claude_seat_on_one_alts_home_registers_with_that_alt() {
+        let homes = AltHomes::new();
+        let host = alt_host();
+        for (alts, expected) in [
+            (vec![("1", homes.alt.as_path())], Some("1")),
+            (vec![("linked", homes.link.as_path())], Some("linked")),
+            (vec![("plain", homes.default.as_path())], None),
+            (
+                vec![("1", homes.alt.as_path()), ("2", homes.link.as_path())],
+                None,
+            ),
+        ] {
+            homes.configure(&alts);
+            let (mut service, _) =
+                native_service(Vec::new(), Arc::new(FakeLiveness::new().with_proc(host))).await;
+            service.claude_homes = homes.homes();
+            let service = service.with_harness_alts(homes.file.clone());
+            let mut claim = native_claim("pij-hand-started");
+            claim.harness = "claude".into();
+            claim.pid = Some(host.pid);
+            claim.proc_start = Some(host.proc_start);
+            let (descriptor, _) = service
+                .register_inner(
+                    claim,
+                    Some(SESSION.into()),
+                    super::RegistrationMode::Ordinary,
+                )
+                .await
+                .expect("registers");
+            assert_eq!(
+                descriptor.alt.as_ref().map(|alt| alt.name.as_str()),
+                expected,
+                "{alts:?}"
+            );
+        }
+    }
+
+    /// F283: the daemon-start pass gives a live hand-started Claude seat its
+    /// alt once, and leaves a seat with an alt, or on the default home, alone.
+    #[tokio::test]
+    async fn the_start_backfill_records_a_running_seats_alt() {
+        let homes = AltHomes::new();
+        homes.configure(&[("1", homes.alt.as_path())]);
+        let claude = |id: &str, proc| {
+            let mut seat = SeatDescriptor::new(id, Harness::Claude, "/w");
+            seat.proc = Some(proc);
+            seat
+        };
+        let mut kept = claude("pij-kept", alt_host());
+        kept.alt = Some(pij_core::model::SeatAlt {
+            name: "work".into(),
+            home: None,
+        });
+        let registry = FakeRegistry::new()
+            .with_seat(claude("pij-hand-started", alt_host()))
+            .with_seat(kept.clone())
+            .with_seat(claude("pij-default", HOST));
+        let set = super::backfill_claude_alts(&registry, &homes.homes(), &homes.file).await;
+        assert_eq!(set, 1);
+        let alt = |id: &str| {
+            let registry = &registry;
+            let id = id.to_string();
+            async move { registry.get(&id.into()).await.unwrap().unwrap().alt }
+        };
+        assert_eq!(
+            alt("pij-hand-started").await,
+            Some(pij_core::model::SeatAlt {
+                name: "1".into(),
+                home: Some(homes.alt.display().to_string()),
+            })
+        );
+        assert_eq!(alt("pij-kept").await, kept.alt);
+        assert_eq!(alt("pij-default").await, None);
     }
 
     /// F196: another harness's row on the claimed pane (an `omp -p` canary run

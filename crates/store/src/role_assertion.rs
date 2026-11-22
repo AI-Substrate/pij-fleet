@@ -34,6 +34,8 @@ pub struct PlacementCommit {
     pub parent_changed: bool,
     /// Whether the role differed and a `role-set` was appended.
     pub role_changed: bool,
+    /// F282: the live parent a prime took the seat from, when it did.
+    pub taken_from: Option<SeatId>,
 }
 
 fn refused(code: &str, record: impl ToString) -> PijError {
@@ -80,6 +82,54 @@ pub(crate) async fn is_prime(connection: &mut SqliteConnection, seat: &SeatId) -
             .await
             .map_err(adapter_error)?;
     Ok(designated.is_some() || current_role(connection, seat).await?.as_deref() == Some("prime"))
+}
+
+/// F282: may `seat` act as a prime over any seat? The machine's current
+/// designation or a `prime` role (as [`is_prime`]), or any project's
+/// recorded prime (`projects.prime_id`).
+pub(crate) async fn acts_as_prime(
+    connection: &mut SqliteConnection,
+    seat: &SeatId,
+) -> Result<bool> {
+    if is_prime(connection, seat).await? {
+        return Ok(true);
+    }
+    let project: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM projects WHERE prime_id = ?1 LIMIT 1")
+            .bind(seat.as_str())
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(adapter_error)?;
+    Ok(project.is_some())
+}
+
+/// F282: the event kind of [`prime_override_event`].
+pub const PRIME_OVERRIDE_EVENT: &str = "seat.prime-override";
+
+/// F282: the audit fact for a prime acting on a seat it neither is nor
+/// parents: which prime, which seat, the recorded parent it overrode, and the act.
+#[must_use]
+pub fn prime_override_event(
+    prime: &SeatId,
+    seat: &SeatId,
+    prior_parent: Option<&SeatId>,
+    operation: &str,
+    at: u64,
+) -> Event {
+    Event {
+        seq: None,
+        v: wire::EVENT_VERSION,
+        at,
+        kind: PRIME_OVERRIDE_EVENT.to_string(),
+        seat: Some(seat.clone()),
+        payload: json!({
+            "operation": operation,
+            "prime": prime,
+            "seat": seat,
+            "prior_parent": prior_parent,
+        })
+        .to_string(),
+    }
 }
 
 /// Is `candidate` on `start`'s recorded-parent chain (including `start`)?
@@ -198,13 +248,61 @@ impl SqliteOrchestration {
         Ok(event)
         }).await
     }
+
+    /// F282: may `seat` act as a prime? See [`acts_as_prime`].
+    ///
+    /// # Errors
+    /// Schema mismatch or any SQL failure.
+    pub async fn acts_as_prime(&self, seat: &SeatId) -> Result<bool> {
+        require_current_schema(&self.pool).await?;
+        let mut connection = self.pool.acquire().await.map_err(adapter_error)?;
+        acts_as_prime(&mut connection, seat).await
+    }
+
+    /// F282: a prime's close of a seat it neither is nor parents, as one
+    /// transaction: the guarded tombstone (`expected` must still be the row,
+    /// else `E-RS-INCARNATION-CHANGED` and nothing is written) and its
+    /// `seat.prime-override` fact. Returns both committed events, tombstone
+    /// first. Hold the shared publication boundary as for
+    /// [`Self::assert_role_committed`].
+    ///
+    /// # Errors
+    /// `E-RS-INCARNATION-CHANGED`, a missing row, schema or SQL failures.
+    pub async fn prime_close_committed(
+        &self,
+        prime: &SeatId,
+        expected: SeatDescriptor,
+        reason: String,
+        at: u64,
+    ) -> Result<Vec<Event>> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let prime = prime.clone();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let seat = expected.id.clone();
+            let tombstone =
+                crate::registry::tombstone_in_transaction(&mut tx, &seat, &reason, Some(&expected))
+                    .await?
+                    .ok_or_else(|| refused("E-RS-INCARNATION-CHANGED", &seat))?;
+            let mut audit =
+                prime_override_event(&prime, &seat, expected.parent.as_ref(), "close", at);
+            audit.seq = Some(append_in_transaction(&mut tx, &audit).await?);
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(vec![tombstone, audit])
+        })
+        .await
+    }
+
     /// Commit a governor's placement and role stamp as one SQLite transaction.
     ///
     /// Authority is read inside the same transaction: the actor must be live; a
     /// linked subject must be live, not the actor, not a prime and not the
     /// actor's ancestor, and its recorded parent must be the actor, absent, or
-    /// no longer live. A changed parent or spawn record appends `seat.put`; a
-    /// changed role appends `role-set`. An unchanged role appends nothing.
+    /// no longer live, unless the actor acts as a prime (F282), which takes it
+    /// from a live parent and appends `seat.prime-override` naming that parent.
+    /// A changed parent or spawn record appends `seat.put`; a changed role
+    /// appends `role-set`. An unchanged role appends nothing.
     /// Hold the shared publication boundary as for [`Self::assert_role_committed`].
     ///
     /// # Errors
@@ -236,7 +334,7 @@ impl SqliteOrchestration {
             // A spawn placement is a fresh launch (revive included): it may
             // replace an owner-closed row (F149). A link writes a live row.
             let lift_owner_close = matches!(placement, Placement::Spawn(_));
-            let (mut descriptor, previous_parent, write_row) = match placement {
+            let (mut descriptor, previous_parent, write_row, taken_from) = match placement {
                 Placement::Spawn(descriptor) => {
                     let mut descriptor = *descriptor;
                     if descriptor.parent.as_ref() != Some(&actor) {
@@ -252,7 +350,7 @@ impl SqliteOrchestration {
                             .fetch_optional(&mut *tx)
                             .await
                             .map_err(adapter_error)?;
-                    (descriptor, previous.flatten().map(SeatId::from), true)
+                    (descriptor, previous.flatten().map(SeatId::from), true, None)
                 }
                 Placement::Link(target) => {
                     if target == actor {
@@ -263,13 +361,20 @@ impl SqliteOrchestration {
                         .ok_or_else(|| refused("E-RS-ARG", &target))?;
                     let previous = subject.parent.clone();
                     let owned = previous.as_ref() == Some(&actor);
+                    let mut taken_from = None;
                     if !owned {
                         if let Some(parent) = previous.as_ref()
                             && live_seat(&mut tx, parent).await?.is_some()
                         {
-                            return Err(refused("E-RS-OWNERSHIP", parent));
+                            // F282: a prime takes a seat from its live parent.
+                            if !acts_as_prime(&mut tx, &actor).await? {
+                                return Err(refused("E-RS-OWNERSHIP", parent));
+                            }
+                            taken_from = Some(parent.clone());
                         }
-                        if is_prime(&mut tx, &target).await? {
+                        // F282 review: any prime, a project's included, is
+                        // never placed under another seat.
+                        if acts_as_prime(&mut tx, &target).await? {
                             return Err(refused("E-RS-PRIME", &target));
                         }
                         if is_ancestor(&mut tx, &target, &actor).await? {
@@ -277,7 +382,7 @@ impl SqliteOrchestration {
                         }
                         subject.parent = Some(actor.clone());
                     }
-                    (subject, previous, !owned)
+                    (subject, previous, !owned, taken_from)
                 }
             };
             let mut events = Vec::with_capacity(2);
@@ -286,6 +391,17 @@ impl SqliteOrchestration {
                 let seq = append_in_transaction(&mut tx, &event).await?;
                 upsert_seat(&mut tx, &descriptor, seq, lift_owner_close).await?;
                 event.seq = Some(seq);
+                events.push(event);
+            }
+            if let Some(parent) = taken_from.as_ref() {
+                let mut event = prime_override_event(
+                    &actor,
+                    &descriptor.id,
+                    Some(parent),
+                    "link",
+                    assigned_at,
+                );
+                event.seq = Some(append_in_transaction(&mut tx, &event).await?);
                 events.push(event);
             }
             let role_changed =
@@ -314,6 +430,7 @@ impl SqliteOrchestration {
                 previous_parent,
                 parent_changed: write_row,
                 role_changed,
+                taken_from,
             })
         })
         .await

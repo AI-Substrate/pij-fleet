@@ -43,7 +43,7 @@ pij reap --dry-run --json
 pij reap --json
 ```
 
-Close requires self or the target's current recorded parent. It atomically records a tombstone and event; it **does not kill a process or pane**. There is no `--force` escape. A parent repeat-close returns the existing tombstone; retired self still receives an identity refusal with that evidence. Keep healthy peers across work items; compact/reuse instead of retirement (§ C3).
+Close requires self, the target's current recorded parent, or a prime (F282: any seat, recorded parent or not; audited as `seat.prime-override`, and a live prior parent gets one FYI). It atomically records a tombstone and event; it **does not kill a process or pane**. There is no `--force` escape. A parent repeat-close returns the existing tombstone; retired self still receives an identity refusal with that evidence. Keep healthy peers across work items; compact/reuse instead of retirement (§ C3).
 
 Reap is stale-record reconciliation, not process termination or age-based retention. A candidate needs confirmed dead/recycled process identity **and** confirmed absence of its recorded pane. Paneless seats need confirmed dead/recycled process identity alone. A pane id that exists again but hosts a later process counts as absent (**reincarnated**, the usual post-reboot case). Live process/pane evidence retains the seat; unknown process/pane evidence is `unverifiable` and brakes retirement. Removing an unknown-evidence check can only permit the same set or more reaps: a **brake**, not product policy. Dry-run changes no store/spine rows. Execution re-observes the binding before conditional atomic retirement, protecting a concurrently revived incarnation. Never signal a recycled pid.
 

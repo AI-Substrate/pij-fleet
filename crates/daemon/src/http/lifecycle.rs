@@ -332,41 +332,51 @@ fn pane_id(pane: Option<&str>) -> Option<&str> {
 
 /// Who may close `seat` (one predicate for the close route and the close held
 /// for a memory turn, review of #220 F001): the seat itself, its recorded
-/// parent, or a designated prime for a dead parentless seat.
+/// parent, or any prime (F282: [`super::role::RoleService::acts_as_prime`]),
+/// recorded parent or not. A store error refuses.
 pub(super) async fn may_close(state: &AppState, actor: &SeatId, seat: &SeatDescriptor) -> bool {
     actor == &seat.id
         || seat.parent.as_ref() == Some(actor)
-        || prime_closes_dead_orphan(state, actor, seat).await
+        || state
+            .services
+            .roles
+            .acts_as_prime(actor)
+            .await
+            .unwrap_or(false)
 }
 
-/// F175: a parentless seat whose process is observed dead has no owner left
-/// to close it, so a project's designated prime (C24) may. A live or
-/// unobservable process, a recorded parent, or a caller no project designates
-/// keeps the ownership refusal.
-async fn prime_closes_dead_orphan(state: &AppState, actor: &SeatId, seat: &SeatDescriptor) -> bool {
-    if seat.parent.is_some() {
-        return false;
+/// F282: one FYI to a live prior parent that a prime took or closed its seat.
+/// Never fails the act: a delivery error is logged.
+pub(super) async fn tell_prior_parent(
+    state: &AppState,
+    parent: &SeatId,
+    prime: &SeatId,
+    body: String,
+) {
+    let live = matches!(
+        state.services.registry.get(parent).await,
+        Ok(Some(seat)) if seat.tombstoned_at.is_none()
+    );
+    if !live || parent == prime {
+        return;
     }
-    let Some(proc) = seat.proc else {
-        return false;
-    };
-    if !matches!(
-        pij_core::liveness::alive(proc, state.services.liveness.as_ref()).await,
-        Ok(Liveness::Dead { .. } | Liveness::Recycled { .. })
-    ) {
-        return false;
-    }
-    state
+    let msg_id = state.services.delivery.next_message_id();
+    if let Err(error) = state
         .services
-        .governance
-        .store()
-        .list_projects()
-        .await
-        .is_ok_and(|projects| {
-            projects
-                .iter()
-                .any(|project| project.prime_id.as_ref() == Some(actor))
+        .delivery
+        .hold_fyi(pij_core::model::Msg {
+            from: prime.clone(),
+            to: parent.clone(),
+            body,
+            msg_id,
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
         })
+        .await
+    {
+        eprintln!("pij-rs: could not tell {parent} that {prime} acted on its seat: {error}");
+    }
 }
 
 #[derive(Serialize)]
@@ -630,6 +640,12 @@ pub(super) async fn close_seat(
             .tombstone_reason
             .as_deref()
             .is_some_and(pij_core::model::is_owner_close);
+    // F282: a prime closing a seat it neither is nor parents writes its
+    // `seat.prime-override` fact (the prime, the seat, the parent it
+    // overrode) in the guarded tombstone's own transaction, so a refused
+    // compare-and-set writes neither. A repeat close records nothing new.
+    let prior_parent = expected.parent.clone();
+    let overridden = !owner_closed && actor != &target && prior_parent.as_ref() != Some(actor);
     let receipt = if owner_closed {
         tombstone_receipt(
             state.services.spine.as_ref(),
@@ -639,12 +655,20 @@ pub(super) async fn close_seat(
         )
         .await
     } else {
-        match state
-            .services
-            .registry
-            .tombstone_if_unchanged(expected, reason)
-            .await
-        {
+        let tombstoned = if overridden {
+            state
+                .services
+                .roles
+                .close_as_prime(actor, expected, reason)
+                .await
+        } else {
+            state
+                .services
+                .registry
+                .tombstone_if_unchanged(expected, reason)
+                .await
+        };
+        match tombstoned {
             Ok(seq) => {
                 tombstone_receipt(state.services.spine.as_ref(), &target, Some(seq), None).await
             }
@@ -654,6 +678,17 @@ pub(super) async fn close_seat(
     match receipt {
         Ok(Some(receipt)) => {
             let ends = end_holdings(state, &target, actor).await;
+            if overridden && let Some(parent) = &prior_parent {
+                tell_prior_parent(
+                    state,
+                    parent,
+                    actor,
+                    format!(
+                        "pij: prime {actor} closed your seat {target}; its process and pane are left running"
+                    ),
+                )
+                .await;
+            }
             let mut data = serde_json::to_value(&receipt).unwrap_or(Value::Null);
             data["process"] = note.into();
             if let Some(pane) = kill {
@@ -921,46 +956,27 @@ mod tests {
         server.abort();
     }
 
-    /// F175: a parentless seat whose process is dead has no owner left to close
-    /// it; the designated prime may. Anyone else, or a live seat, still refuses.
+    /// F175: a seat that is neither the target nor its parent nor a prime is
+    /// refused. A prime's close (F282) writes its audit fact in the tombstone's
+    /// transaction, so it needs the SQLite store: it is proved on a real store
+    /// in `tests/prime_override_http.rs`.
     #[tokio::test]
-    async fn the_designated_prime_closes_a_dead_parentless_seat_and_no_one_else_does() {
+    async fn a_seat_that_is_not_a_prime_cannot_close_a_parentless_seat() {
         let (addr, registry, server) = world(
             vec![
                 seat("pij-prime", None, None, None),
                 seat("pij-outsider", None, None, None),
                 seat("pij-orphan", None, Some("%63"), Some((800, 3_000))),
-                seat("pij-live-orphan", None, Some("%64"), Some((900, 3_000))),
             ],
-            &[("%64", 899)],
-            &[(899, 2_990), (900, 3_000)],
+            &[],
+            &[],
         )
         .await;
         let (status, refused) = close(addr, "pij-outsider", "pij-orphan").await;
         assert_eq!(status, 403, "{refused}");
         assert_eq!(refused["details"]["code"], "E-RS-OWNERSHIP");
-        let (status, live) = close(addr, "pij-prime", "pij-live-orphan").await;
-        assert_eq!(
-            status, 403,
-            "a live parentless seat is not the prime's to close: {live}"
-        );
-        let (status, closed) = close(addr, "pij-prime", "pij-orphan").await;
-        assert_eq!(status, 200, "{closed}");
-        assert!(
-            closed["data"]["process"]
-                .as_str()
-                .is_some_and(|note| note.contains("Its pane %63 is gone: nothing to kill.")),
-            "{closed}"
-        );
-        assert_eq!(closed["data"].get("kill_pane"), None, "{closed}");
         let orphan = registry.get(&"pij-orphan".into()).await.unwrap().unwrap();
-        assert!(orphan.tombstoned_at.is_some());
-        let live = registry
-            .get(&"pij-live-orphan".into())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(live.tombstoned_at.is_none());
+        assert!(orphan.tombstoned_at.is_none());
         server.abort();
     }
 }
