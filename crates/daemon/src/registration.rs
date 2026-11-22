@@ -1401,6 +1401,16 @@ impl RegistrationService {
                 .as_deref()
                 .zip(claim.spawn_id.as_deref())
                 .is_some_and(|(launched, claimed)| !launched.is_empty() && launched == claimed);
+        // F280: an alt describes the launch. A `/new` or `/fork` successor in
+        // its same-harness predecessor's verified process runs that launch, so
+        // it carries the alt revive will relaunch with.
+        if descriptor.alt.is_none()
+            && let Some(previous) = predecessor.as_ref().filter(|previous| {
+                previous.harness == harness && previous.proc.is_some() && previous.proc == proc
+            })
+        {
+            descriptor.alt = previous.alt.clone();
+        }
         // Plan 229: a seat's cache-proxy route describes the launch that set
         // its environment, so it holds only for that launch's process (the
         // spawned incarnation binding, or the same process re-registering).
@@ -5312,6 +5322,11 @@ mod tests {
         prebind.harness_session = None;
         prebind.native_extension_delivery = false;
         prebind.spawn_id = Some("spawn-137".to_string());
+        // F280: the alt rides the bind and the same-process successor.
+        prebind.alt = Some(pij_core::model::SeatAlt {
+            name: "work".to_string(),
+            home: None,
+        });
         let (service, registry) = native_service(vec![prebind.clone()], native_liveness()).await;
         let tmux = native_tmux();
         let mut claim = precedence_claim("pij-preallocated", None, None, 1_000);
@@ -5321,6 +5336,7 @@ mod tests {
             .expect("the only session in its process binds its prebind");
         assert_eq!(bound.id, prebind.id);
         assert_eq!(bound.spawn_id, prebind.spawn_id);
+        assert_eq!(bound.alt, prebind.alt, "binding keeps the alt");
         assert_eq!(
             attest(&service, claim, Some(SESSION), &tmux)
                 .await
@@ -5334,6 +5350,10 @@ mod tests {
             .await
             .expect("first prompt in the spawned /new chat");
         assert_eq!(next.spawn_id, prebind.spawn_id);
+        assert_eq!(
+            next.alt, prebind.alt,
+            "the /new successor runs the same launch"
+        );
         assert!(live(&registry, &next.id).await && !live(&registry, &bound.id).await);
     }
 
