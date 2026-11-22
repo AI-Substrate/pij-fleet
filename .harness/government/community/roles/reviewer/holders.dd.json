@@ -2968,6 +2968,16 @@
 					"seat": "pij-vertical-marmot",
 					"to": "2026-11-22T01:12:13.968Z",
 					"why": "#334 F279 R1 verdict (fresh seat; C35-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-22T01:51:03.056Z",
+					"harness": "copilot",
+					"harness_session": "596e2725-a968-4dec-b0d9-cedf3751b326",
+					"instance_key": "337",
+					"machine": "JordansacStudio.localdomain",
+					"seat": "pij-perfect-catshark",
+					"why": "#337 F281 single review (amended C34; Jordan-approved)"
 				}
 			]
 		}
