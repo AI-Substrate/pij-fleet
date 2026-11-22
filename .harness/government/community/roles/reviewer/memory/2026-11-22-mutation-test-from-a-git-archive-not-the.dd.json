@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Open before mutation-checking a PR at its frozen head",
+				"tags": [
+					"mutants",
+					"worktree",
+					"c25"
+				],
+				"title": "Mutation-test from a git archive, not the review worktree"
+			}
+		},
+		{
+			"name": "body",
+			"value": "From pij-printed-stork (#339). The review worktree is read-only (C25), so to run mutants without editing it: `git archive HEAD | tar -x -C \"$(mktemp -d)\"`, apply the mutant there, and build with `PIJ_SHARED_TARGET=<main checkout>/target just shared-build -- test ...` (one target per checkout, F217; nice 19 via the recipe). Delete the temp dir afterwards (F262).\nNote: the memory verb is `pij directory memory add <role> --project pij-fleet ...`. Plain `pij memory` returns E-RS-UNPORTED.\n"
+		}
+	]
+}
