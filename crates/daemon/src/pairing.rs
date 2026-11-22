@@ -22,7 +22,7 @@ use std::fmt::Write as _;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
-use pij_core::config::PeerDefinition;
+use pij_core::config::{InsecureOptIn, PeerDefinition};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -48,9 +48,9 @@ pub struct Pairing {
     pub insecure_listen: bool,
 }
 
-/// Where the daemon listens, and whether a non-Tailscale address is opted in
-/// (F284). The flag or `PIJ_RS_BIND`, already resolved to `resolved`, wins
-/// when `explicit`; then the file's `listen`; then `resolved` (the default).
+/// Where the daemon listens, and who opted a non-Tailscale address in (F284).
+/// The flag or `PIJ_RS_BIND`, already resolved to `resolved`, wins when
+/// `explicit`; then the file's `listen`; then `resolved` (the default).
 /// `--insecure-bind` opts in whatever address is used; the file's
 /// `insecure_listen` opts in only the file's own `listen`, so an address
 /// typed on the command line is never opted in by the file.
@@ -63,12 +63,14 @@ pub fn listen(
     explicit: bool,
     insecure_flag: bool,
     pairing: Option<&Pairing>,
-) -> (String, bool) {
+) -> (String, Option<InsecureOptIn>) {
+    let flag = insecure_flag.then_some(InsecureOptIn::Flag);
     match pairing.and_then(|pairing| pairing.listen.map(|addr| (addr, pairing.insecure_listen))) {
-        Some((addr, insecure_listen)) if !explicit => {
-            (addr.to_string(), insecure_flag || insecure_listen)
-        }
-        _ => (resolved.to_string(), insecure_flag),
+        Some((addr, insecure_listen)) if !explicit => (
+            addr.to_string(),
+            flag.or(insecure_listen.then_some(InsecureOptIn::PeersToml)),
+        ),
+        _ => (resolved.to_string(), flag),
     }
 }
 
@@ -429,7 +431,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        MIN_KEY_CHARS, PairingError, check_permissions, fingerprint, listen, new_key, parse,
+        InsecureOptIn, MIN_KEY_CHARS, PairingError, check_permissions, fingerprint, listen,
+        new_key, parse,
     };
 
     const KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -532,33 +535,33 @@ mod tests {
         let lan = with("listen = \"0.0.0.0:7461\"\ninsecure_listen = true\n");
         assert_eq!(
             listen("127.0.0.1:7461", false, false, Some(&lan)),
-            ("0.0.0.0:7461".to_string(), true),
+            ("0.0.0.0:7461".to_string(), Some(InsecureOptIn::PeersToml)),
             "a flagless restart keeps the file's listener and its opt-in"
         );
         assert_eq!(
             listen("100.64.0.9:7461", true, false, Some(&lan)),
-            ("100.64.0.9:7461".to_string(), false),
+            ("100.64.0.9:7461".to_string(), None),
             "--bind/PIJ_RS_BIND wins, and the file never opts in an address it did not name"
         );
         assert_eq!(
             listen("192.168.1.9:7461", true, true, Some(&lan)),
-            ("192.168.1.9:7461".to_string(), true),
+            ("192.168.1.9:7461".to_string(), Some(InsecureOptIn::Flag)),
             "--insecure-bind still opts in a command-line address"
         );
         let tailscale = with("listen = \"100.64.0.9:7461\"\n");
         assert_eq!(
             listen("127.0.0.1:7461", false, false, Some(&tailscale)),
-            ("100.64.0.9:7461".to_string(), false),
+            ("100.64.0.9:7461".to_string(), None),
             "no insecure_listen, no opt-in: check_bind decides as for --bind"
         );
         assert_eq!(
             listen("127.0.0.1:7461", false, false, Some(&with(""))),
-            ("127.0.0.1:7461".to_string(), false),
+            ("127.0.0.1:7461".to_string(), None),
             "no listen key: the default, as before"
         );
         assert_eq!(
             listen("127.0.0.1:7461", false, false, None),
-            ("127.0.0.1:7461".to_string(), false)
+            ("127.0.0.1:7461".to_string(), None)
         );
     }
 

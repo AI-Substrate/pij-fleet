@@ -77,8 +77,9 @@ What the sender's receipt says (F284):
 | Receipt | Means |
 |---|---|
 | `delivered` | the peer delivered it to the seat |
-| `queued — accepted by laptop; queued there for <seat> (<its reason>)` | the peer has it, durably, and will deliver it as it would a local message; the reason in brackets is the PEER's local one (`unreachable` there means the recipient's live channel was not ready, not the machine) |
-| `queued — peer laptop unreachable; queued here, retrying` | the connection to the peer failed; this machine retries with backoff |
+| `queued — accepted by laptop; queued there for <seat> (<its reason>)` | the peer has it, durably, and will deliver it as it would a local message; the reason in brackets is the PEER's local one (`unreachable` there means the recipient's live channel was not ready, not the machine), shown without control characters and cut at 200 characters |
+| `queued — peer laptop unreachable; queued here, retrying` | the connection to the peer failed, so nothing was sent; this machine retries with backoff |
+| `queued — sent to laptop; reply lost (it may have been delivered); retrying` | the request went out but no complete answer came back (a timeout, a reset, a cut body); the peer may have it already, and the retry is one message by the peer's dedupe |
 | `queued — peer laptop answered an error; queued here, retrying` | the peer is up but answered an error or something this build cannot read |
 | `queued — forwarding to laptop (pending)` | no attempt finished within the wait; nothing is known about the peer yet |
 
@@ -115,6 +116,11 @@ listen  = "100.101.102.103:7461"   # IP:port; --bind and PIJ_RS_BIND still win
 
 The address is resolved as `--bind`, then `PIJ_RS_BIND`, then `listen`, then
 `127.0.0.1:7461`. A `listen` that is not `IP:port` refuses the boot.
+
+Its port is the daemon's one port, loopback included, exactly as with
+`--bind`: `listen = "100.101.102.103:7500"` moves `127.0.0.1` to `:7500` too,
+and a local client still on `7461` no longer finds the daemon. Keep `7461`
+unless every local client is pointed at the new port.
 
 The daemon **always** listens on `127.0.0.1:<port>` too, so local clients,
 hooks and extensions keep their default address. The Tailscale address is a
@@ -181,8 +187,10 @@ insecure_listen = true    # this file's `listen` only; never a --bind address
 `insecure_listen` opts in the file's own `listen` and nothing else: an address
 given with `--bind` or `PIJ_RS_BIND` still needs `--insecure-bind`, and
 `insecure_listen` without `listen` refuses the boot. The same loud warning
-prints at every boot. Both keys only feed `check_bind`: they can add a
-listener the rule allows, never bypass it. They are read once, at boot.
+prints at every boot, naming the switch that opened it:
+`WARNING: insecure_listen in peers.toml: …` or `WARNING: --insecure-bind: …`.
+Both keys only feed `check_bind`: they can add a listener the rule allows,
+never bypass it. They are read once, at boot.
 
 ## Key rotation and revocation
 

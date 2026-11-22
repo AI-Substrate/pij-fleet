@@ -3210,7 +3210,7 @@ async fn run_daemon(
                 pij_daemon::http::RemoteListener::Listening { addr, exposure } => {
                     let banner = pij_daemon::http::boot_banner(addr, *exposure);
                     // Once, on stderr when insecure, so the warning is not lost.
-                    if *exposure == pij_daemon::http::Exposure::Insecure {
+                    if matches!(exposure, pij_daemon::http::Exposure::Insecure(_)) {
                         eprintln!("{banner}");
                     } else {
                         println!("{banner}");

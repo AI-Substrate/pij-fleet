@@ -16,13 +16,17 @@ pub struct PeerEndpoint {
     pub bearer_key: String,
 }
 
-/// Why one peer POST failed (F284). Only an UNANSWERED call (no HTTP answer:
-/// connect, timeout, a cut body) says the peer is unreachable; an answer this
-/// build cannot read came from a peer that is up.
+/// Why one peer POST failed (F284). Only a call that never CONNECTED says the
+/// peer is unreachable: past the connect the request may have been written
+/// and acted on, and an answer this build cannot read came from a peer that is
+/// up.
 #[derive(Debug)]
 pub enum PeerCallError {
-    /// The request got no complete HTTP answer.
-    Unanswered(PijError),
+    /// The connection to the peer failed, so the request was never sent.
+    Unreached(PijError),
+    /// The connection was made but no complete answer came back (a timeout,
+    /// a reset, a body cut short): the peer may have acted on the request.
+    ReplyLost(PijError),
     /// The peer answered with something that is not a readable envelope.
     Unreadable(PijError),
 }
@@ -33,8 +37,9 @@ pub enum PeerCallError {
 /// peer selection, and long-lived federation workers belong to `federation`.
 ///
 /// # Errors
-/// Network failures ([`PeerCallError::Unanswered`]), and unreadable,
-/// malformed or future envelopes ([`PeerCallError::Unreadable`]).
+/// A failed connect ([`PeerCallError::Unreached`]), a lost reply
+/// ([`PeerCallError::ReplyLost`]), and unreadable, malformed or future
+/// envelopes ([`PeerCallError::Unreadable`]).
 pub async fn post_to_peer<Request, Response>(
     client: &reqwest::Client,
     peer: &PeerEndpoint,
@@ -46,15 +51,21 @@ where
     Response: DeserializeOwned,
 {
     let url = peer_url(peer, path);
-    let unanswered = |error| PeerCallError::Unanswered(peer_error(&url, error));
+    let failed = |error: reqwest::Error| {
+        if error.is_connect() {
+            PeerCallError::Unreached(peer_error(&url, error))
+        } else {
+            PeerCallError::ReplyLost(peer_error(&url, error))
+        }
+    };
     let response = client
         .post(&url)
         .bearer_auth(&peer.bearer_key)
         .json(request)
         .send()
         .await
-        .map_err(unanswered)?;
-    let body = response.text().await.map_err(unanswered)?;
+        .map_err(failed)?;
+    let body = response.text().await.map_err(failed)?;
     wire::decode_envelope(&body)
         .map_err(|error| PeerCallError::Unreadable(unreadable_envelope(&url, error)))
 }

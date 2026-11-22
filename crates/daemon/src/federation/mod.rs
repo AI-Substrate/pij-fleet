@@ -197,8 +197,11 @@ enum Settled {
 /// connection makes the peer UNREACHABLE; anything else leaves it unknown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Retry {
-    /// The request never got an HTTP answer (connect, read or timeout).
+    /// The connection to the peer failed: the request was never sent.
     Unreachable,
+    /// The request went out, but no complete answer came back; the peer may
+    /// have taken it, and the retry's resend is one message by its dedupe.
+    ReplyLost,
     /// The peer answered, with an adapter error of its own.
     PeerError,
     /// The peer answered, but this machine could not record its receipt; the
@@ -212,9 +215,27 @@ enum Retry {
 fn queued_reason(alias: &str, retry: Option<Retry>) -> String {
     match retry {
         Some(Retry::Unreachable) => format!("peer {alias} unreachable; queued here, retrying"),
+        Some(Retry::ReplyLost) => {
+            format!("sent to {alias}; reply lost (it may have been delivered); retrying")
+        }
         Some(Retry::PeerError) => format!("peer {alias} answered an error; queued here, retrying"),
         Some(Retry::Unrecorded) | None => format!("forwarding to {alias} (pending)"),
     }
+}
+
+/// The most of a peer's own reason a sender shows (F284 review N2).
+const PEER_REASON_MAX_CHARS: usize = 200;
+
+/// A peer's reason as this machine shows it: control characters dropped, so
+/// peer text cannot drive a local terminal, and at most
+/// [`PEER_REASON_MAX_CHARS`] characters, an ellipsis marking a cut.
+fn peer_reason(theirs: &str) -> String {
+    let mut kept = theirs.chars().filter(|c| !c.is_control());
+    let mut shown: String = kept.by_ref().take(PEER_REASON_MAX_CHARS).collect();
+    if kept.next().is_some() {
+        shown.push('…');
+    }
+    shown
 }
 
 /// The peer's receipt as the sender reads it (F284): a message the peer
@@ -225,7 +246,7 @@ fn forwarded_receipt(alias: &str, seat: &SeatId, mut receipt: Receipt) -> Receip
     if let DeliveryOutcome::Queued { reason, .. } = &mut receipt.outcome {
         let there = format!("accepted by {alias}; queued there for {seat}");
         *reason = Some(match reason.take() {
-            Some(theirs) => format!("{there} ({theirs})"),
+            Some(theirs) => format!("{there} ({})", peer_reason(&theirs)),
             None => there,
         });
     }
@@ -587,8 +608,12 @@ impl FederationService {
         forwarded.to.machine = None;
         forwarded.from_machine = Some(self.local_alias.clone());
         match post_to_peer::<_, Receipt>(&self.client, endpoint, "/v1/send", &forwarded).await {
-            Err(PeerCallError::Unanswered(_)) => {
+            Err(PeerCallError::Unreached(_)) => {
                 self.retry_claim(job_id, job.attempt, &request, Retry::Unreachable)
+                    .await
+            }
+            Err(PeerCallError::ReplyLost(_)) => {
+                self.retry_claim(job_id, job.attempt, &request, Retry::ReplyLost)
                     .await
             }
             Err(PeerCallError::Unreadable(_)) => {
@@ -1328,6 +1353,59 @@ mod tests {
         assert_eq!(
             queued_reason(&answer),
             Some("peer laptop answered an error; queued here, retrying")
+        );
+    }
+
+    /// F284 review N1: a peer that took the send and then lost its reply (the
+    /// body cut after the headers) may have delivered it, so it is not called
+    /// unreachable.
+    #[tokio::test]
+    async fn a_reply_cut_after_the_peer_took_the_send_is_not_called_unreachable() {
+        let taken = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&taken);
+        let url = fake_peer(axum::Router::new().route(
+            "/v1/send",
+            axum::routing::post(move || {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async {
+                    let cut: [std::io::Result<&'static [u8]>; 2] = [
+                        Ok(br#"{"v":1,"ok":tr"#),
+                        Err(std::io::Error::other("the connection dropped")),
+                    ];
+                    axum::body::Body::from_stream(tokio_stream::iter(cut))
+                }
+            }),
+        ))
+        .await;
+        let (answer, _) = first_attempt(url, Duration::from_secs(10)).await;
+        assert!(
+            taken.load(std::sync::atomic::Ordering::SeqCst) >= 1,
+            "the peer took it"
+        );
+        assert_eq!(
+            queued_reason(&answer),
+            Some("sent to laptop; reply lost (it may have been delivered); retrying")
+        );
+    }
+
+    /// F284 review N2: a peer's own reason reaches a local terminal without
+    /// its control characters and at most 200 characters long.
+    #[tokio::test]
+    async fn a_peers_reason_is_shown_without_control_characters_and_capped() {
+        let theirs = format!("\u{1b}[2Jgone\u{7}\n{}", "x".repeat(300));
+        let url = fake_peer(axum::Router::new().route(
+            "/v1/send",
+            axum::routing::post(move || {
+                let theirs = theirs.clone();
+                async move { axum::Json(peer_receipt(Some(&theirs))) }
+            }),
+        ))
+        .await;
+        let (answer, _) = first_attempt(url, Duration::from_secs(10)).await;
+        let shown = format!("[2Jgone{}…", "x".repeat(200 - "[2Jgone".len()));
+        assert_eq!(
+            queued_reason(&answer),
+            Some(format!("accepted by laptop; queued there for bob ({shown})").as_str())
         );
     }
 
