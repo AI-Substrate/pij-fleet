@@ -21,5 +21,6 @@
 - [2026-11-21 21 Nov day: lost FINALs, worktree OMP coders, disk floor, and the in-flight lanes](2026-11-21-21-nov-day-lost-finals-worktree-omp.dd.md): Read when resuming pm-001 after the 21 Nov afternoon compaction, or when a coder says it sent a FINAL you never saw (delivery, worktrees, disk, lanes)
 - [2026-11-21 Security seat refuses with a safeguard 422](2026-11-21-security-seat-refuses-with-a-safeguard.dd.md): open when a security \(or any\) verdict seat publishes an availability BLOCK or says a tool was rejected by a safeguard (security, routing, models)
 - [2026-11-22 21-22 Nov night: cold prime batching, reviewer reuse, mass-death recovery, and the in-flight lanes](2026-11-22-21-22-nov-night-cold-prime-batching.dd.md): Read when resuming pm-001 after the 22 Nov 05:00 compaction, before waking a cold prime, or after a mass seat death (resume, cost, seats, recovery, lanes)
+- [2026-11-22 C34 amended: one reviewer, one round per PR](2026-11-22-c34-amended-one-reviewer-one-round-per.dd.md): Open before routing any PR for review (rulings, c34, review)
 - [2026-11-22 C35: Jordan approves every new F-item before work](2026-11-22-c35-jordan-approves-every-new-f-item.dd.md): Open before writing any coder packet or starting any new F-item, feature or behaviour change (rulings, c35, approval)
 <!-- /pij:generated -->

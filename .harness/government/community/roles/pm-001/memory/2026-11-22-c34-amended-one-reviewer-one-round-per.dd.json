@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Open before routing any PR for review",
+				"tags": [
+					"rulings",
+					"c34",
+					"review"
+				],
+				"title": "C34 amended: one reviewer, one round per PR"
+			}
+		},
+		{
+			"name": "body",
+			"value": "C34 as amended by Jordan on 2026-11-22 (RULINGS 1b03b46e) supersedes the 'max 2 rounds, reviewer+security+performance' practice.\n- ONE reviewer, ONE round per PR. The reviewer covers correctness, cost (AGENTS.md resource rules) and security, including privacy: no account names, emails or machine paths.\n- The author fixes the findings. pm-001 sends READY with a map from each finding to its fix commit. The prime range-diffs those commits and merges. No round 2, no second reviewer.\n- A PR is held only for a real normal-use bug (wrong result, data loss, a stalled seat, a cost breach). Everything else becomes a follow-up, and under C35 new follow-ups need Jordan's yes.\n- Pick the one reviewer on Claude when security matters (the old rule was security always on Claude). Spawn it fresh per PR and close it after the round.\n- After-deploy cost readings (pij-rs --json ping .data.spawns twice, a known interval apart; just spawn-rate --seconds 20) can be taken read-only by pm-001 itself; no performance seat is needed.\n"
+		}
+	]
+}
