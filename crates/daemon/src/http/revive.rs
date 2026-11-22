@@ -511,6 +511,19 @@ pub(super) async fn revive_seat(
             return refusal;
         }
     }
+    // F280: a seat launched with an alt relaunches with it, read from the
+    // file now so edits apply. An alt since removed (or an unreadable file)
+    // refuses here, before any write, never falling back to the default.
+    if let Some(alt) = &prior.alt
+        && let Err(refusal) = pij_harnesses::alts::resolve(
+            &state.services.harness_alts,
+            pij_harnesses::alts::home().as_deref(),
+            prior.harness,
+            &alt.name,
+        )
+    {
+        return super::alt_refused(COMMAND, &refusal);
+    }
     // `--cheap` returns to the seat's recorded model, whatever it is.
     let return_model = if request.cheap {
         match prior.model.clone() {
@@ -760,6 +773,7 @@ pub(super) async fn revive_seat(
         no_cache_proxy: false,
         trust_folder: false,
         spawn_id: None,
+        alt: prior.alt.map(|alt| alt.name),
     };
     let seat = spawn_request.id.clone();
     let response = launch_seat_locked(

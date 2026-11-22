@@ -38,13 +38,16 @@ export function renderRosterTable(payload: unknown): string {
 		const key = str(record(seat.dialog).key);
 		const state = key !== undefined ? `blocked on a dialog (${key})` : (str(seat.state) ?? "-");
 		const lapse = str(seat.nativeReceiver);
+		// F280: a seat launched with an alt shows it beside its harness.
+		const alt = str(record(seat.alt).name);
+		const harness = str(seat.harness) ?? "-";
 		// The marker is one of the guard's two (❄ refuse, ⚠ warn, F214), never other text.
 		const marker = columns?.[3];
 		return {
 			mark: marker === "❄" || marker === "⚠" ? `${marker} ` : "  ",
 			cells: [
 				machine !== undefined && columns === undefined ? `${id}@${machine}` : id,
-				str(seat.harness) ?? "-",
+				alt === undefined ? harness : `${harness} alt:${alt}`,
 				lapse === undefined ? state : `${state}, ${lapse}`,
 				column(0),
 				column(1),

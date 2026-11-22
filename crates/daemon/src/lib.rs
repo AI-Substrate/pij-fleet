@@ -238,6 +238,9 @@ pub struct Services {
     pub claude_homes: Arc<[std::path::PathBuf]>,
     /// Where Telegram document sends are staged by content before queueing.
     pub telegram_attachments: PathBuf,
+    /// F280: `<state>/harness-alts.toml`, read by a spawn with `--alt` and a
+    /// revive of a seat with an alt, never on a tick.
+    pub harness_alts: PathBuf,
     /// Which Codex thread each pane runs, read from the pane's own Codex
     /// process (plan 181): the binder's evidence and a Codex caller's check.
     pub codex_threads: Arc<dyn codex_bind::CodexThreads>,
@@ -876,6 +879,9 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
             .unwrap_or_else(|| Path::new("."))
             .join("sidecars")
             .join(pij_sidecars::telegram::ATTACHMENTS_DIR),
+        harness_alts: pij_harnesses::alts::path(
+            pane_signal_dir.parent().unwrap_or_else(|| Path::new(".")),
+        ),
         codex_threads,
         ddocs,
         community: community_writer,

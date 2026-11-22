@@ -153,7 +153,6 @@ impl ClaudeBinder {
     }
 
     fn matching_record(&self, seat: &SeatDescriptor) -> Option<ClaudeSessionRecord> {
-        let home = self.home.as_deref()?;
         let pane = seat.pane.as_deref()?;
         let suffix = format!(".{pane}");
 
@@ -162,9 +161,12 @@ impl ClaudeBinder {
         // fresh JSONL would therefore deadlock the first queued delivery. The
         // session record is the stronger join: trusted cwd + exact tmux pane +
         // live pid. The folder-trust modal publishes no record, so absence stays
-        // the honest not-ready signal. TS parity deliberately reads ~/.claude;
-        // a separate ~/.claude-alt home exists but is not this launcher's home.
-        let sessions_dir = home.join(".claude/sessions");
+        // the honest not-ready signal. TS parity reads ~/.claude; a seat spawned
+        // with an alt that names a Claude home (F280) is read there instead.
+        let sessions_dir = match seat.alt.as_ref().and_then(|alt| alt.home.as_deref()) {
+            Some(alt_home) => Path::new(alt_home).join("sessions"),
+            None => self.home.as_deref()?.join(".claude/sessions"),
+        };
         let mut records = json_files(&sessions_dir)
             .into_iter()
             .filter_map(|path| read_json::<ClaudeSessionRecord>(&path))
@@ -420,5 +422,54 @@ mod tests {
                 .proc
                 .is_none()
         );
+    }
+
+    /// F280: a seat spawned with an alt that names a Claude home binds from
+    /// that home's session record; a seat without one never reads it.
+    #[tokio::test]
+    async fn an_alt_seat_binds_from_its_own_claude_home() {
+        let default_home = TestHome::new();
+        let alt_home = TestHome::new();
+        alt_home.write_session(
+            "native-alt",
+            "/abs/worktree",
+            "%42",
+            4242,
+            "Mon Aug 31 10:15:00 2026",
+        );
+        let liveness = Arc::new(
+            FakeLiveness::new().with_proc(pij_core::model::ProcIdentity {
+                pid: 4242,
+                proc_start: 20260831101500,
+            }),
+        );
+        for (alt, binds) in [(false, 0), (true, 1)] {
+            let registry = Arc::new(FakeRegistry::new());
+            let mut seat = pending("%42");
+            if alt {
+                seat.alt = Some(pij_core::model::SeatAlt {
+                    name: "1".to_string(),
+                    home: Some(alt_home.0.join(".claude").display().to_string()),
+                });
+            }
+            registry.put(seat).await.unwrap();
+            let bus = event_bus();
+            let roles = role_service(registry.clone(), bus.clone()).await;
+            let binder = ClaudeBinder::from_home(
+                Some(default_home.0.clone()),
+                registry.clone(),
+                liveness.clone(),
+                bus,
+                Vec::new(),
+                zero_utc_offset,
+                roles,
+            );
+            assert_eq!(binder.bind_once().await.unwrap(), binds, "alt {alt}");
+            if alt {
+                let bound = registry.get(&"pij-claude".into()).await.unwrap().unwrap();
+                assert_eq!(bound.proc.unwrap().pid, 4242);
+                assert_eq!(bound.alt.unwrap().name, "1", "binding keeps the alt");
+            }
+        }
     }
 }
