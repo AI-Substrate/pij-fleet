@@ -41,12 +41,18 @@ fn live_transport() -> UdsTransport {
         let output = command.output().ok()?;
         parse_process_start(std::str::from_utf8(&output.stdout).ok()?.trim()).ok()
     };
-    UdsTransport::new(std::sync::Arc::new(move |pid| {
-        Some(ObservedStart {
-            local: lstart(pid, None)?,
-            utc: lstart(pid, Some("UTC"))?,
-        })
-    }))
+    // The default home only: the live witness names one Claude pid of this
+    // account's own `~/.claude`.
+    let homes = env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".claude"));
+    UdsTransport::new(
+        homes,
+        std::sync::Arc::new(move |pid| {
+            Some(ObservedStart {
+                local: lstart(pid, None)?,
+                utc: lstart(pid, Some("UTC"))?,
+            })
+        }),
+    )
     .expect("HOME must name the account owning ~/.claude")
 }
 

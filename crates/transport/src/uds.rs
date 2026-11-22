@@ -1,4 +1,3 @@
-use std::env;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -72,16 +71,17 @@ pub type StartObserver = Arc<dyn Fn(u32) -> Option<ObservedStart> + Send + Sync>
 ///
 /// In `crates/daemon/src/lib.rs`, import `pij_transport::UdsTransport`; construct
 /// `AdapterChoice::Real` with
-/// `Arc::new(UdsTransport::new(Arc::new(pij_harnesses::proc::observed_start))?)`
-/// (plan 218: the peer's start is read in-process, so delivery launches
-/// nothing); pass that shared
+/// `Arc::new(UdsTransport::new(pij_harnesses::claude_homes(), Arc::new(pij_harnesses::proc::observed_start))?)`
+/// (every Claude home's sessions; plan 218: the peer's start is read
+/// in-process, so delivery launches nothing); pass that shared
 /// `Arc<dyn Transport>` to both `DeliveryService` and `DrainWorker`. Construct one
 /// shared `InteractionGate` before `DeliveryService`, pass it to both consumers,
 /// and feed it from `PaneObserver`. No task starts in this adapter; shutdown is
 /// unchanged.
 #[derive(Clone)]
 pub struct UdsTransport {
-    sessions_dir: PathBuf,
+    /// `<home>/sessions` for every Claude home, searched together.
+    sessions_dirs: Vec<PathBuf>,
     ack_wait: Duration,
     hold_grace: Duration,
     connect_timeout: Duration,
@@ -93,7 +93,7 @@ impl fmt::Debug for UdsTransport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Resolved endpoints carry peer tokens; never print them.
         f.debug_struct("UdsTransport")
-            .field("sessions_dir", &self.sessions_dir)
+            .field("sessions_dirs", &self.sessions_dirs)
             .finish_non_exhaustive()
     }
 }
@@ -118,33 +118,56 @@ impl Resolved {
 }
 
 impl UdsTransport {
-    /// Use the current user's Claude session registry.
+    /// Use the session registry (`<home>/sessions`) of every Claude home: the
+    /// default one and each alt's (`CLAUDE_CONFIG_DIR=~/.claude-alt`), so an
+    /// alt-home seat is reached on its socket too. The daemon passes
+    /// `pij_harnesses::claude_homes()`.
     ///
     /// `observe_start` reads a peer's start in-process; the daemon passes
     /// `pij_harnesses::proc::observed_start`.
     ///
     /// # Errors
-    /// [`PijError::Adapter`] when the home directory is unavailable.
-    pub fn new(observe_start: StartObserver) -> Result<Self> {
-        let home = env::var_os("HOME").ok_or_else(|| PijError::Adapter {
-            adapter: NAME.to_string(),
-            message: "HOME is unset — set HOME to the account that owns ~/.claude/sessions"
-                .to_string(),
-        })?;
-        Ok(Self::from_sessions_dir(
-            PathBuf::from(home).join(".claude/sessions"),
-            observe_start,
-        ))
+    /// [`PijError::Adapter`] when there is no Claude home at all.
+    pub fn new(
+        claude_homes: impl IntoIterator<Item = PathBuf>,
+        observe_start: StartObserver,
+    ) -> Result<Self> {
+        let dirs = claude_homes
+            .into_iter()
+            .map(|home| home.join("sessions"))
+            .collect::<Vec<_>>();
+        if dirs.is_empty() {
+            return Err(PijError::Adapter {
+                adapter: NAME.to_string(),
+                message: "no Claude home — set HOME (or CLAUDE_CONFIG_DIR) to the account that owns ~/.claude/sessions"
+                    .to_string(),
+            });
+        }
+        Ok(Self::from_sessions_dirs(dirs, observe_start))
     }
 
-    /// Use an explicit Claude session registry directory.
+    /// Use explicit Claude session registry directories, searched together.
+    /// Two names for one directory (a symlink) count once, so one record is
+    /// never its own rival.
     ///
     /// The daemon uses [`Self::new`]; composition tests use this constructor to
     /// exercise the real adapter without reading or mutating the user's registry.
     #[must_use]
-    pub fn from_sessions_dir(sessions_dir: PathBuf, observe_start: StartObserver) -> Self {
+    pub fn from_sessions_dirs(
+        sessions_dirs: impl IntoIterator<Item = PathBuf>,
+        observe_start: StartObserver,
+    ) -> Self {
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        let mut seen: Vec<PathBuf> = Vec::new();
+        for dir in sessions_dirs {
+            let canonical = fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+            if !seen.contains(&canonical) {
+                seen.push(canonical);
+                dirs.push(dir);
+            }
+        }
         Self {
-            sessions_dir,
+            sessions_dirs: dirs,
             ack_wait: ACK_WAIT,
             hold_grace: HOLD_GRACE,
             connect_timeout: CONNECT_TIMEOUT,
@@ -174,22 +197,39 @@ impl UdsTransport {
         self
     }
 
+    /// The seat's endpoint, from its exact `<pid>.json` in any Claude home
+    /// (pid and start must both match), else from the one live record naming
+    /// its pane across all homes.
+    ///
+    /// Two BRAKES, unchanged by searching more homes: the pid-and-start match
+    /// (a recycled pid or a stale record delivers nothing), and ambiguity (two
+    /// live owners of the pane, in one home or across two, deliver nothing).
+    /// Removing either could only send more, to a peer it cannot vouch for.
     fn discover(&self, seat: &SeatDescriptor) -> Option<Endpoint> {
         if let Some(proc) = seat.proc {
-            let direct = self.sessions_dir.join(format!("{}.json", proc.pid));
-            // One read answers both comparisons: the descriptor's local start
-            // and Claude's UTC record (plan 218).
-            if let Some(record) = read_json::<SessionRecord>(&direct)
-                && record.pid == proc.pid
-                && let Some(observed) = (self.observe_start)(proc.pid)
-                && observed.local == proc.proc_start
-                && let Some(endpoint) = self.live_endpoint(record, Some(observed))
-            {
-                return Some(endpoint);
+            let name = format!("{}.json", proc.pid);
+            for dir in &self.sessions_dirs {
+                let direct = dir.join(&name);
+                // One read answers both comparisons: the descriptor's local
+                // start and Claude's UTC record (plan 218).
+                if let Some(record) = read_json::<SessionRecord>(&direct)
+                    && record.pid == proc.pid
+                    && let Some(observed) = (self.observe_start)(proc.pid)
+                    && observed.local == proc.proc_start
+                    && let Some(endpoint) = self.live_endpoint(dir, record, Some(observed))
+                {
+                    return Some(endpoint);
+                }
             }
         }
         let suffix = format!(".{}", seat.pane.as_deref()?);
-        self.discover_pane(&suffix, fs::read_dir(&self.sessions_dir).ok()?)
+        self.discover_pane(
+            &suffix,
+            self.sessions_dirs
+                .iter()
+                .filter_map(|dir| fs::read_dir(dir).ok())
+                .flatten(),
+        )
     }
 
     /// Remember what `can_deliver` resolved for this message's `deliver`, or
@@ -253,6 +293,9 @@ impl UdsTransport {
                 continue;
             };
             let path = entry.path();
+            let Some(dir) = path.parent() else {
+                continue;
+            };
             if !path.extension().is_some_and(|ext| ext == "json") {
                 continue;
             }
@@ -266,11 +309,12 @@ impl UdsTransport {
             {
                 continue;
             }
-            let Some(endpoint) = self.live_endpoint(record, None) else {
+            let Some(endpoint) = self.live_endpoint(dir, record, None) else {
                 continue;
             };
-            // Multiple live owners are ambiguous, never decided by directory or
-            // lexical order. A verified exact identity above already wins.
+            // Multiple live owners are ambiguous, in one home or across homes,
+            // never decided by home, directory or lexical order. A verified
+            // exact identity above already wins.
             if candidate.is_some() {
                 return None;
             }
@@ -279,9 +323,12 @@ impl UdsTransport {
         candidate
     }
 
-    /// `observed` is the reading the caller already made for this pid, if any.
+    /// `observed` is the reading the caller already made for this pid, if any;
+    /// `dir` is the sessions directory the record came from, which holds its
+    /// peer key.
     fn live_endpoint(
         &self,
+        dir: &Path,
         record: SessionRecord,
         observed: Option<ObservedStart>,
     ) -> Option<Endpoint> {
@@ -293,11 +340,11 @@ impl UdsTransport {
         if observed.utc != recorded {
             return None;
         }
-        self.endpoint_from_record(record, recorded)
+        Self::endpoint_from_record(dir, record, recorded)
     }
 
-    fn endpoint_from_record(&self, record: SessionRecord, start_utc: u64) -> Option<Endpoint> {
-        let token = matching_peer_token(&self.sessions_dir, &record)?;
+    fn endpoint_from_record(dir: &Path, record: SessionRecord, start_utc: u64) -> Option<Endpoint> {
+        let token = matching_peer_token(dir, &record)?;
         let pid = record.pid;
         let socket_path = record
             .messaging_socket_path
@@ -929,8 +976,8 @@ mod tests {
     }
 
     fn transport(dir: &Path) -> UdsTransport {
-        let mut transport = UdsTransport::from_sessions_dir(
-            dir.to_path_buf(),
+        let mut transport = UdsTransport::from_sessions_dirs(
+            [dir.to_path_buf()],
             starts(Some(4242), 1, 20260829235605),
         );
         transport.ack_wait = Duration::from_millis(30);
@@ -1048,10 +1095,91 @@ mod tests {
         let mut target = seat(dead, Some("%99"), Harness::Claude);
         target.proc = None;
         let utc = pij_core::model::parse_process_start(start).expect("parse fixture start");
-        let endpoint = UdsTransport::from_sessions_dir(dir.0.clone(), starts(Some(live), 1, utc))
-            .discover(&target)
-            .expect("live candidate");
+        let endpoint =
+            UdsTransport::from_sessions_dirs([dir.0.clone()], starts(Some(live), 1, utc))
+                .discover(&target)
+                .expect("live candidate");
         assert_eq!(endpoint.socket_path, live_socket);
+    }
+
+    /// A cc-alt seat (`CLAUDE_CONFIG_DIR=~/.claude-alt`) records its session
+    /// in the ALT home. Its socket is found there, by exact pid and by pane,
+    /// though the default home comes first and knows nothing of it.
+    #[test]
+    fn an_alt_home_seat_is_found_on_its_socket_by_pid_and_by_pane() {
+        let (default_home, alt_home) = (TestDir::new(), TestDir::new());
+        let sessions = alt_home.0.join("sessions");
+        fs::create_dir(&sessions).expect("alt sessions dir");
+        let socket = sessions.join("alt.sock");
+        write_record(&sessions, 4242, "%99", &socket);
+        let transport = UdsTransport::new(
+            [default_home.0.clone(), alt_home.0.clone()],
+            starts(Some(4242), 1, 20260829235605),
+        )
+        .expect("two homes");
+
+        let by_pid = transport
+            .discover(&seat(4242, None, Harness::Claude))
+            .expect("the alt home's exact record");
+        assert_eq!(by_pid.socket_path, socket);
+        assert_eq!(by_pid.token, "sanitized-peer-token");
+
+        let mut by_pane = seat(4242, Some("%99"), Harness::Claude);
+        by_pane.proc = None;
+        let endpoint = transport
+            .discover(&by_pane)
+            .expect("the alt home's pane record");
+        assert_eq!(endpoint.socket_path, socket);
+    }
+
+    /// Two live owners of one pane are still ambiguous when each sits in a
+    /// different home: neither home outranks the other, so nothing is sent.
+    #[test]
+    fn two_live_owners_of_a_pane_across_two_homes_deliver_nothing() {
+        let (default_home, alt_home) = (TestDir::new(), TestDir::new());
+        for (home, pid) in [(&default_home, 4242), (&alt_home, 4343)] {
+            let sessions = home.0.join("sessions");
+            fs::create_dir(&sessions).expect("sessions dir");
+            write_record(&sessions, pid, "%99", &sessions.join("owner.sock"));
+        }
+        let transport = UdsTransport::new(
+            [default_home.0.clone(), alt_home.0.clone()],
+            starts(None, 1, 20260829235605),
+        )
+        .expect("two homes");
+        let mut target = seat(4242, Some("%99"), Harness::Claude);
+        target.proc = None;
+        assert!(transport.discover(&target).is_none());
+    }
+
+    /// One home under two names (a symlink) is one registry: its record is
+    /// not its own rival.
+    #[test]
+    fn one_home_named_twice_is_searched_once() {
+        let home = TestDir::new();
+        let sessions = home.0.join("sessions");
+        fs::create_dir(&sessions).expect("sessions dir");
+        write_record(&sessions, 4242, "%99", &sessions.join("one.sock"));
+        let alias = home.0.with_extension("alias");
+        std::os::unix::fs::symlink(&home.0, &alias).expect("alias the home");
+        let transport = UdsTransport::new(
+            [home.0.clone(), alias.clone()],
+            starts(None, 1, 20260829235605),
+        )
+        .expect("two names");
+        let mut target = seat(4242, Some("%99"), Harness::Claude);
+        target.proc = None;
+        let found = transport.discover(&target);
+        let _ = fs::remove_file(&alias);
+        assert_eq!(
+            found.expect("one record").socket_path,
+            sessions.join("one.sock")
+        );
+    }
+
+    #[test]
+    fn no_claude_home_is_refused() {
+        assert!(UdsTransport::new(Vec::<PathBuf>::new(), starts(None, 1, 1)).is_err());
     }
 
     #[test]
@@ -1398,7 +1526,7 @@ mod tests {
         let dir = TestDir::new();
         write_record(&dir.0, 4242, "%99", &dir.0.join("recorded.sock"));
         let (observer, reads, _) = counted(4242, 20260829235605);
-        let transport = UdsTransport::from_sessions_dir(dir.0.clone(), observer);
+        let transport = UdsTransport::from_sessions_dirs([dir.0.clone()], observer);
         let before = pij_core::spawns::snapshot().total;
 
         assert!(

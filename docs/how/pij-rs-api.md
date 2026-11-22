@@ -75,7 +75,12 @@ operation (`ps.registration-native-process`, `tmux.pipe-pane attach`,
 recorded); the `by_op` values sum to `total` (plan 180). Delivering to a Claude seat launches
 nothing: the socket transport reads the peer's start in-process, once per
 resolution, and `deliver` reuses the endpoint its own probe resolved after a fresh
-start re-read (plan 218, retiring `ps.uds-peer-start`). `data.pid` is the daemon's own process
+start re-read (plan 218, retiring `ps.uds-peer-start`). It looks for the peer's
+session record in every Claude home (`~/.claude`, `~/.claude-alt` and each
+configured alt's home), so a seat started with `CLAUDE_CONFIG_DIR=~/.claude-alt`
+is reached on its socket too, never by typing into its pane: an exact
+`<pid>.json` whose start matches, else the one live record naming its pane, where
+two live owners in any homes deliver nothing. `data.pid` is the daemon's own process
 id (plan 190): the spawn counter resets on restart, so two readings compare only
 when their pids match. `data.requests:{total,routes,seats_queries}` counts the
 requests this daemon has answered since it started (F222): `routes` is per
