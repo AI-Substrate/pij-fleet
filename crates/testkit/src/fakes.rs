@@ -2453,6 +2453,19 @@ impl FakeTmux {
         state.standing_capture = Some(capture);
     }
 
+    /// Arrange a pane that shows `screen`, for every capture, with the caret
+    /// at (`cursor_x`, `cursor_y`): a whole harness screen, such as a captured
+    /// fixture (F279). Arrange it again to change what the pane shows.
+    pub fn arrange_screen(&self, pane: &str, screen: &str, cursor_x: u32, cursor_y: u32) {
+        self.arrange_pane(pane);
+        let mut state = self.state.lock().expect("fake tmux mutex");
+        if let Some(listed) = state.panes.iter_mut().find(|listed| listed.id == pane) {
+            listed.cursor_x = Some(cursor_x);
+            listed.cursor_y = Some(cursor_y);
+        }
+        state.standing_capture = Some(screen.to_string());
+    }
+
     /// Serve `text` for every capture that outruns the scripted queue.
     ///
     /// Pairs with [`FakeTmux::with_pane`] when a test needs a composer with
