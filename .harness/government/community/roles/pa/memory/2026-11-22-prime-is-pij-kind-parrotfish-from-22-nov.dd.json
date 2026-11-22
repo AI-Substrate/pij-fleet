@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "open before escalating or waking the prime",
+				"tags": [
+					"pa",
+					"prime",
+					"routing"
+				],
+				"title": "Prime is pij-kind-parrotfish from 22 Nov (was far-jackal)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "On 22 Nov at 15:16, Jordan ruled (spine 4730261) that pij-kind-parrotfish is the pij-fleet prime, replacing pij-far-jackal. Send escalations, decisions and wakes to parrotfish. Never compact the prime: that now means parrotfish. far-jackal is no longer the prime; treat it as any other seat and ask parrotfish before acting on it.\nAlso from 22 Nov: ruling C35 means no new feature work without Jordan, and PA never revives or restarts non-pij-fleet seats (Jordan revives those himself).\n"
+		}
+	]
+}
