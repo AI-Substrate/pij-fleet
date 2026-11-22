@@ -197,6 +197,15 @@ export interface HelloLine {
 	readonly build: string;
 }
 
+/**
+ * F284: a stream line that is not an event (a `peer_state` frame, or a frame
+ * type this build has never seen). Skipped, never fatal: throwing on one
+ * dropped the whole stream, and the reconnect met the same frame again.
+ */
+export interface SkippedLine {
+	readonly skipped: string;
+}
+
 export class PijNoDaemonError extends Error {
 	readonly code = "PIJ_NO_DAEMON";
 
@@ -356,7 +365,7 @@ export function decodeEnvelope<T>(text: string): SuccessfulDaemonEnvelope<T> {
 	return envelope as SuccessfulDaemonEnvelope<T>;
 }
 
-export function decodeStreamLine(text: string): HelloLine | EventFrame {
+export function decodeStreamLine(text: string): HelloLine | EventFrame | SkippedLine {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(text);
@@ -368,6 +377,9 @@ export function decodeStreamLine(text: string): HelloLine | EventFrame {
 		const version = finiteInteger(value.v, "daemon hello v");
 		if (version !== PIJ_EVENT_VERSION) throw new PijWireSkewError(version, PIJ_EVENT_VERSION);
 		return { hello: true, v: version, build: string(value.build, "daemon hello build") };
+	}
+	if ((value.type !== undefined && value.type !== "event") || value.event === undefined) {
+		return { skipped: typeof value.type === "string" ? value.type : "untyped" };
 	}
 	const rawEvent = object(value.event, "daemon event frame event");
 	const eventVersion = finiteInteger(rawEvent.v, "daemon event v");

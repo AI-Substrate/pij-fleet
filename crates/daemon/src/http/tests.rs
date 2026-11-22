@@ -6490,6 +6490,121 @@ async fn events_are_live_by_default_and_frame_unknown_kinds_with_a_cursor() {
     server.abort();
 }
 
+/// F284 (outage): every subscription of a PAIRED daemon replays each peer's
+/// status first, as a `peer_state` frame. The OMP extension, as shipped,
+/// decodes only event frames: it threw on that first frame, dropped the
+/// stream and reconnected for ever, so no message reached an OMP seat while
+/// the daemon was paired. A reader gets `peer_state` only when it asks.
+#[tokio::test]
+async fn a_paired_daemon_sends_peer_state_frames_only_to_a_reader_that_asks() {
+    let services = test_services(
+        Arc::new(FakeRegistry::new()),
+        Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy")),
+        Arc::new(FakeSpine::new()),
+    )
+    .await;
+    let bus = services.event_bus.clone();
+    let federation = Arc::new(
+        FederationService::new(
+            "workstation".to_string(),
+            [PeerDefinition {
+                alias: "laptop".to_string(),
+                url: "http://127.0.0.1:1".to_string(),
+                key: "pair-key".to_string(),
+            }],
+            Arc::clone(&services.queue),
+            Arc::clone(&services.event_bus),
+            federation_policy(),
+        )
+        .expect("federation"),
+    );
+    let (addr, server) = spawn(router_with_federation(
+        services,
+        config("key", &[]),
+        federation,
+    ))
+    .await;
+    // Reads whole lines off one response, at most 5 s for each.
+    async fn next_line(response: &mut reqwest::Response, pending: &mut Vec<u8>) -> String {
+        loop {
+            if let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
+                let line: Vec<u8> = pending.drain(..=end).collect();
+                return String::from_utf8(line).expect("utf8").trim().to_string();
+            }
+            let chunk = tokio::time::timeout(Duration::from_secs(5), response.chunk())
+                .await
+                .expect("the stream stalled")
+                .expect("chunk")
+                .expect("the stream ended");
+            pending.extend_from_slice(&chunk);
+        }
+    }
+    let attach = |query: &'static str| {
+        reqwest::Client::new()
+            .get(format!("http://{addr}/v1/events{query}"))
+            .bearer_auth("key")
+            .send()
+    };
+
+    let mut plain = attach("").await.expect("events");
+    let mut asked = attach("?peer_state=true").await.expect("events");
+    let (mut plain_pending, mut asked_pending) = (Vec::new(), Vec::new());
+    assert!(
+        next_line(&mut plain, &mut plain_pending)
+            .await
+            .contains("\"hello\":true")
+    );
+    assert!(
+        next_line(&mut asked, &mut asked_pending)
+            .await
+            .contains("\"hello\":true")
+    );
+    bus.publish(Event {
+        seq: None,
+        v: wire::EVENT_VERSION,
+        at: 7,
+        kind: "message.pushed".to_string(),
+        seat: Some("pij-b".into()),
+        payload: "{}".to_string(),
+    })
+    .await
+    .expect("publish");
+
+    let first: StreamFrame =
+        serde_json::from_str(&next_line(&mut plain, &mut plain_pending).await).expect("frame");
+    assert_eq!(
+        expect_event(first).2.kind,
+        "message.pushed",
+        "a reader that did not ask sees the message, and no peer_state before it"
+    );
+    let first: StreamFrame =
+        serde_json::from_str(&next_line(&mut asked, &mut asked_pending).await).expect("frame");
+    assert!(
+        matches!(&first, StreamFrame::PeerState { machine, .. } if machine == "laptop"),
+        "a reader that asked gets the peer's state: {first:?}"
+    );
+    server.abort();
+}
+
+/// F284: the peer_state line in the shared wire fixture is the daemon's own
+/// serialization, so the extension's test reads the bytes this daemon sends.
+#[test]
+fn the_wire_fixtures_peer_state_line_is_what_the_daemon_writes() {
+    let fixture = pij_testkit::fixtures::read("wire/events-v1-peer-state.ndjson");
+    let line = fixture
+        .lines()
+        .nth(1)
+        .expect("a peer_state line after Hello");
+    let frame = StreamFrame::PeerState {
+        machine: "laptop".to_string(),
+        state: PeerStreamState::Connected,
+        retry_in_ms: None,
+        dropped: None,
+        reason: None,
+    };
+    assert_eq!(serde_json::to_string(&frame).expect("encode"), line);
+}
+
 /// Plan 187: a replay longer than one page reaches the wire as every frame
 /// once, in cursor order, after the hello, and then the stream stays live.
 #[tokio::test]

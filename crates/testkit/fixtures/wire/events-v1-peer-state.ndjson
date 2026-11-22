@@ -1,0 +1,4 @@
+{"hello":true,"v":1,"build":"pij-rs 0.1.0"}
+{"type":"peer_state","machine":"laptop","state":"connected"}
+{"type":"future_frame","machine":"laptop","note":"a frame type this reader has never seen"}
+{"type":"event","machine":"workstation","cursor":42,"event":{"v":1,"at":1788048000001,"kind":"message.pushed","seat":"pij-test-seat","payload":"{\"msg_id\":\"m-1\",\"from\":\"pij-sender\",\"body\":\"hello\"}"}}
