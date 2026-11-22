@@ -818,6 +818,59 @@ async fn a_restart_control_waits_for_a_lapsed_seats_pane() {
     }
 }
 
+/// B334-R1-01 (pij-vertical-marmot): a receiver that renews while the drain
+/// settles (between its two pane reads, 250 ms apart) has come back: the
+/// restart queued before that renewal is closed, never typed. The renewal
+/// lands after the first read; the drain reads the edge again after both.
+#[tokio::test]
+async fn a_renewal_between_the_pane_reads_types_no_restart() {
+    let fleet = fleet(SystemState::Working, None).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    parent_restart(&fleet, "parent-restart").await;
+    let worker = drain(&fleet);
+    let reads = || {
+        fleet
+            .tmux
+            .calls()
+            .iter()
+            .filter(|call| call.starts_with("capture_without_launch:"))
+            .count()
+    };
+    // Bounded (two seconds): a drain that never reads the pane ends this
+    // test by its assertions, never by hanging.
+    let renew = async {
+        for _ in 0..1_000 {
+            if reads() > 0 {
+                edge(&fleet, crate::delivery::NATIVE_RECEIVER_RENEWED, Some(SEAT)).await;
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    };
+    let (drained, ()) = tokio::join!(worker.drain_once(), renew);
+    drained.unwrap();
+    assert_eq!(reads(), 2, "the renewal fell between the two pane reads");
+    assert_eq!(
+        restarts_typed(&fleet),
+        0,
+        "an obsolete restart is not typed"
+    );
+    assert!(controls(&fleet).await.is_empty(), "it is closed, not held");
+}
+
+/// The other side of the same brake: a restart queued after the receiver
+/// renewed is a new request, and is typed.
+#[tokio::test]
+async fn a_restart_queued_after_a_renewal_is_typed() {
+    let fleet = fleet(SystemState::Idle, None).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_LAPSED, Some(SEAT)).await;
+    edge(&fleet, crate::delivery::NATIVE_RECEIVER_RENEWED, Some(SEAT)).await;
+    parent_restart(&fleet, "parent-restart").await;
+    drain(&fleet).drain_once().await.unwrap();
+    assert_eq!(restarts_typed(&fleet), 1);
+    assert!(controls(&fleet).await.is_empty());
+}
+
 /// F261: a lapse decides only a live Copilot seat with a recorded process.
 /// Any other harness, a retired seat, or one never bound is left alone.
 #[tokio::test]

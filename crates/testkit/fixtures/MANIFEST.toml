@@ -263,37 +263,37 @@ answer = "Copilot is Ready only when the stable '? help' and 'tab next tab' foot
 
 [[fixture]]
 path = "harnesses/copilot-1.0.115-idle.txt"
-sha256 = "6eb91216509f86d9f67a5e81adfeef71f7738db0f9d3cacbfcbcc5630aaefa02"
+sha256 = "68f577c27c4c179138adb2073d344e428836816eaccbcb4c241b4c406fefc7e7"
 bytes = 792
-note = "Live Copilot CLI 1.0.115-6 at its prompt between turns, pij-selected-deer's pane on 2026-11-22 (tmux capture-pane -p, last 7 rows, nothing else changed): the cwd row, the composer '❯' between two rules, the footer '← open sidebar · Interactive · Allow All · / commands' and the two-row status line. F279."
+note = "Live Copilot CLI 1.0.115-6 at its prompt between turns, pij-selected-deer's pane on 2026-11-22 (tmux capture-pane -p, last 7 rows; every usage counter's digits (AIC, AIU, premium, tokens, context %, uptime, output size) set to 0, widths kept, nothing else changed): the cwd row, the composer '❯' between two rules, the footer '← open sidebar · Interactive · Allow All · / commands' and the two-row status line. F279."
 answer = "copilot_turn: Idle. The composer is empty and the row under the bottom rule is the footer, with '/ commands' and no 'interrupt'."
 
 [[fixture]]
 path = "harnesses/copilot-1.0.115-working.txt"
-sha256 = "0a0988a84d2365e4756b133d3108c75d6c7676b1196601ac0eaa97e0e040304c"
+sha256 = "c9fbbe4bff5d41cbec411b0c9d433fe6e32d7ff3992ad0717480e011d1729eec"
 bytes = 801
-note = "Live Copilot CLI 1.0.115-6 mid-turn, pij-steady-otter's pane on 2026-11-22 (tmux capture-pane -p, last 7 rows, nothing else changed). The composer is empty and drawn exactly as at the prompt; only the row under the bottom rule differs: '◉ Working · 313 B ctrl+c interrupt'. F279."
+note = "Live Copilot CLI 1.0.115-6 mid-turn, pij-steady-otter's pane on 2026-11-22 (tmux capture-pane -p, last 7 rows; usage counters' digits set to 0, widths kept, nothing else changed). The composer is empty and drawn exactly as at the prompt; only the row under the bottom rule differs: '◉ Working · 000 B ctrl+c interrupt'. F279."
 answer = "copilot_turn: Busy. An empty composer is not idle: the turn shows only in the footer row ('ctrl+c interrupt')."
 
 [[fixture]]
 path = "harnesses/copilot-1.0.115-working-status.txt"
-sha256 = "ae6321e8e9ebecbb9db0c09ed5abe964f9ab78d546a2a194bddba5e4128a2ee9"
+sha256 = "ea1d478a53890a2ebf0f87b568b5fba23b71656a63392ef649646c4dbb23c457"
 bytes = 820
-note = "Live Copilot CLI 1.0.115-6 mid-turn, pij-written-mongoose's pane on 2026-11-22 (tmux capture-pane -p, last 7 rows, nothing else changed). The footer row shows the turn's own status ('○ Reviewing destructiv… · 61.3 KiB ctrl+c interrupt'), not the word Working. F279."
+note = "Live Copilot CLI 1.0.115-6 mid-turn, pij-written-mongoose's pane on 2026-11-22 (tmux capture-pane -p, last 7 rows; usage counters' digits set to 0, widths kept, nothing else changed). The footer row shows the turn's own status ('○ Reviewing destructiv… · 00.0 KiB ctrl+c interrupt'), not the word Working. F279."
 answer = "copilot_turn: Busy, from 'interrupt' in the footer row. A reader keyed on 'Working' reads this frame as idle and is wrong."
 
 [[fixture]]
 path = "harnesses/copilot-1.0.115-idle-box.txt"
-sha256 = "b7f39e6216fd92d84cf205d246aae063aae05f7af2ed86aa2c7397c4acb1ac52"
+sha256 = "28a3feb73c4f1d327dc985e0391c8c039317c38c272492c0c57ab88ee133e080"
 bytes = 1139
-note = "Live Copilot CLI 1.0.115 at its prompt, pij-equivalent-macaw's pane on 2026-11-22 (tmux capture-pane -p, from the cwd row down, nothing else changed). Its composer is the half-block box ('╻▄▄…', '┃', '╹▀▀…'), not rules; the footer under it reads '← open sidebar · Interactive · Allow All · / commands · ? help · tab next tab'. F279."
+note = "Live Copilot CLI 1.0.115 at its prompt, pij-equivalent-macaw's pane on 2026-11-22 (tmux capture-pane -p, from the cwd row down; usage counters' digits set to 0, widths kept, nothing else changed). Its composer is the half-block box ('╻▄▄…', '┃', '╹▀▀…'), not rules; the footer under it reads '← open sidebar · Interactive · Allow All · / commands · ? help · tab next tab'. F279."
 answer = "copilot_turn: Idle. Both of Copilot's composer layouts are read; the footer is the row under the box."
 
 [[fixture]]
 path = "harnesses/copilot-1.0.115-idle-narrow.txt"
-sha256 = "8b79da13fa6936c1828e7d26cbb7ae063effbaa1c8b39321af40f876cf0afa8f"
+sha256 = "5c734f11eaa6b2f9cf3e0e1d8a8adbc7cdef605ba14ebb45bd35e68065c0438c"
 bytes = 799
-note = "Live Copilot CLI 1.0.115 at its prompt in an 80-column pane, pij-previous-firefly's on 2026-11-22 (tmux capture-pane -p, from the cwd row down, nothing else changed). The footer opens with an update notice and is cut short: 'Update:    · ← open sidebar · Interactive · Allow All · / com…'. F279."
+note = "Live Copilot CLI 1.0.115 at its prompt in an 80-column pane, pij-previous-firefly's on 2026-11-22 (tmux capture-pane -p, from the cwd row down; usage counters' digits set to 0, widths kept, nothing else changed). The footer opens with an update notice and is cut short: 'Update:    · ← open sidebar · Interactive · Allow All · / com…'. F279."
 answer = "copilot_turn: Idle. A footer marker keyed on the whole '/ commands' misses this frame; 'open sidebar', 'Interactive' and '/ com' are all early in the row."
 
 [[fixture]]

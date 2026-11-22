@@ -417,23 +417,37 @@ impl DrainWorker {
         // seat whose receiver lapsed is read from its pane instead, and two
         // restart controls for one lapse type one `/restart`.
         if msg.command.is_some() && recipient.harness == Harness::Copilot {
-            let edge = self
-                .event_bus
-                .latest_matching(
-                    &recipient.id,
-                    &[NATIVE_RECEIVER_LAPSED, NATIVE_RECEIVER_RENEWED],
-                )
-                .await;
+            let edge = self.receiver_edge(&recipient.id).await;
             if let Some(renewed) = self.restart_overtaken(&msg, &edge).await {
                 return self.fail_claim(job_id, renewed).await;
             }
             if let Some(reason) = self.copilot_control_held(&recipient, pane, &edge).await? {
                 return self.release_or_backoff(job_id, job, &msg, reason).await;
             }
-            if self.restart_already_let_through(&msg, &edge) {
-                return self
-                    .release_or_backoff(job_id, job, &msg, "restart-pending")
-                    .await;
+            // B334-R1-01: the reads above take time (two reads, 250 ms apart),
+            // and the receiver may renew meanwhile. So a `restart` reads its
+            // seat's receiver edge again here, after every slow check and just
+            // before it goes to the pane, and both restart brakes judge that
+            // fresh edge (the admission is looked up again only when the edge
+            // is new). The decision linearizes at this read, as F274's late
+            // lease read does for F261: a renewal after it meets a restart
+            // already on its way. A BRAKE: it only drops or delays a restart.
+            if msg.command.as_deref() == Some("restart") {
+                let fresh = self.receiver_edge(&recipient.id).await;
+                let seq = |edge: &Result<Option<Event>>| match edge {
+                    Ok(Some(event)) => event.seq,
+                    _ => None,
+                };
+                if seq(&fresh) != seq(&edge)
+                    && let Some(renewed) = self.restart_overtaken(&msg, &fresh).await
+                {
+                    return self.fail_claim(job_id, renewed).await;
+                }
+                if self.restart_already_let_through(&msg, &fresh) {
+                    return self
+                        .release_or_backoff(job_id, job, &msg, "restart-pending")
+                        .await;
+                }
             }
         }
         if msg.command.is_some() {
@@ -519,6 +533,14 @@ impl DrainWorker {
             .get(&recipient.id)
             .await?
             .is_some_and(|seat| seat.state == SystemState::Idle && seat.tombstoned_at.is_none()))
+    }
+
+    /// F279: the seat's latest receiver edge, `native.receiver.lapsed` or
+    /// `native.receiver.renewed` (one indexed spine read).
+    async fn receiver_edge(&self, seat: &SeatId) -> Result<Option<Event>> {
+        self.event_bus
+            .latest_matching(seat, &[NATIVE_RECEIVER_LAPSED, NATIVE_RECEIVER_RENEWED])
+            .await
     }
 
     /// F279: what holds a control to a Copilot seat now, or `None` to type it.
