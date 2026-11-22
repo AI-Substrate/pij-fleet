@@ -2976,7 +2976,10 @@
 					"harness_session": "596e2725-a968-4dec-b0d9-cedf3751b326",
 					"instance_key": "337",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-perfect-catshark",
+					"to": "2026-11-22T02:04:27.628Z",
 					"why": "#337 F281 single review (amended C34; Jordan-approved)"
 				}
 			]
