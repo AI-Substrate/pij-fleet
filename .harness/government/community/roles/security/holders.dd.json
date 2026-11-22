@@ -1370,7 +1370,10 @@
 					"harness_session": "f6c77f53-f7e9-4caf-8585-f3b11e698569",
 					"instance_key": "334",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-intense-kingfisher",
+					"to": "2026-11-22T01:11:14.519Z",
 					"why": "#334 F279 R1 verdict (fresh seat; C35-approved)"
 				}
 			]
