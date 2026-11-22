@@ -3015,7 +3015,10 @@
 					"harness_session": "a72a599c-d586-4811-9f8f-efe3afb135dd",
 					"instance_key": "341",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-selective-moose",
+					"to": "2026-11-22T08:01:44.696Z",
 					"why": "#341 cc-alt UDS single review (amended C34; Jordan-approved)"
 				}
 			]
