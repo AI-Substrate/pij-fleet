@@ -78,6 +78,13 @@ bytes = 387
 note = "pij-rs event stream corpus: Hello, an unknown framed event, then a message.pushed turn."
 answer = "MUST require Hello first, forward the unknown event unchanged, continue reading, and inject the pushed turn for its recipient."
 
+[[fixture]]
+path = "wire/events-v1-peer-state.ndjson"
+sha256 = "3ded5df0388d805c1e9df22f933ab0c60c9526aa3a3f3fc3fda4210ca8f0f689"
+bytes = 408
+note = "F284: a paired daemon's event stream as an opted-in reader sees it: Hello, a peer_state frame (the daemon's own serialization), a frame type no reader knows yet, then a message.pushed event."
+answer = "MUST skip every frame that is not an event (an unknown type, or no event) without dropping the stream, and inject the pushed turn."
+
 
 [[fixture]]
 path = "malformed/rs/truncated-event.ndjson"

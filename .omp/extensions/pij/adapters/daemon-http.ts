@@ -609,6 +609,8 @@ async function pumpEventStream(
 					continue;
 				}
 				if (!sawHello) throw new Error("pij events frame arrived before Hello");
+				// F284: a peer_state or future frame type is not ours to deliver.
+				if ("skipped" in decoded) continue;
 				await onFrame(decoded);
 			}
 		}
@@ -616,7 +618,7 @@ async function pumpEventStream(
 			const decoded = decodeStreamLine(buffered);
 			if (!("hello" in decoded)) {
 				if (!sawHello) throw new Error("pij events frame arrived before Hello");
-				await onFrame(decoded);
+				if (!("skipped" in decoded)) await onFrame(decoded);
 			}
 		}
 	} finally {

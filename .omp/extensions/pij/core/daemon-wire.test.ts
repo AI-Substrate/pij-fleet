@@ -149,6 +149,19 @@ describe("pij-rs event stream", () => {
 			event: { kind: "message.pushed", seat: "pij-test-seat" },
 		});
 	});
+
+	// F284: a paired daemon's peer_state frame (and any frame type to come)
+	// is skipped, so the message behind it is still decoded.
+	it("skips a peer_state frame and an unknown frame type, then decodes the message", () => {
+		const decoded = fixture("events-v1-peer-state.ndjson").trim().split("\n").map(decodeStreamLine);
+		expect(decoded[1]).toEqual({ skipped: "peer_state" });
+		expect(decoded[2]).toEqual({ skipped: "future_frame" });
+		expect(decoded[3]).toMatchObject({
+			machine: "workstation",
+			cursor: 42,
+			event: { kind: "message.pushed", seat: "pij-test-seat" },
+		});
+	});
 });
 
 describe("process identity", () => {

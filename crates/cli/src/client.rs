@@ -544,7 +544,11 @@ impl DaemonClient {
         &self,
         since: &BTreeMap<String, u64>,
     ) -> std::result::Result<TailStream, Box<Envelope<Value>>> {
-        let mut request = self.http.get(format!("{}/v1/events", self.base_url));
+        // `pij-rs tail` renders peer state, so it asks for it (F284: opt-in).
+        let mut request = self
+            .http
+            .get(format!("{}/v1/events", self.base_url))
+            .query(&[("peer_state", "true")]);
         if !since.is_empty() {
             let encoded = match serde_json::to_string(since) {
                 Ok(encoded) => encoded,
@@ -1421,7 +1425,8 @@ mod tests {
 
         let request = request_rx.recv().expect("captured request");
         assert!(
-            request.starts_with("GET /v1/events?since=%7B%22local%22%3A6%7D HTTP/1.1"),
+            request
+                .starts_with("GET /v1/events?peer_state=true&since=%7B%22local%22%3A6%7D HTTP/1.1"),
             "{request}"
         );
         assert!(
