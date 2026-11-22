@@ -87,8 +87,17 @@ function fixture(): Fixture {
 			// A build child (rustc, a build script) that ticks into the log
 			// while alive; cargo waits for it, as cargo waits for rustc.
 			'[ -n "$WORKER" ] && ( i=0; while [ $i -lt 25 ]; do echo "tick $1" >> "$LOG"; sleep 0.2; i=$((i+1)); done ) </dev/null >/dev/null 2>&1 &',
+			// F281 (N5): `cargo test -v` prints each compile as `Running \`rustc …\``.
+			'[ -n "$VERBOSE" ] && [ "$1" = test ] && echo "     Running \\`rustc --crate-name alpha src/lib.rs\\`" >&2',
 			// An orphaned sleep must not hold the test's stderr pipe open.
 			'[ -n "$NAP" ] && sleep "$NAP" </dev/null >/dev/null 2>&1',
+			// F281: a test run's output, as cargo and libtest print it: the
+			// first test binary's `Running` line on stderr, a result on stdout;
+			// under -v, the binary's command line, then libtest's own count.
+			'[ "$RUNNING" = 1 ] && [ "$1" = test ] && echo "     Running unittests src/lib.rs (target/debug/deps/alpha-0123)" >&2 && echo "test alpha::first ... ok"',
+			'[ "$RUNNING" = verbose ] && [ "$1" = test ] && echo "     Running \\`target/debug/deps/alpha-0123\\`" >&2 && echo "running 1 test" && echo "test alpha::first ... ok"',
+			// F281 (N4): a serial run's unfinished line, as libtest leaves it.
+			'[ -n "$PARTIAL" ] && [ "$1" = test ] && printf "test b_hangs ... "',
 			// A test binary that never ends (F273): `HANG` names it; it runs only
 			// for `cargo test`, in cargo's group, as libtest's binary does.
 			'[ -n "$HANG" ] && [ "$1" = test ] && "$HANG" </dev/null >/dev/null 2>&1',
@@ -99,6 +108,8 @@ function fixture(): Fixture {
 			"wait",
 			'echo "end $1" >> "$LOG"',
 			'[ "$1" = fail ] && exit 7',
+			// F281 (N6): a test run that fails, with libtest's status.
+			'[ -n "$TEST_STATUS" ] && [ "$1" = test ] && exit "$TEST_STATUS"',
 			"exit 0",
 		].join("\n"),
 	);
@@ -138,6 +149,12 @@ function fixture(): Fixture {
 			WORKER: "",
 			NICENESS: "",
 			HANG: "",
+			RUNNING: "",
+			VERBOSE: "",
+			TEST_STATUS: "",
+			PARTIAL: "",
+			PIJ_SHARED_BUILD_FILTERED_TEST_LIMIT: undefined,
+			PIJ_SHARED_BUILD_TEST_IDLE: undefined,
 			HANG_PID: join(root, "hang.pid"),
 			PIJ_SHARED_BUILD_TEST_LIMIT: undefined,
 			PIJ_TEST_TIME_SCALE: undefined,
@@ -150,6 +167,7 @@ function fixture(): Fixture {
 
 interface Run {
 	code: number | null;
+	stdout: string;
 	stderr: string;
 }
 
@@ -168,13 +186,16 @@ function start(
 		: niced.length > 0
 			? spawn(niced[0] ?? "", [...niced.slice(1), "bash", SCRIPT, ...args], options)
 			: spawn("bash", [SCRIPT, ...args], options);
+	let stdout = "";
 	let stderr = "";
+	child.stdout?.on("data", (chunk: Buffer) => {
+		stdout += chunk.toString();
+	});
 	child.stderr?.on("data", (chunk: Buffer) => {
 		stderr += chunk.toString();
 	});
-	const done = new Promise<Run>((resolveRun) => {
-		child.on("close", (code) => resolveRun({ code, stderr }));
-	});
+	const { promise: done, resolve: resolveRun } = Promise.withResolvers<Run>();
+	child.on("close", (code) => resolveRun({ code, stdout, stderr }));
 	return { child, done };
 }
 
@@ -560,6 +581,40 @@ describe("just shared-build", () => {
 		});
 	}
 
+	// F281 (N1): a signal can land between a job's fork and the line that
+	// records it, or while the relays still block opening their FIFOs. Signals
+	// sent from the FIFOs' creation through cargo's start sweep that window; a
+	// relay or cargo left behind holds the run's stdout or stderr open, so its
+	// `close` never comes. Real time on purpose: the race is between a real
+	// bash process's forks and a real signal, which fake timers cannot drive.
+	it("on a signal while a test run's relays start, leaves no relay, monitor or cargo behind", async () => {
+		const f = fixture();
+		const hung = join(f.root, "bin", "pij_core-0123abcd");
+		executable(hung, 'echo $$ > "$HANG_PID"\n/bin/sleep 600');
+		const fifo = join(f.lock, "act");
+		for (const delay of [0, 1, 2, 3, 5, 8, 12, 16, 20, 25, 30, 40, 60]) {
+			const run1 = start(f, ["--", "test"], { RUNNING: "1", HANG: hung });
+			for (let i = 0; i < 10_000 && !existsSync(fifo); i++) {
+				await new Promise((r) => setTimeout(r, 1));
+			}
+			await new Promise((r) => setTimeout(r, delay));
+			run1.child.kill("SIGINT");
+			const timeout = new Promise<"leaked">((r) => setTimeout(() => r("leaked"), 8_000));
+			const stopped = await Promise.race([run1.done, timeout]);
+			if (stopped === "leaked") {
+				throw new Error(
+					`after a SIGINT ${delay} ms past the FIFOs, a process kept the run's output open`,
+				);
+			}
+			expect(stopped.code, `${delay} ms`).toBe(130);
+			expect(existsSync(f.lock)).toBe(false);
+		}
+		if (existsSync(join(f.root, "hang.pid"))) {
+			const hungPid = Number(readFileSync(join(f.root, "hang.pid"), "utf8"));
+			expect(() => process.kill(hungPid, 0)).toThrow();
+		}
+	}, 120_000);
+
 	it("refuses under the disk floor before the lock, and releases if the floor is crossed while holding", async () => {
 		const f = fixture();
 		writeFileSync(f.free, String(10 * GIB_KIB));
@@ -663,8 +718,31 @@ describe("just shared-build", () => {
 		expect(slowBuild.code).toBe(0);
 		const none = await run(f, ["--", "test"], { PIJ_SHARED_BUILD_TEST_LIMIT: "0", NAP: "1.5" });
 		expect(none.code).toBe(0);
+		// F281 (N6): a failing test run, through the relays (the default
+		// limits), exits with cargo's own status and runs nothing after it.
+		const builds = () => log(f).filter((line) => line.startsWith("start build")).length;
+		const buildsBefore = builds();
+		const failed = await run(f, ["--", "test", "--then", "build"], {
+			RUNNING: "1",
+			TEST_STATUS: "101",
+		});
+		expect(failed.code).toBe(101);
+		expect(failed.stdout).toBe("test alpha::first ... ok\n");
+		expect(builds()).toBe(buildsBefore);
+		// F281 (N2, rule 5): the relays and the monitor are the script's own
+		// subshells, so the script itself runs at max(19, the caller's)
+		// before they fork, never at a lower caller's niceness.
+		const niced = await start(f, ["--", "test"], { NICENESS: "1", RUNNING: "1" }, undefined, [5])
+			.done;
+		expect(niced.code, niced.stderr).toBe(0);
+		const script = log(f)
+			.filter((line) => line.startsWith("parent-niceness="))
+			.at(-1);
+		expect(Number(script?.slice("parent-niceness=".length))).toBeGreaterThanOrEqual(19);
 		for (const [name, value] of [
 			["PIJ_SHARED_BUILD_TEST_LIMIT", "soon"],
+			["PIJ_SHARED_BUILD_FILTERED_TEST_LIMIT", "3x"],
+			["PIJ_SHARED_BUILD_TEST_IDLE", "-1"],
 			["PIJ_TEST_TIME_SCALE", "0.5"],
 		]) {
 			const before = log(f).length;
@@ -674,6 +752,98 @@ describe("just shared-build", () => {
 			expect(log(f)).toHaveLength(before);
 			expect(existsSync(f.lock)).toBe(false);
 		}
+	});
+
+	it("stops a test run that writes nothing for its idle limit, whatever the test limit, naming the limit and the last test line (F281)", async () => {
+		const f = fixture();
+		const hung = join(f.root, "bin", "pij_daemon-0123abcd");
+		executable(hung, 'echo $$ > "$HANG_PID"\n/bin/sleep 600');
+		const started = Date.now();
+		// A quiet compile (1.5 s, longer than the idle limit) before the first
+		// test binary does not count; the binary's silence after it does.
+		const result = await run(f, ["--", "test"], {
+			NAP: "1.5",
+			RUNNING: "1",
+			HANG: hung,
+			PIJ_SHARED_BUILD_TEST_LIMIT: "0",
+			PIJ_SHARED_BUILD_TEST_IDLE: "1s",
+		});
+		expect(result.code).toBe(8);
+		expect(result.stderr).toContain(
+			"cargo test wrote nothing for 1s, its idle limit (PIJ_SHARED_BUILD_TEST_IDLE=1s, PIJ_TEST_TIME_SCALE=1); last full test line: test alpha::first ... ok (libtest ends a test's line only when the test ends);",
+		);
+		expect(result.stderr).toContain("pij_daemon-0123abcd");
+		// The output itself reached its own stream, unchanged.
+		expect(result.stdout).toBe("test alpha::first ... ok\n");
+		expect(result.stderr).toContain(
+			"     Running unittests src/lib.rs (target/debug/deps/alpha-0123)\n",
+		);
+		expect(Date.now() - started).toBeGreaterThan(2_000);
+		expect(Date.now() - started).toBeLessThan(15_000);
+		expect(existsSync(f.lock)).toBe(false);
+		const hungPid = Number(readFileSync(join(f.root, "hang.pid"), "utf8"));
+		expect(() => process.kill(hungPid, 0)).toThrow();
+		// F281 (N5): -v prints each compile as `Running \`rustc …\``, which is
+		// not a test binary: a quiet compile after one still does not count.
+		const idle = { PIJ_SHARED_BUILD_TEST_LIMIT: "0", PIJ_SHARED_BUILD_TEST_IDLE: "1s" };
+		const verboseCompile = await run(f, ["--", "test", "-v"], { ...idle, VERBOSE: "1", NAP: "3" });
+		expect(verboseCompile.code, verboseCompile.stderr).toBe(0);
+		// Under -v the test binary's own line is its command line; libtest's
+		// `running N tests` arms the clocks instead.
+		const verboseBinary = await run(f, ["--", "test", "-v"], {
+			...idle,
+			VERBOSE: "1",
+			RUNNING: "verbose",
+			HANG: hung,
+		});
+		expect(verboseBinary.code).toBe(8);
+		expect(verboseBinary.stderr).toContain("cargo test -v wrote nothing for 1s, its idle limit");
+		// F281 (N4): a serial run's unfinished `test b_hangs ... ` is copied
+		// once, and nothing is copied again after the stop.
+		const partial = await run(f, ["--", "test"], {
+			...idle,
+			RUNNING: "1",
+			PARTIAL: "1",
+			HANG: hung,
+		});
+		expect(partial.code).toBe(8);
+		expect(partial.stdout).toBe("test alpha::first ... ok\ntest b_hangs ... \n");
+	});
+
+	it("gives a run with a test name filter its filtered-run limit, and no other run, unless the test limit is set (F281)", async () => {
+		const f = fixture();
+		// A test binary that runs 2 s, past a 1 s filtered-run limit, then ends.
+		const slow = join(f.root, "bin", "pij_store-0123abcd");
+		executable(slow, "/bin/sleep 2");
+		const env = {
+			RUNNING: "1",
+			HANG: slow,
+			PIJ_SHARED_BUILD_FILTERED_TEST_LIMIT: "1s",
+			PIJ_SHARED_BUILD_TEST_IDLE: "0",
+		};
+		for (const filtered of [
+			["test", "-p", "alpha", "first"],
+			["test", "--lib", "--", "--exact", "alpha::first"],
+			["test", "-p", "alpha", "--", "--skip", "x", "first"],
+		]) {
+			const result = await run(f, ["--", ...filtered], env);
+			expect(result.code, filtered.join(" ")).toBe(8);
+			expect(result.stderr).toContain(
+				`cargo ${filtered.join(" ")} ran past its filtered-run limit of 1s after its first test binary started (a test name filter; PIJ_SHARED_BUILD_FILTERED_TEST_LIMIT=1s, PIJ_TEST_TIME_SCALE=1); last full test line: test alpha::first ... ok (`,
+			);
+		}
+		for (const whole of [
+			["test", "-p", "alpha", "--test", "integration", "--features", "x"],
+			["test", "--workspace", "--", "--skip", "first", "--test-threads", "1", "--nocapture"],
+		]) {
+			const result = await run(f, ["--", ...whole], env);
+			expect(result.code, whole.join(" ")).toBe(0);
+		}
+		const explicit = await run(f, ["--", "test", "-p", "alpha", "first"], {
+			...env,
+			PIJ_SHARED_BUILD_TEST_LIMIT: "30s",
+		});
+		expect(explicit.code).toBe(0);
 	});
 
 	it("takes one lock for a symlink and its real directory, and builds into the physical path", async () => {
