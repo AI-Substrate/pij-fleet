@@ -670,10 +670,11 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
     let transport: Arc<dyn Transport> = match config.adapters.transport {
         AdapterChoice::Fake => Arc::new(FakeTransport::reachable()),
         // Plan 218: the peer's start is read in-process (no `ps`). Every
-        // Claude home's sessions are searched, so an alt-home seat
-        // (`CLAUDE_CONFIG_DIR=~/.claude-alt`) is reached on its socket too.
+        // Claude home's sessions are searched, `~/.claude` always, so an
+        // alt-home seat (`CLAUDE_CONFIG_DIR=~/.claude-alt`) is reached on its
+        // socket too, whatever home this daemon's own environment names.
         AdapterChoice::Real => Arc::new(UdsTransport::new(
-            pij_harnesses::claude_homes(),
+            pij_harnesses::claude_session_homes(),
             Arc::new(pij_harnesses::proc::observed_start),
         )?),
     };

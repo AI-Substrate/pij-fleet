@@ -107,6 +107,29 @@ pub fn claude_homes() -> Vec<PathBuf> {
     homes
 }
 
+/// Every Claude home whose session records the daemon reads to reach a seat
+/// on its socket: [`claude_homes`], plus `$HOME/.claude` and `~/.claude-alt`
+/// ALWAYS. `claude_homes` lets this process's own `CLAUDE_CONFIG_DIR` replace
+/// the default home, which is right for the settings it writes; but a daemon
+/// started (or bounced) from a cc-alt seat inherits that seat's
+/// `CLAUDE_CONFIG_DIR`, and every default-home seat would then go unfound.
+/// Read once, at boot: a home an alt adds later needs a restart.
+#[must_use]
+pub fn claude_session_homes() -> Vec<PathBuf> {
+    claude_session_homes_from(claude_homes(), env::var_os("HOME"))
+}
+
+/// [`claude_session_homes`] from an explicit home list and `HOME`.
+#[must_use]
+pub fn claude_session_homes_from(mut homes: Vec<PathBuf>, home: Option<OsString>) -> Vec<PathBuf> {
+    for default in claude_homes_from(None, home) {
+        if !homes.contains(&default) {
+            homes.push(default);
+        }
+    }
+    homes
+}
+
 /// Append each existing home not already listed.
 fn add_existing(homes: &mut Vec<PathBuf>, more: Vec<PathBuf>) {
     for home in more {

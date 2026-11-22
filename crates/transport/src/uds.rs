@@ -71,7 +71,7 @@ pub type StartObserver = Arc<dyn Fn(u32) -> Option<ObservedStart> + Send + Sync>
 ///
 /// In `crates/daemon/src/lib.rs`, import `pij_transport::UdsTransport`; construct
 /// `AdapterChoice::Real` with
-/// `Arc::new(UdsTransport::new(pij_harnesses::claude_homes(), Arc::new(pij_harnesses::proc::observed_start))?)`
+/// `Arc::new(UdsTransport::new(pij_harnesses::claude_session_homes(), Arc::new(pij_harnesses::proc::observed_start))?)`
 /// (every Claude home's sessions; plan 218: the peer's start is read
 /// in-process, so delivery launches nothing); pass that shared
 /// `Arc<dyn Transport>` to both `DeliveryService` and `DrainWorker`. Construct one
@@ -121,7 +121,8 @@ impl UdsTransport {
     /// Use the session registry (`<home>/sessions`) of every Claude home: the
     /// default one and each alt's (`CLAUDE_CONFIG_DIR=~/.claude-alt`), so an
     /// alt-home seat is reached on its socket too. The daemon passes
-    /// `pij_harnesses::claude_homes()`.
+    /// `pij_harnesses::claude_session_homes()`, which always includes
+    /// `~/.claude`, whatever this process's own `CLAUDE_CONFIG_DIR` says.
     ///
     /// `observe_start` reads a peer's start in-process; the daemon passes
     /// `pij_harnesses::proc::observed_start`.
