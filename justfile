@@ -129,8 +129,9 @@ smoke:
 
 
 # Native Copilot extension contracts are node:test, outside Vitest's TS include.
+# node:test sets no per-test timeout of its own; 30 s matches vitest's (F281).
 copilot-native-test:
-    harness/scripts/nice19.sh node --test .copilot/extensions/pij/*.test.mjs
+    harness/scripts/nice19.sh node --test --test-timeout=30000 .copilot/extensions/pij/*.test.mjs
 
 # Through shared-build into the checkout's one target (F217).
 copilot-native-rust-test:
