@@ -254,3 +254,52 @@ async fn a_prime_closes_any_seat_and_kills_nothing() {
     assert_eq!(status, 200, "{own}");
     assert!(f.override_fact("pij-child-a").await.is_none());
 }
+
+/// F282 (F175 widened): a prime closes a parentless seat too, live or not;
+/// the fact names no prior parent and nobody is told.
+#[tokio::test]
+async fn a_prime_closes_a_parentless_seat() {
+    let f = fixture().await;
+    let (status, closed) = f.close("pij-role-prime", "pij-outsider").await;
+    assert_eq!(status, 200, "{closed}");
+    assert!(f.row("pij-outsider").await.tombstoned_at.is_some());
+    assert_eq!(
+        f.override_fact("pij-outsider").await.expect("audit fact"),
+        json!({"operation": "close", "prime": "pij-role-prime", "seat": "pij-outsider", "prior_parent": null})
+    );
+}
+
+/// Review of #336, R1: the audit fact and the guarded tombstone are one
+/// transaction. A close against a row that has since changed refuses
+/// `E-RS-INCARNATION-CHANGED` and writes neither.
+#[tokio::test]
+async fn a_refused_prime_close_writes_no_fact() {
+    let f = fixture().await;
+    let stale = f.row("pij-child-a").await;
+    let mut moved = stale.clone();
+    moved.state = pij_core::model::SystemState::Working;
+    f.services.registry.put(moved).await.expect("row moves");
+    let refused = f
+        .services
+        .roles
+        .close_as_prime(&"pij-designated".into(), stale, "owner-close".into())
+        .await
+        .expect_err("a changed row refuses");
+    assert!(
+        matches!(&refused, pij_core::error::PijError::GovernanceRefused { code, .. } if code == "E-RS-INCARNATION-CHANGED"),
+        "{refused}"
+    );
+    assert!(f.row("pij-child-a").await.tombstoned_at.is_none());
+    assert!(f.override_fact("pij-child-a").await.is_none());
+}
+
+/// Review of #336, R2: a project's prime (no designation, no role) is a
+/// prime too, so no prime links it as a worker.
+#[tokio::test]
+async fn a_project_prime_is_never_linked_as_a_worker() {
+    let f = fixture().await;
+    let (status, refused) = f.link("pij-designated", "pij-project-prime").await;
+    assert_eq!(status, 403, "{refused}");
+    assert_eq!(refused["details"]["reason"], "prime", "{refused}");
+    assert_eq!(f.row("pij-project-prime").await.parent, None);
+}

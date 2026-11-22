@@ -329,6 +329,40 @@ impl RoleService {
     pub async fn acts_as_prime(&self, seat: &SeatId) -> Result<bool> {
         self.roles.acts_as_prime(seat).await
     }
+
+    /// F282: tombstone `expected` for a prime that neither is nor parents it,
+    /// with its `seat.prime-override` fact, in one transaction under the
+    /// shared publication boundary. Returns the tombstone's sequence. Needs
+    /// the SQLite registry, like placement.
+    ///
+    /// # Errors
+    /// `E-RS-INCARNATION-CHANGED` when the row moved (nothing written), store
+    /// or publication failures.
+    pub async fn close_as_prime(
+        &self,
+        prime: &SeatId,
+        expected: SeatDescriptor,
+        reason: String,
+    ) -> Result<Seq> {
+        let store = self.roles.clone();
+        let clock = self.clock.clone();
+        let prime = prime.clone();
+        self.event_bus
+            .publish_committed_batch(async move {
+                let at = clock()?;
+                let events = store
+                    .prime_close_committed(&prime, expected, reason, at)
+                    .await?;
+                let seq = events.first().and_then(|event| event.seq).ok_or_else(|| {
+                    PijError::Adapter {
+                        adapter: "daemon/role".to_string(),
+                        message: "committed prime close has no tombstone sequence".to_string(),
+                    }
+                })?;
+                Ok((events, seq))
+            })
+            .await
+    }
 }
 
 /// Receipt for one placement: the seat as written and what changed.

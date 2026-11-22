@@ -640,27 +640,12 @@ pub(super) async fn close_seat(
             .tombstone_reason
             .as_deref()
             .is_some_and(pij_core::model::is_owner_close);
-    // F282: a prime closing a seat it neither is nor parents is recorded
-    // before the tombstone (persist before mutate): the prime, the seat and
-    // the parent it overrode, on the seat's own history. A repeat close
-    // records nothing new.
+    // F282: a prime closing a seat it neither is nor parents writes its
+    // `seat.prime-override` fact (the prime, the seat, the parent it
+    // overrode) in the guarded tombstone's own transaction, so a refused
+    // compare-and-set writes neither. A repeat close records nothing new.
     let prior_parent = expected.parent.clone();
     let overridden = !owner_closed && actor != &target && prior_parent.as_ref() != Some(actor);
-    if overridden {
-        let at = super::system_time_ms().map_err(refused)?;
-        state
-            .services
-            .event_bus
-            .publish(pij_store::prime_override_event(
-                actor,
-                &target,
-                prior_parent.as_ref(),
-                "close",
-                at,
-            ))
-            .await
-            .map_err(refused)?;
-    }
     let receipt = if owner_closed {
         tombstone_receipt(
             state.services.spine.as_ref(),
@@ -670,12 +655,20 @@ pub(super) async fn close_seat(
         )
         .await
     } else {
-        match state
-            .services
-            .registry
-            .tombstone_if_unchanged(expected, reason)
-            .await
-        {
+        let tombstoned = if overridden {
+            state
+                .services
+                .roles
+                .close_as_prime(actor, expected, reason)
+                .await
+        } else {
+            state
+                .services
+                .registry
+                .tombstone_if_unchanged(expected, reason)
+                .await
+        };
+        match tombstoned {
             Ok(seq) => {
                 tombstone_receipt(state.services.spine.as_ref(), &target, Some(seq), None).await
             }
@@ -963,52 +956,27 @@ mod tests {
         server.abort();
     }
 
-    /// F175, widened by F282: the project's prime closes a parentless seat,
-    /// dead or live (its process left running); anyone else still refuses.
+    /// F175: a seat that is neither the target nor its parent nor a prime is
+    /// refused. A prime's close (F282) writes its audit fact in the tombstone's
+    /// transaction, so it needs the SQLite store: it is proved on a real store
+    /// in `tests/prime_override_http.rs`.
     #[tokio::test]
-    async fn the_prime_closes_a_parentless_seat_and_no_one_else_does() {
+    async fn a_seat_that_is_not_a_prime_cannot_close_a_parentless_seat() {
         let (addr, registry, server) = world(
             vec![
                 seat("pij-prime", None, None, None),
                 seat("pij-outsider", None, None, None),
                 seat("pij-orphan", None, Some("%63"), Some((800, 3_000))),
-                seat("pij-live-orphan", None, Some("%64"), Some((900, 3_000))),
             ],
-            &[("%64", 899)],
-            &[(899, 2_990), (900, 3_000)],
+            &[],
+            &[],
         )
         .await;
         let (status, refused) = close(addr, "pij-outsider", "pij-orphan").await;
         assert_eq!(status, 403, "{refused}");
         assert_eq!(refused["details"]["code"], "E-RS-OWNERSHIP");
-        let (status, live) = close(addr, "pij-prime", "pij-live-orphan").await;
-        assert_eq!(
-            status, 200,
-            "F282: a live seat is the prime's to close: {live}"
-        );
-        assert!(
-            live["data"]["process"]
-                .as_str()
-                .is_some_and(|note| note.contains("its process keeps running")),
-            "{live}"
-        );
-        let (status, closed) = close(addr, "pij-prime", "pij-orphan").await;
-        assert_eq!(status, 200, "{closed}");
-        assert!(
-            closed["data"]["process"]
-                .as_str()
-                .is_some_and(|note| note.contains("Its pane %63 is gone: nothing to kill.")),
-            "{closed}"
-        );
-        assert_eq!(closed["data"].get("kill_pane"), None, "{closed}");
         let orphan = registry.get(&"pij-orphan".into()).await.unwrap().unwrap();
-        assert!(orphan.tombstoned_at.is_some());
-        let live = registry
-            .get(&"pij-live-orphan".into())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(live.tombstoned_at.is_some());
+        assert!(orphan.tombstoned_at.is_none());
         server.abort();
     }
 }

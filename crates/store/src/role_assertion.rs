@@ -259,6 +259,41 @@ impl SqliteOrchestration {
         acts_as_prime(&mut connection, seat).await
     }
 
+    /// F282: a prime's close of a seat it neither is nor parents, as one
+    /// transaction: the guarded tombstone (`expected` must still be the row,
+    /// else `E-RS-INCARNATION-CHANGED` and nothing is written) and its
+    /// `seat.prime-override` fact. Returns both committed events, tombstone
+    /// first. Hold the shared publication boundary as for
+    /// [`Self::assert_role_committed`].
+    ///
+    /// # Errors
+    /// `E-RS-INCARNATION-CHANGED`, a missing row, schema or SQL failures.
+    pub async fn prime_close_committed(
+        &self,
+        prime: &SeatId,
+        expected: SeatDescriptor,
+        reason: String,
+        at: u64,
+    ) -> Result<Vec<Event>> {
+        require_current_schema(&self.pool).await?;
+        let pool = self.pool.clone();
+        let prime = prime.clone();
+        owned_write(async move {
+            let mut tx = begin_write(&pool).await?;
+            let seat = expected.id.clone();
+            let tombstone =
+                crate::registry::tombstone_in_transaction(&mut tx, &seat, &reason, Some(&expected))
+                    .await?
+                    .ok_or_else(|| refused("E-RS-INCARNATION-CHANGED", &seat))?;
+            let mut audit =
+                prime_override_event(&prime, &seat, expected.parent.as_ref(), "close", at);
+            audit.seq = Some(append_in_transaction(&mut tx, &audit).await?);
+            tx.commit().await.map_err(adapter_error)?;
+            Ok(vec![tombstone, audit])
+        })
+        .await
+    }
+
     /// Commit a governor's placement and role stamp as one SQLite transaction.
     ///
     /// Authority is read inside the same transaction: the actor must be live; a
@@ -337,7 +372,9 @@ impl SqliteOrchestration {
                             }
                             taken_from = Some(parent.clone());
                         }
-                        if is_prime(&mut tx, &target).await? {
+                        // F282 review: any prime, a project's included, is
+                        // never placed under another seat.
+                        if acts_as_prime(&mut tx, &target).await? {
                             return Err(refused("E-RS-PRIME", &target));
                         }
                         if is_ancestor(&mut tx, &target, &actor).await? {

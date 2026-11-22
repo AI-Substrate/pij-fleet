@@ -38,13 +38,13 @@
       "value": [
         {
           "id": "ac-0001",
-          "claim": "A caller that acts as a prime may `pij link` any live seat, taking it from a live recorded parent in any project, and `pij close` any seat. \"Acts as a prime\" is one store predicate, `acts_as_prime`: the store's existing `is_prime` (the machine's current `prime_designation`, or a `seat_roles` role of `prime`) or any project's `projects.prime_id` (what F175's close rule already read). A target that is itself a prime, or the caller's ancestor, is still refused on link.",
+          "claim": "A caller that acts as a prime may `pij link` any live seat, taking it from a live recorded parent in any project, and `pij close` any seat. \"Acts as a prime\" is one store predicate, `acts_as_prime`: the store's existing `is_prime` (the machine's current `prime_designation`, or a `seat_roles` role of `prime`) or any project's `projects.prime_id` (what F175's close rule already read). A target that is itself a prime, or the caller's ancestor, is still refused on link. The target guard uses the same predicate, so a project-only prime is never linked as a worker (review of #336).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
-          "claim": "Every such act appends `seat.prime-override` on the seat's history, `{operation, prime, seat, prior_parent}`: a link in the placement's own transaction, a close before its tombstone (persist before mutate). A prime acting on its own child or itself appends none; a repeat close appends none.",
+          "claim": "Every such act appends `seat.prime-override` on the seat's history, `{operation, prime, seat, prior_parent}`, in the same transaction as the placement or the guarded tombstone, so a close refused `E-RS-INCARNATION-CHANGED` writes neither (review of #336). A prime acting on its own child or itself appends none; a repeat close appends none.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
