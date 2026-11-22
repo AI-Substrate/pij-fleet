@@ -7631,10 +7631,15 @@ async fn event_loop_survives_one_stream_error_and_processes_the_next_frame() {
         bearer_key: "a-local".to_string(),
     };
     // Attach BEFORE starting the worker so the bounded live view cannot race
-    // past either witness frame.
-    let mut stream = stream_from_peer(&reqwest::Client::new(), &endpoint, "/v1/events", &[])
-        .await
-        .expect("open federated view");
+    // past either witness frame. It reads peer state, so it asks (F284).
+    let mut stream = stream_from_peer(
+        &reqwest::Client::new(),
+        &endpoint,
+        "/v1/events",
+        &[("peer_state", "true".to_string())],
+    )
+    .await
+    .expect("open federated view");
     let worker = Arc::clone(&federation).start();
 
     tokio::time::timeout(Duration::from_secs(1), async {
