@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Review worktrees have no node_modules; signal probes need job control",
+				"tags": [
+					"review",
+					"shell",
+					"testing"
+				],
+				"title": "Testing shell scripts from a review worktree"
+			}
+		},
+		{
+			"name": "body",
+			"value": "1) A detached review worktree has no node_modules and must stay read-only. Copy the script, its test, nice19.sh, vitest.config.ts and package.json into a private mktemp -d, symlink node_modules to the main checkout's, then run harness/scripts/nice19.sh node_modules/.bin/vitest run <file>. Delete that dir by its exact path afterwards (F262). 2) To probe a script's INT trap, start it with set -m and exec, so $! is the script itself and INT is not ignored: a background job in a non-interactive shell ignores INT, and a wrapper subshell takes the signal instead of the script. The CLI's kill guard needs a numeric pid, so put the probe in a file and use kill -s SIG \"$pid\". 3) Bash relays (while read; printf) are worth mutation-checking for status preservation; #337's tests did not cover it. Under macOS bash 3.2, a builtin printf to a closed FIFO leaks its buffered line to stdout later."
+		}
+	]
+}
