@@ -857,7 +857,10 @@
 					"harness_session": "dea7ab1d-62ef-46e8-b479-333d15257194",
 					"instance_key": "334",
 					"machine": "JordansacStudio.localdomain",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-responsible-locust",
+					"to": "2026-11-22T01:12:53.255Z",
 					"why": "#334 F279 R1 verdict (fresh seat; C35-approved)"
 				}
 			]
