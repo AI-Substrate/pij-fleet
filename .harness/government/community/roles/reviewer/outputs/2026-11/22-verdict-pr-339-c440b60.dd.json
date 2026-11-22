@@ -1,0 +1,41 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a201dc-0c4e-7012-89ca-59765a50f9ff",
+				"date": "2026-11-22",
+				"head": "c440b600852ad854c9b89d1eefae436cd0b46082",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:339",
+				"writer": "pij-printed-stork",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "PIJ_SHARED_TARGET=<main>/target just shared-build -- test -p pij-daemon --lib -- peers_toml_listen a_peer_answering_unreadably a_peer_refusing_connections (2 mutants applied)",
+					"exit_code": 101,
+					"log": "2 FAILED (both mutants caught), control ok"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "#339 at c440b600 (F284 part 2). One round: correctness, cost, security and privacy.\n\nSECURITY: holds.\n- insecure_listen is a serde bool and defaults to false. TOML only takes a bare `true`. \"true\", True or yes fail to parse, and a misspelled key is refused by deny_unknown_fields. Setting it without `listen` refuses the boot (InsecureWithoutListen). A typo or a default cannot open a plaintext listener.\n- check_bind did not change and is still the only gate for a non-loopback address. Unpaired is refused; Tailscale is allowed; anything else needs the opt-in, whether the address came from the flag, the env or the file. The file only feeds its inputs, so it is a brake: removing the file's keys means fewer listeners, never different ones.\n- Precedence: when --bind or PIJ_RS_BIND is set, pairing::listen returns that address with the flag's insecure value only, so the file cannot opt in an address it did not name. An empty PIJ_RS_BIND is already a config error. The flag can opt in the file's address, and that is the operator's own explicit choice. A lower-precedence source cannot loosen a higher one.\n- Who can write the file: no change. load() fstat-checks the opened fd: regular file, owner == euid, mode & 077 == 0. A symlink is followed, but its target must pass the same checks. A file that already holds the bearer keys is the right home for this.\n- Logging: BadListen and Malformed name the field only, never the value (tested with a key pasted into listen). The listen address appears only in the boot banner.\n- No launcher passes --bind or PIJ_RS_BIND (justfile, harness/scripts, cli), so a flagless bounce does reach the file.\n\nRECEIPTS: correct for the cases that matter.\n- The peer client's total timeout is 30 s and the first-attempt wait is 10 s. A hung or slow peer therefore reads \"forwarding (pending)\", never \"unreachable\". Only a fast connection failure reads \"unreachable\". A peer's Adapter error or an unreadable body reads \"answered an error\". A peer's Queued reads \"accepted by\". A peer's Delivered passes through unchanged. Unrecorded (the peer accepted but the local publish failed) reads \"pending\", which is honest enough. No failed send can read \"accepted\": that text appears only for an ok envelope whose Queued receipt has a matching msg_id.\n\nCOST: none. pairing::load runs once in run_daemon (and in `peers check`). No loop, poll, timer or launch was added.\n\nMUTATIONS (run in a private copy through just shared-build, nice 19): (1) pairing::listen let the file's insecure_listen opt in an explicit bind; peers_toml_listen_is_the_bind_unless_the_command_line_names_one FAILED. (2) Unreadable was classed Retry::Unreachable; a_peer_answering_unreadably_is_not_called_unreachable FAILED. The control test a_peer_refusing_connections_reads_as_unreachable passed. Both caught.\n\nPRIVACY: the committed text is clean. It uses generic aliases (studio, mac-studio, laptop), example addresses (192.0.2.1 TEST-NET-1, 100.64.0.9, 192.168.1.x, the existing 100.101.102.103), and no paths or accounts.\n\nNOTES (none blocks):\nN1. A delivered message can still read \"unreachable\" in one narrow case: the peer processed the send, then the connection was cut before or during the response body (response.text() failing is classed Unanswered). The retry is deduped on the peer, so delivery is right; only the wording is off. Consider classing a body read that fails after headers arrived as PeerError, or rewording to \"no answer from peer <alias>\".\nN2. The peer's reason is appended verbatim, with no length cap and no control-character stripping. This is not new: the old receipt relayed the same text verbatim, and the peer holds a pair key. A cap and a control-character filter at forwarded_receipt would be cheap hardening.\nN3. A file-opted Insecure listener still prints \"WARNING: --insecure-bind: ...\" although no flag was passed. Name the source, e.g. \"insecure_listen (peers.toml)\".\nN4. listen = \"127.0.0.1:<other port>\" (or any address) moves the loopback port too, exactly as --bind does. Clients that default to 7461 then miss it. This is consistent with --bind, but worth one line in pij-federation.md.\n"
+		}
+	]
+}
