@@ -20,6 +20,28 @@ pub enum AdapterChoice {
     Real,
 }
 
+/// Who opted a paired daemon's non-loopback, non-Tailscale bind in (F284), so
+/// the boot warning names the switch that did it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InsecureOptIn {
+    /// `--insecure-bind` on the command line.
+    Flag,
+    /// `insecure_listen = true` in peers.toml, for that file's `listen`.
+    PeersToml,
+}
+
+impl InsecureOptIn {
+    /// The switch as an operator would look for it.
+    #[must_use]
+    pub fn source(self) -> &'static str {
+        match self {
+            Self::Flag => "--insecure-bind",
+            Self::PeersToml => "insecure_listen in peers.toml",
+        }
+    }
+}
+
 impl AdapterChoice {
     /// Is this the real thing?
     pub const fn is_real(self) -> bool {
@@ -186,9 +208,10 @@ pub struct Config {
     /// other.
     pub peers: Vec<PeerDefinition>,
     /// Allow a non-loopback, non-Tailscale bind on a paired daemon (plan 164
-    /// ruling 5). Bearer keys then cross that network in clear, so it is an
-    /// explicit `--insecure-bind`, never a default.
-    pub insecure_bind: bool,
+    /// ruling 5), and who allowed it. Bearer keys then cross that network in
+    /// clear, so it is an explicit `--insecure-bind` or peers.toml's
+    /// `insecure_listen` for its own `listen` (F284), never a default.
+    pub insecure_bind: Option<InsecureOptIn>,
     /// Whether the PA watchdog round nudges idle holders (plan 224). Off by
     /// default: as merged it treated a resting long-lived role holder as
     /// stalled work and cold-woke specialists overnight (F144). The daemon
@@ -221,7 +244,7 @@ impl Default for Config {
             federation_first_attempt_wait_secs: 10,
             machine_alias: None,
             peers: Vec::new(),
-            insecure_bind: false,
+            insecure_bind: None,
             idle_nudge: false,
         }
     }

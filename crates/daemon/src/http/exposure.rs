@@ -11,6 +11,8 @@
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 
+use pij_core::config::InsecureOptIn;
+
 /// How far an allowed listener reaches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Exposure {
@@ -19,9 +21,9 @@ pub enum Exposure {
     /// Reachable on the tailnet (100.64.0.0/10 or fd7a:115c:a1e0::/48), whose
     /// WireGuard tunnel encrypts the plain-HTTP bearer keys in transit.
     Tailscale,
-    /// Any other address, allowed only by an explicit `--insecure-bind`: keys
-    /// cross that network in clear.
-    Insecure,
+    /// Any other address, allowed only by an explicit opt-in, named here:
+    /// keys cross that network in clear.
+    Insecure(InsecureOptIn),
 }
 
 /// The daemon's second, non-loopback listener. Loopback is always bound; this
@@ -62,7 +64,7 @@ impl fmt::Display for BindRefusal {
             ),
             Self::Insecure(addr) => write!(
                 formatter,
-                "refusing to bind {addr}: the daemon speaks plain HTTP, so bearer keys would cross this network in clear. Bind a Tailscale address (100.64.0.0/10 or fd7a:115c:a1e0::/48), or pass --insecure-bind to accept that"
+                "refusing to bind {addr}: the daemon speaks plain HTTP, so bearer keys would cross this network in clear. Bind a Tailscale address (100.64.0.0/10 or fd7a:115c:a1e0::/48), or pass --insecure-bind (for peers.toml's `listen`: insecure_listen = true) to accept that"
             ),
         }
     }
@@ -88,8 +90,12 @@ fn is_tailscale(ip: IpAddr) -> bool {
 /// # Errors
 /// Any non-loopback address when `paired` is false; a non-loopback,
 /// non-Tailscale address (including the unspecified 0.0.0.0 / ::) unless
-/// `insecure` is set.
-pub fn check_bind(addr: SocketAddr, paired: bool, insecure: bool) -> Result<Exposure, BindRefusal> {
+/// `insecure` names who opted it in.
+pub fn check_bind(
+    addr: SocketAddr,
+    paired: bool,
+    insecure: Option<InsecureOptIn>,
+) -> Result<Exposure, BindRefusal> {
     let ip = addr.ip();
     if ip.is_loopback() {
         return Ok(Exposure::Loopback);
@@ -100,8 +106,8 @@ pub fn check_bind(addr: SocketAddr, paired: bool, insecure: bool) -> Result<Expo
     if is_tailscale(ip) {
         return Ok(Exposure::Tailscale);
     }
-    if insecure {
-        return Ok(Exposure::Insecure);
+    if let Some(by) = insecure {
+        return Ok(Exposure::Insecure(by));
     }
     Err(BindRefusal::Insecure(addr))
 }
@@ -115,8 +121,9 @@ pub fn boot_banner(addr: &SocketAddr, exposure: Exposure) -> String {
         Exposure::Tailscale => format!(
             "pij daemon listening on {addr} (Tailscale; paired machines' keys accepted on federation routes only)"
         ),
-        Exposure::Insecure => format!(
-            "WARNING: --insecure-bind: pij daemon listening on {addr} over PLAIN HTTP; paired machines' bearer keys cross this network in clear"
+        Exposure::Insecure(by) => format!(
+            "WARNING: {}: pij daemon listening on {addr} over PLAIN HTTP; paired machines' bearer keys cross this network in clear",
+            by.source()
         ),
     }
 }
@@ -125,7 +132,9 @@ pub fn boot_banner(addr: &SocketAddr, exposure: Exposure) -> String {
 mod tests {
     use std::net::SocketAddr;
 
-    use super::{BindRefusal, Exposure, check_bind};
+    use pij_core::config::InsecureOptIn;
+
+    use super::{BindRefusal, Exposure, boot_banner, check_bind};
 
     fn addr(text: &str) -> SocketAddr {
         text.parse().expect("socket address")
@@ -134,7 +143,7 @@ mod tests {
     #[test]
     fn loopback_is_always_allowed_and_needs_no_pairing() {
         for text in ["127.0.0.1:7461", "[::1]:7461"] {
-            assert_eq!(check_bind(addr(text), false, false), Ok(Exposure::Loopback));
+            assert_eq!(check_bind(addr(text), false, None), Ok(Exposure::Loopback));
         }
     }
 
@@ -142,7 +151,7 @@ mod tests {
     fn without_a_pairing_no_non_loopback_bind_is_allowed_even_insecurely() {
         for text in ["100.100.1.2:7461", "0.0.0.0:7461", "192.168.1.5:7461"] {
             assert_eq!(
-                check_bind(addr(text), false, true),
+                check_bind(addr(text), false, Some(InsecureOptIn::Flag)),
                 Err(BindRefusal::Unpaired(addr(text)))
             );
         }
@@ -162,7 +171,7 @@ mod tests {
             ("192.168.1.5:7461", Err(())),
         ];
         for (text, expected) in table {
-            let decided = check_bind(addr(text), true, false);
+            let decided = check_bind(addr(text), true, None);
             match expected {
                 Ok(exposure) => assert_eq!(decided, Ok(exposure), "{text}"),
                 Err(()) => assert_eq!(decided, Err(BindRefusal::Insecure(addr(text))), "{text}"),
@@ -172,13 +181,29 @@ mod tests {
 
     #[test]
     fn insecure_bind_is_an_explicit_opt_in_for_paired_daemons() {
-        assert_eq!(
-            check_bind(addr("0.0.0.0:7461"), true, true),
-            Ok(Exposure::Insecure)
+        for by in [InsecureOptIn::Flag, InsecureOptIn::PeersToml] {
+            assert_eq!(
+                check_bind(addr("0.0.0.0:7461"), true, Some(by)),
+                Ok(Exposure::Insecure(by))
+            );
+            assert_eq!(
+                check_bind(addr("100.70.0.1:7461"), true, Some(by)),
+                Ok(Exposure::Tailscale)
+            );
+        }
+    }
+
+    /// F284 review N3: the warning names the switch that opened the listener.
+    #[test]
+    fn the_insecure_warning_names_who_opted_in() {
+        let at = addr("0.0.0.0:7461");
+        assert!(
+            boot_banner(&at, Exposure::Insecure(InsecureOptIn::PeersToml))
+                .starts_with("WARNING: insecure_listen in peers.toml: ")
         );
-        assert_eq!(
-            check_bind(addr("100.70.0.1:7461"), true, true),
-            Ok(Exposure::Tailscale)
+        assert!(
+            boot_banner(&at, Exposure::Insecure(InsecureOptIn::Flag))
+                .starts_with("WARNING: --insecure-bind: ")
         );
     }
 }

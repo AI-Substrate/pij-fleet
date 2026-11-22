@@ -77,7 +77,7 @@ use crate::federation::{FederationSendError, FederationService, FirstAttempt};
 use crate::registration::{RegistrationError, RegistrationService, requested_model_matches};
 use crate::{BUILD, Services};
 pub use auth::{AuthRing, AuthRingError};
-pub use client::{PeerEndpoint, get_from_peer, post_to_peer, stream_from_peer};
+pub use client::{PeerCallError, PeerEndpoint, get_from_peer, post_to_peer, stream_from_peer};
 pub use exposure::{BindRefusal, Exposure, RemoteListener, boot_banner, check_bind};
 pub use identity::{CallerContext, IdentityQuery, IdentityRequest, Phonehome};
 pub use turn_end::{TURN_END, TurnEndRequest};

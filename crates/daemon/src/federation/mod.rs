@@ -19,7 +19,7 @@ use serde::Serialize;
 
 use self::fanin::FanInService;
 use crate::events::EventBus;
-use crate::http::{FederatedRoster, PeerEndpoint, SendRequest, post_to_peer};
+use crate::http::{FederatedRoster, PeerCallError, PeerEndpoint, SendRequest, post_to_peer};
 
 /// The queue kind for a remote send to `alias`.
 ///
@@ -177,6 +177,8 @@ pub enum FirstAttempt {
     },
     /// Durably queued but not answered within the wait (peer unreachable, or
     /// behind earlier rows for the same seat). The outcome lands as an event.
+    /// Its reason says which (F284): the peer known unreachable, the peer
+    /// answering an error, or the forward still pending.
     Queued(Receipt),
 }
 
@@ -188,7 +190,67 @@ enum Settled {
         reason: String,
         details: Option<serde_json::Value>,
     },
-    Retrying,
+    Retrying(Retry),
+}
+
+/// Why a first attempt was put back for a retry (F284): only a failed
+/// connection makes the peer UNREACHABLE; anything else leaves it unknown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Retry {
+    /// The connection to the peer failed: the request was never sent.
+    Unreachable,
+    /// The request went out, but no complete answer came back; the peer may
+    /// have taken it, and the retry's resend is one message by its dedupe.
+    ReplyLost,
+    /// The peer answered, with an adapter error of its own.
+    PeerError,
+    /// The peer answered, but this machine could not record its receipt; the
+    /// retry resends it and the peer's dedupe keeps it one message.
+    Unrecorded,
+}
+
+/// The sender's inline reason for a queued remote send (F284). A peer is
+/// called unreachable only when a request to it failed to connect; a wait
+/// that ran out with no attempt resolved says pending.
+fn queued_reason(alias: &str, retry: Option<Retry>) -> String {
+    match retry {
+        Some(Retry::Unreachable) => format!("peer {alias} unreachable; queued here, retrying"),
+        Some(Retry::ReplyLost) => {
+            format!("sent to {alias}; reply lost (it may have been delivered); retrying")
+        }
+        Some(Retry::PeerError) => format!("peer {alias} answered an error; queued here, retrying"),
+        Some(Retry::Unrecorded) | None => format!("forwarding to {alias} (pending)"),
+    }
+}
+
+/// The most of a peer's own reason a sender shows (F284 review N2).
+const PEER_REASON_MAX_CHARS: usize = 200;
+
+/// A peer's reason as this machine shows it: control characters dropped, so
+/// peer text cannot drive a local terminal, and at most
+/// [`PEER_REASON_MAX_CHARS`] characters, an ellipsis marking a cut.
+fn peer_reason(theirs: &str) -> String {
+    let mut kept = theirs.chars().filter(|c| !c.is_control());
+    let mut shown: String = kept.by_ref().take(PEER_REASON_MAX_CHARS).collect();
+    if kept.next().is_some() {
+        shown.push('…');
+    }
+    shown
+}
+
+/// The peer's receipt as the sender reads it (F284): a message the peer
+/// QUEUED is on the peer, waiting for its recipient. The peer's own reason
+/// (its local delivery's, such as `unreachable` for a recipient whose live
+/// channel was not ready) is kept, named as the peer's.
+fn forwarded_receipt(alias: &str, seat: &SeatId, mut receipt: Receipt) -> Receipt {
+    if let DeliveryOutcome::Queued { reason, .. } = &mut receipt.outcome {
+        let there = format!("accepted by {alias}; queued there for {seat}");
+        *reason = Some(match reason.take() {
+            Some(theirs) => format!("{there} ({})", peer_reason(&theirs)),
+            None => there,
+        });
+    }
+    receipt
 }
 
 /// Every sender waiting on one `(peer alias, msg_id)`, each with its own id so
@@ -351,7 +413,7 @@ impl FederationService {
             .entry(key.clone())
             .or_default()
             .push((waiter, sender));
-        let queued = match self.enqueue_remote(request).await {
+        let mut queued = match self.enqueue_remote(request).await {
             Ok(receipt) => receipt,
             Err(error) => {
                 self.forget_waiter(&key, waiter);
@@ -360,13 +422,25 @@ impl FederationService {
         };
         let settled = tokio::time::timeout(self.first_attempt_wait, answer).await;
         self.forget_waiter(&key, waiter);
-        Ok(match settled {
-            Ok(Ok(Settled::Forwarded(receipt))) => FirstAttempt::Forwarded(receipt),
-            Ok(Ok(Settled::Refused { reason, details })) => {
-                FirstAttempt::Refused { reason, details }
+        let alias = key.0.as_str();
+        let retry = match settled {
+            Ok(Ok(Settled::Forwarded(receipt))) => {
+                return Ok(FirstAttempt::Forwarded(forwarded_receipt(
+                    alias,
+                    &request.to.seat,
+                    receipt,
+                )));
             }
-            Ok(Ok(Settled::Retrying) | Err(_)) | Err(_) => FirstAttempt::Queued(queued),
-        })
+            Ok(Ok(Settled::Refused { reason, details })) => {
+                return Ok(FirstAttempt::Refused { reason, details });
+            }
+            Ok(Ok(Settled::Retrying(retry))) => Some(retry),
+            Ok(Err(_)) | Err(_) => None,
+        };
+        if let DeliveryOutcome::Queued { reason, .. } = &mut queued.outcome {
+            *reason = Some(queued_reason(alias, retry));
+        }
+        Ok(FirstAttempt::Queued(queued))
     }
 
     fn waiters(&self) -> std::sync::MutexGuard<'_, WaiterMap> {
@@ -534,9 +608,21 @@ impl FederationService {
         forwarded.to.machine = None;
         forwarded.from_machine = Some(self.local_alias.clone());
         match post_to_peer::<_, Receipt>(&self.client, endpoint, "/v1/send", &forwarded).await {
-            Err(_) => self.retry_claim(job_id, job.attempt, &request).await,
+            Err(PeerCallError::Unreached(_)) => {
+                self.retry_claim(job_id, job.attempt, &request, Retry::Unreachable)
+                    .await
+            }
+            Err(PeerCallError::ReplyLost(_)) => {
+                self.retry_claim(job_id, job.attempt, &request, Retry::ReplyLost)
+                    .await
+            }
+            Err(PeerCallError::Unreadable(_)) => {
+                self.retry_claim(job_id, job.attempt, &request, Retry::PeerError)
+                    .await
+            }
             Ok(envelope) if !envelope.ok && envelope.error == Some(ErrorKind::Adapter) => {
-                self.retry_claim(job_id, job.attempt, &request).await
+                self.retry_claim(job_id, job.attempt, &request, Retry::PeerError)
+                    .await
             }
             Ok(envelope) if !envelope.ok => {
                 // The peer's own auth prose speaks to ITS local clients; the
@@ -584,10 +670,9 @@ impl FederationService {
                     .await
                     .is_err()
                 {
-                    let delay = self.retry_delay(job.attempt)?;
-                    self.queue.retry(job_id, delay).await?;
-                    self.settle(&request, Settled::Retrying);
-                    return Ok(WorkerStep::Retried);
+                    return self
+                        .retry_claim(job_id, job.attempt, &request, Retry::Unrecorded)
+                        .await;
                 }
                 self.queue.ack(job_id, Outcome::Done).await?;
                 self.settle(&request, Settled::Forwarded(receipt));
@@ -660,10 +745,11 @@ impl FederationService {
         job_id: JobId,
         attempt: u32,
         request: &SendRequest,
+        cause: Retry,
     ) -> Result<WorkerStep> {
         let delay = self.retry_delay(attempt)?;
         self.queue.retry(job_id, delay).await?;
-        self.settle(request, Settled::Retrying);
+        self.settle(request, Settled::Retrying(cause));
         Ok(WorkerStep::Retried)
     }
 
@@ -859,12 +945,13 @@ mod tests {
     use std::time::Duration;
 
     use pij_core::config::PeerDefinition;
-    use pij_core::model::Destination;
+    use pij_core::model::{DeliveryOutcome, Destination, Envelope, Event, Receipt, Seq};
     use pij_core::ports::Spine;
     use pij_testkit::fakes::{FakeQueue, FakeSpine};
 
     use super::{
-        FederationPolicy, FederationService, PeerConfigError, PeerTable, ResolvedPeer, WorkerStep,
+        FederationPolicy, FederationService, FirstAttempt, PeerConfigError, PeerTable,
+        ResolvedPeer, WorkerStep,
     };
     use crate::events::EventBus;
     use crate::http::SendRequest;
@@ -1133,5 +1220,238 @@ mod tests {
         let spine = Arc::new(FakeSpine::new());
         let worker = Arc::new(service(queue, spine, "http://peer".to_string())).start();
         worker.shutdown().await.expect("shutdown");
+    }
+
+    /// F284: a fake peer daemon answering `/v1/send` with `router`'s handler.
+    async fn fake_peer(router: axum::Router) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a fake peer");
+        let addr = listener.local_addr().expect("fake peer address");
+        tokio::spawn(async move { axum::serve(listener, router).await.expect("fake peer") });
+        format!("http://{addr}")
+    }
+
+    /// F284: one remote send through a running worker, waiting up to `wait`
+    /// for its first attempt; the sender's answer and the sender's spine.
+    async fn first_attempt(url: String, wait: Duration) -> (FirstAttempt, Vec<Event>) {
+        let queue = Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy"));
+        let spine = Arc::new(FakeSpine::new());
+        let bus = Arc::new(EventBus::new(spine.clone(), 16).expect("event bus"));
+        let service = Arc::new(
+            FederationService::with_sources(
+                "desktop".to_string(),
+                [peer("laptop", url)],
+                queue,
+                bus,
+                FederationPolicy {
+                    first_attempt_wait: wait,
+                    ..policy()
+                },
+                Arc::new(|| Ok(1234)),
+                Arc::new(Ok),
+            )
+            .expect("federation"),
+        );
+        let worker = Arc::clone(&service).start();
+        let answer = service
+            .send_remote(&request("laptop"))
+            .await
+            .expect("a remote send is queued");
+        worker.shutdown().await.expect("worker stops");
+        let events = spine.tail(None, Seq(0)).await.expect("events");
+        (answer, events)
+    }
+
+    fn queued_reason(answer: &FirstAttempt) -> Option<&str> {
+        match answer {
+            FirstAttempt::Forwarded(receipt) | FirstAttempt::Queued(receipt) => {
+                match &receipt.outcome {
+                    DeliveryOutcome::Queued { reason, .. } => reason.as_deref(),
+                    other => panic!("expected a queued receipt, got {other:?}"),
+                }
+            }
+            FirstAttempt::Refused { reason, .. } => panic!("refused: {reason}"),
+        }
+    }
+
+    fn peer_receipt(reason: Option<&str>) -> Envelope<Receipt> {
+        Envelope::ok(
+            "pij send",
+            Receipt {
+                msg_id: "m-1".to_string(),
+                outcome: DeliveryOutcome::Queued {
+                    reason: reason.map(str::to_string),
+                    next_retry_at: Some(0),
+                    draft_sha: None,
+                },
+                at: 99,
+                cold_check: None,
+                warning: None,
+            },
+        )
+    }
+
+    /// F284, the live case (msg 5872f238): the peer took the message at once
+    /// and queued it for a recipient whose live channel was not ready, with ITS
+    /// local reason `unreachable`. The sender read `queued — unreachable` and
+    /// took the peer for down. The sender's answer now says the peer accepted
+    /// it; the spine keeps the peer's exact evidence.
+    #[tokio::test]
+    async fn a_message_the_peer_queued_reads_as_accepted_by_the_peer() {
+        let url = fake_peer(axum::Router::new().route(
+            "/v1/send",
+            axum::routing::post(|| async { axum::Json(peer_receipt(Some("unreachable"))) }),
+        ))
+        .await;
+        let (answer, events) = first_attempt(url, Duration::from_secs(10)).await;
+        assert!(matches!(answer, FirstAttempt::Forwarded(_)), "{answer:?}");
+        assert_eq!(
+            queued_reason(&answer),
+            Some("accepted by laptop; queued there for bob (unreachable)")
+        );
+        let relayed = events.last().expect("the peer's outcome event");
+        assert!(
+            relayed.payload.contains(r#""reason":"unreachable""#),
+            "the spine keeps the peer's own words: {}",
+            relayed.payload
+        );
+
+        let url = fake_peer(axum::Router::new().route(
+            "/v1/send",
+            axum::routing::post(|| async { axum::Json(peer_receipt(None)) }),
+        ))
+        .await;
+        let (answer, _) = first_attempt(url, Duration::from_secs(10)).await;
+        assert_eq!(
+            queued_reason(&answer),
+            Some("accepted by laptop; queued there for bob")
+        );
+    }
+
+    /// F284: only a connection that fails makes the peer unreachable.
+    #[tokio::test]
+    async fn a_peer_refusing_connections_reads_as_unreachable() {
+        let (answer, _) =
+            first_attempt("http://127.0.0.1:1".to_string(), Duration::from_secs(10)).await;
+        assert!(matches!(answer, FirstAttempt::Queued(_)), "{answer:?}");
+        assert_eq!(
+            queued_reason(&answer),
+            Some("peer laptop unreachable; queued here, retrying")
+        );
+    }
+
+    /// F284: a peer that answers, with something this build cannot read, is up.
+    #[tokio::test]
+    async fn a_peer_answering_unreadably_is_not_called_unreachable() {
+        let url = fake_peer(axum::Router::new().route(
+            "/v1/send",
+            axum::routing::post(|| async { "not an envelope" }),
+        ))
+        .await;
+        let (answer, _) = first_attempt(url, Duration::from_secs(10)).await;
+        assert_eq!(
+            queued_reason(&answer),
+            Some("peer laptop answered an error; queued here, retrying")
+        );
+    }
+
+    /// F284 review N1: a peer that took the send and then lost its reply (the
+    /// body cut after the headers) may have delivered it, so it is not called
+    /// unreachable.
+    #[tokio::test]
+    async fn a_reply_cut_after_the_peer_took_the_send_is_not_called_unreachable() {
+        let taken = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&taken);
+        let url = fake_peer(axum::Router::new().route(
+            "/v1/send",
+            axum::routing::post(move || {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async {
+                    let cut: [std::io::Result<&'static [u8]>; 2] = [
+                        Ok(br#"{"v":1,"ok":tr"#),
+                        Err(std::io::Error::other("the connection dropped")),
+                    ];
+                    axum::body::Body::from_stream(tokio_stream::iter(cut))
+                }
+            }),
+        ))
+        .await;
+        let (answer, _) = first_attempt(url, Duration::from_secs(10)).await;
+        assert!(
+            taken.load(std::sync::atomic::Ordering::SeqCst) >= 1,
+            "the peer took it"
+        );
+        assert_eq!(
+            queued_reason(&answer),
+            Some("sent to laptop; reply lost (it may have been delivered); retrying")
+        );
+    }
+
+    /// F284 review N2: a peer's own reason reaches a local terminal without
+    /// its control characters and at most 200 characters long.
+    #[tokio::test]
+    async fn a_peers_reason_is_shown_without_control_characters_and_capped() {
+        let theirs = format!("\u{1b}[2Jgone\u{7}\n{}", "x".repeat(300));
+        let url = fake_peer(axum::Router::new().route(
+            "/v1/send",
+            axum::routing::post(move || {
+                let theirs = theirs.clone();
+                async move { axum::Json(peer_receipt(Some(&theirs))) }
+            }),
+        ))
+        .await;
+        let (answer, _) = first_attempt(url, Duration::from_secs(10)).await;
+        let shown = format!("[2Jgone{}…", "x".repeat(200 - "[2Jgone".len()));
+        assert_eq!(
+            queued_reason(&answer),
+            Some(format!("accepted by laptop; queued there for bob ({shown})").as_str())
+        );
+    }
+
+    /// F284: a first attempt still out when the wait ends is pending: nothing
+    /// is known about the peer yet.
+    #[tokio::test]
+    async fn a_first_attempt_still_out_reads_as_pending() {
+        let release = Arc::new(tokio::sync::Notify::new());
+        let held = Arc::clone(&release);
+        let url = fake_peer(axum::Router::new().route(
+            "/v1/send",
+            axum::routing::post(move || {
+                let held = Arc::clone(&held);
+                async move {
+                    held.notified().await;
+                    axum::Json(peer_receipt(None))
+                }
+            }),
+        ))
+        .await;
+        let queue = Arc::new(FakeQueue::new(1_024).expect("valid fake queue policy"));
+        let bus = Arc::new(EventBus::new(Arc::new(FakeSpine::new()), 16).expect("event bus"));
+        let service = Arc::new(
+            FederationService::with_sources(
+                "desktop".to_string(),
+                [peer("laptop", url)],
+                queue,
+                bus,
+                policy(),
+                Arc::new(|| Ok(1234)),
+                Arc::new(Ok),
+            )
+            .expect("federation"),
+        );
+        let worker = Arc::clone(&service).start();
+        let answer = service
+            .send_remote(&request("laptop"))
+            .await
+            .expect("a remote send is queued");
+        // Let the held request finish, so the worker can stop.
+        release.notify_one();
+        worker.shutdown().await.expect("worker stops");
+        assert!(matches!(answer, FirstAttempt::Queued(_)), "{answer:?}");
+        assert_eq!(
+            queued_reason(&answer),
+            Some("forwarding to laptop (pending)")
+        );
     }
 }

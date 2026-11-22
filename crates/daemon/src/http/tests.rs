@@ -7125,11 +7125,11 @@ async fn two_daemons_forward_remote_send_into_destination_queue_and_spine() {
     assert_eq!(
         admitted.data.expect("receipt").outcome,
         pij_core::model::DeliveryOutcome::Queued {
-            reason: None,
+            reason: Some("forwarding to laptop (pending)".to_string()),
             next_retry_at: None,
             draft_sha: None,
         },
-        "the origin observed only its own durable queue"
+        "no worker runs until process_one, so the origin answers from its own durable queue"
     );
     let origin_events_before = a_spine
         .tail(None, pij_core::model::Seq(0))

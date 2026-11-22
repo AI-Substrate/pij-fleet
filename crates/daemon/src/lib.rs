@@ -1036,7 +1036,7 @@ fn bind_failure(addr: SocketAddr, error: &std::io::Error) -> PijError {
 async fn bind_listeners(
     requested: SocketAddr,
     paired: bool,
-    insecure: bool,
+    insecure: Option<pij_core::config::InsecureOptIn>,
 ) -> Result<(
     tokio::net::TcpListener,
     Option<tokio::net::TcpListener>,

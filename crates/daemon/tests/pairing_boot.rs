@@ -52,7 +52,7 @@ async fn an_unpaired_remote_bind_is_refused_and_loopback_kept() {
     for bind in ["0.0.0.0:0", "100.64.0.1:0"] {
         let daemon = boot_serving_loopback(Config {
             bind_addr: bind.to_string(),
-            insecure_bind: true,
+            insecure_bind: Some(pij_core::config::InsecureOptIn::Flag),
             ..Config::default()
         })
         .await;
