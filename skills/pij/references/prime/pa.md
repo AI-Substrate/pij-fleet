@@ -80,8 +80,9 @@ the handover files you check, you are read-only.
      in your round line.
    - **Held FYIs** (F169). Every turn pij gives you ends with `Waiting FYIs: <seat> N (oldest Xm, idle), …`
      when a fleet seat has peer FYIs it has not seen. An FYI wakes no one, so a hand-off sent as one stalls
-     its recipient. pij also sends you one `[pij watchdog] <seat> has held N FYIs …` message per backlog
-     (2+ FYIs, idle, the oldest 15 minutes). Read them (`pij-rs fyi-read --seat <seat> --pending`); if any
+     its recipient. pij also tells you once per backlog (2+ FYIs, idle, the oldest 15 minutes), in at most
+     one message per round: `[pij watchdog] <seat> has held N FYIs …` for one seat, or
+     `[pij watchdog] N seats have held 2 or more FYIs …` listing several. Read them (`pij-rs fyi-read --seat <seat> --pending`); if any
      needs the seat to act, wake it with one normal send saying what to do. If none does, leave it.
    - `question`: make sure its owner knows. Tell the prime once, not every round.
    - `waiting` / `hold` / `blocked`: deliberate. Leave them, unless the wait looks wrong (e.g. it is

@@ -134,6 +134,73 @@ pub fn stall_body(seat: &SeatId, fyis: &[HeldFyi], now_ms: u64) -> String {
 /// Room for `\n- ...and N more`.
 const MORE_LINE_MAX: usize = 32;
 
+/// The id segment of a digest notice, where a one-seat notice names its seat.
+pub const FYI_STALL_DIGEST: &str = "digest";
+
+/// One round's stall notice to one target: [`stall_body`] when one seat is
+/// newly stalled, else [`stall_digest`]. `stalls` are each seat's pending FYIs.
+#[must_use]
+pub fn stall_notice(stalls: &[(SeatId, Vec<HeldFyi>)], now_ms: u64) -> String {
+    match stalls {
+        [(seat, fyis)] => stall_body(seat, fyis, now_ms),
+        _ => stall_digest(stalls, now_ms),
+    }
+}
+
+/// The digest of several newly stalled seats, one notice per target per round
+/// (Jordan, 2026-11-22: one FYI fan-out had woken a PA once per seat). Each
+/// seat, oldest backlog first: its count, its oldest's age, and that oldest's
+/// sender and first line (fenced), within [`STALL_NOTICE_MAX`], then
+/// `+N more seats`.
+#[must_use]
+pub fn stall_digest(stalls: &[(SeatId, Vec<HeldFyi>)], now_ms: u64) -> String {
+    let mut seats: Vec<(&SeatId, &HeldFyi, usize)> = stalls
+        .iter()
+        .filter_map(|(seat, fyis)| {
+            let oldest = fyis
+                .iter()
+                .min_by(|a, b| a.held_at_ms.cmp(&b.held_at_ms).then(a.id.cmp(&b.id)))?;
+            Some((seat, oldest, fyis.len()))
+        })
+        .collect();
+    seats.sort_by(|a, b| a.1.held_at_ms.cmp(&b.1.held_at_ms).then(a.0.cmp(b.0)));
+    let mut text = format!(
+        "[pij watchdog] {} seats have held 2 or more FYIs while idle. An FYI wakes no one, so if \
+         one of them was a hand-off, a verdict or a question, its seat is stalled on it:",
+        seats.len(),
+    );
+    let tail = "\nRead a seat's in full: pij-rs fyi-read --seat <seat> --pending\n\
+         If any needs its seat to act, wake it with a normal send: pij send <seat> \"<what to do>\". \
+         pij never wakes them for this, cold or warm.\n\
+         (Sent once per seat's backlog; again only if new FYIs arrive.)";
+    let budget = STALL_NOTICE_MAX.saturating_sub(text.len() + tail.len() + MORE_LINE_MAX);
+    let mut used = 0;
+    let mut shown = 0;
+    for (seat, oldest, count) in &seats {
+        let line = format!(
+            "\n- {}: {count} FYIs, oldest {} ago, from {}: {}",
+            seat.rendered(),
+            crate::cold_wake::human_duration(now_ms.saturating_sub(oldest.held_at_ms)),
+            sender(oldest),
+            crate::render::fenced(
+                oldest.body.lines().next().unwrap_or_default(),
+                STALL_FIRST_LINE_CHARS
+            ),
+        );
+        if used + line.len() > budget {
+            break;
+        }
+        used += line.len();
+        shown += 1;
+        text.push_str(&line);
+    }
+    if shown < seats.len() {
+        text.push_str(&format!("\n- +{} more seats", seats.len() - shown));
+    }
+    text.push_str(tail);
+    text
+}
+
 fn sender(fyi: &HeldFyi) -> String {
     match &fyi.from_machine {
         Some(machine) => format!(
@@ -406,6 +473,80 @@ mod tests {
             NOW,
         );
         assert!(!hostile.contains('\u{1b}'), "{hostile}");
+    }
+
+    /// Jordan, 2026-11-22: one round's stalls reach a target as one notice.
+    /// One seat keeps its detailed notice; several share a digest naming each
+    /// (count, oldest age, first line), oldest first, within the 2 KB budget
+    /// with `+N more seats` past it.
+    #[test]
+    fn several_stalled_seats_share_one_digest_within_the_budget() {
+        let one = vec![(
+            SeatId::from("pij-held-seat"),
+            vec![
+                fyi("m1", "pij-one-a", "step 3 done", NOW - 22 * MIN),
+                fyi("m2", "pij-two-b", "ready", NOW - 5 * MIN),
+            ],
+        )];
+        assert_eq!(
+            stall_notice(&one, NOW),
+            stall_body(&one[0].0, &one[0].1, NOW)
+        );
+
+        let three: Vec<(SeatId, Vec<HeldFyi>)> =
+            [("pij-a-a", 20), ("pij-b-b", 40), ("pij-c-c", 30)]
+                .into_iter()
+                .map(|(seat, age)| {
+                    (
+                        SeatId::from(seat),
+                        vec![
+                            fyi("x", "pij-ff-ff", "later\nmore", NOW - MIN),
+                            fyi(
+                                "y",
+                                "pij-ee-ee",
+                                &format!("first of {seat}\nmore"),
+                                NOW - age * MIN,
+                            ),
+                        ],
+                    )
+                })
+                .collect();
+        let body = stall_notice(&three, NOW);
+        assert!(
+            body.starts_with("[pij watchdog] 3 seats have held 2 or more FYIs while idle."),
+            "{body}"
+        );
+        let at = |line: &str| body.find(line).unwrap_or_else(|| panic!("{line}: {body}"));
+        let b = at("- pij-b-b: 2 FYIs, oldest 40m ago, from pij-ee-ee: \"first of pij-b-b\"");
+        let c = at("- pij-c-c: 2 FYIs, oldest 30m ago, from pij-ee-ee: \"first of pij-c-c\"");
+        let a = at("- pij-a-a: 2 FYIs, oldest 20m ago, from pij-ee-ee: \"first of pij-a-a\"");
+        assert!(b < c && c < a, "oldest first: {body}");
+        assert!(
+            !body.contains("more seats") && !body.contains("\"later"),
+            "{body}"
+        );
+
+        let long = |n: usize| {
+            let id = format!("pij-{n}-{}", "a".repeat(crate::model::SEAT_ID_MAX_BYTES));
+            id[..crate::model::SEAT_ID_MAX_BYTES].to_string()
+        };
+        let forty: Vec<(SeatId, Vec<HeldFyi>)> = (0..40)
+            .map(|n| {
+                (
+                    SeatId::from(long(n).as_str()),
+                    vec![fyi("m", &long(99), &"x".repeat(300), NOW - 20 * MIN); 2],
+                )
+            })
+            .collect();
+        let body = stall_notice(&forty, NOW);
+        assert!(body.len() <= STALL_NOTICE_MAX, "{} bytes", body.len());
+        assert!(body.starts_with("[pij watchdog] 40 seats"), "{body}");
+        let shown = body.matches("\n- pij-").count();
+        assert!(shown > 0, "{body}");
+        assert!(
+            body.contains(&format!("\n- +{} more seats", 40 - shown)),
+            "{body}"
+        );
     }
 
     #[test]

@@ -16,7 +16,9 @@
 //!    one FYI per crossing (never a wake); crossings in one round share it.
 //! 5. **FYI stall** (F169). A seat holding two or more peer FYIs, idle, the
 //!    oldest waiting 15 minutes: its scope's PA (the prime, with no live PA)
-//!    gets one normal message per backlog naming each FYI. An FYI wakes no
+//!    is told once per backlog, naming each FYI. One round sends each target
+//!    at most one such message: a digest when several seats are newly
+//!    stalled. Only a watched PA or a prime is ever a target. An FYI wakes no
 //!    one, so a hand-off sent as one is a stall nobody sees. The seat itself
 //!    is never woken.
 //!
@@ -35,7 +37,8 @@
 //!
 //! **Cost.** No launch, timer or poll of its own. Per round: one claims read;
 //! one grouped read of pending peer FYIs over their pending-only index, and
-//! per seat newly due a stall notice one read of its pending FYIs;
+//! per seat newly due a stall notice one read of its pending FYIs, and at
+//! most one stall send per target, however many seats stalled;
 //! per live PA in an active scope (or with a standing dormant claim), one
 //! indexed `LIMIT 1` read of its latest `seat.activity`; per fleet seat that
 //! is working, was working last round, has no completed read, or has posted
@@ -47,8 +50,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use pij_core::BG_ACTOR;
+use pij_core::fyi::HeldFyi;
 use pij_core::fyi_watch::{
-    FYI_STALL_ID_PREFIX, FYI_STALL_REASON, STALL_MIN_FYIS, stall_body, stalled,
+    Backlog, FYI_STALL_DIGEST, FYI_STALL_ID_PREFIX, FYI_STALL_REASON, STALL_MIN_FYIS, stall_notice,
+    stalled,
 };
 use pij_core::model::{ProcIdentity, SeatDescriptor, SeatId, SystemState};
 use pij_core::session_status::SessionStatusBlock;
@@ -212,7 +217,7 @@ impl PaWatchdog {
                 .await,
         );
         outcomes.extend(
-            self.fyi_stalls(services, seats, &scopes, &mut claimed, now_ms)
+            self.fyi_stalls(services, seats, &scopes, designated, &mut claimed, now_ms)
                 .await,
         );
         {
@@ -848,12 +853,15 @@ impl PaWatchdog {
     /// to act on. Its scope's PA is told once per backlog with a normal send,
     /// or the scope's prime with no live PA; the seat itself is never woken,
     /// cold or warm. The claim re-arms when the backlog is gone or a newer FYI
-    /// arrives after the notice.
+    /// arrives after the notice. One round sends each target at most one
+    /// notice, a digest when several seats are newly stalled (Jordan,
+    /// 2026-11-22); the claims stay per seat.
     async fn fyi_stalls(
         &self,
         services: &Services,
         seats: &[SeatDescriptor],
         scopes: &[PresenceScope],
+        designated: Option<&SeatId>,
         claimed: &mut BTreeMap<(PresenceKind, String), PresenceClaim>,
         now_ms: u64,
     ) -> Vec<RoundOutcome> {
@@ -885,7 +893,8 @@ impl PaWatchdog {
                 Self::rearm(services, claimed, kind, &subject).await;
             }
         }
-        let mut outcomes = Vec::new();
+        // First every newly stalled seat, claimed; then one notice per target.
+        let mut stalls: Vec<Stall<'_>> = Vec::new();
         for backlog in &backlogs {
             let Some(seat) = seats
                 .iter()
@@ -901,17 +910,11 @@ impl PaWatchdog {
             let Some(scope) = scope_for(scopes, seats, seat) else {
                 continue;
             };
-            let mut to: Vec<&SeatDescriptor> =
-                scope.pas.iter().filter(|pa| pa.id != seat.id).collect();
-            if to.is_empty()
-                && let Some(prime) = scope.prime.as_ref().filter(|prime| prime.id != seat.id)
-            {
-                to.push(prime);
-            }
+            let to = stall_targets(scope, seat, designated);
             if to.is_empty() {
                 continue;
             }
-            let fyis: Vec<_> = match store.pending_fyis(&seat.id).await {
+            let fyis: Vec<HeldFyi> = match store.pending_fyis(&seat.id).await {
                 Ok(fyis) => fyis
                     .into_iter()
                     .filter(|fyi| fyi.sender.as_str() != BG_ACTOR || fyi.from_machine.is_some())
@@ -926,63 +929,102 @@ impl PaWatchdog {
             {
                 continue;
             }
-            let body = stall_body(&seat.id, &fyis, now_ms);
-            let mut told = Vec::new();
-            for target in &to {
-                let msg_id = format!("{FYI_STALL_ID_PREFIX}{}:{}:{now_ms}", seat.id, target.id);
-                let (delivery, cold_check) = wake_pa(
-                    services,
-                    target,
-                    body.clone(),
-                    msg_id.clone(),
-                    FYI_STALL_REASON,
-                    now_ms,
-                )
-                .await;
-                told.push(json!({
-                    "seat": target.id,
-                    "msg_id": msg_id,
-                    "delivery": delivery,
-                    "cold_check": cold_check,
-                }));
+            stalls.push(Stall {
+                seat,
+                scope,
+                backlog,
+                fyis,
+                to,
+                told: Vec::new(),
+            });
+        }
+        let mut targets: BTreeMap<&SeatId, (&SeatDescriptor, Vec<usize>)> = BTreeMap::new();
+        for (index, stall) in stalls.iter().enumerate() {
+            for target in &stall.to {
+                targets
+                    .entry(&target.id)
+                    .or_insert_with(|| (*target, Vec::new()))
+                    .1
+                    .push(index);
             }
+        }
+        let mut outcomes = Vec::new();
+        for (target, members) in targets.into_values() {
+            let notice: Vec<(SeatId, Vec<HeldFyi>)> = members
+                .iter()
+                .map(|&index| (stalls[index].seat.id.clone(), stalls[index].fyis.clone()))
+                .collect();
+            let about = match notice.as_slice() {
+                [(seat, _)] => seat.to_string(),
+                _ => FYI_STALL_DIGEST.to_string(),
+            };
+            let msg_id = format!("{FYI_STALL_ID_PREFIX}{about}:{}:{now_ms}", target.id);
+            let (delivery, cold_check) = wake_pa(
+                services,
+                target,
+                stall_notice(&notice, now_ms),
+                msg_id.clone(),
+                FYI_STALL_REASON,
+                now_ms,
+            )
+            .await;
+            let row = json!({
+                "seat": target.id,
+                "msg_id": msg_id,
+                "delivery": delivery,
+                "cold_check": cold_check,
+            });
+            for &index in &members {
+                stalls[index].told.push(row.clone());
+            }
+            outcomes.push(RoundOutcome::Presence {
+                kind,
+                to: target.id.clone(),
+                subjects: notice.iter().map(|(seat, _)| seat.to_string()).collect(),
+                delivery,
+            });
+        }
+        for stall in &stalls {
             // One answer for the claim: released to retry only when every
             // target refused or failed.
-            let delivery = told
+            let delivery = stall
+                .told
                 .iter()
                 .filter_map(|row| row["delivery"].as_str())
                 .find(|delivery| !failed(delivery))
-                .or_else(|| told.first().and_then(|row| row["delivery"].as_str()))
+                .or_else(|| stall.told.first().and_then(|row| row["delivery"].as_str()))
                 .unwrap_or("error: no target")
                 .to_string();
             let detail = json!({
                 "delivery": delivery,
-                "told": told,
-                "fyis": fyis.len(),
-                "newest_ms": backlog.newest_ms,
+                "told": stall.told,
+                "fyis": stall.fyis.len(),
+                "newest_ms": stall.backlog.newest_ms,
             });
-            Self::settle(services, claimed, kind, seat.id.as_str(), now_ms, detail).await;
+            Self::settle(
+                services,
+                claimed,
+                kind,
+                stall.seat.id.as_str(),
+                now_ms,
+                detail,
+            )
+            .await;
             self.audit_change(
                 services,
                 kind,
-                seat.id.as_str(),
-                &seat.id,
+                stall.seat.id.as_str(),
+                &stall.seat.id,
                 PresenceVerdict::Send,
                 json!({
-                    "scope": scope.key,
-                    "fyis": fyis.len(),
-                    "oldest_ms": now_ms.saturating_sub(backlog.oldest_ms),
-                    "told": told,
+                    "scope": stall.scope.key,
+                    "fyis": stall.fyis.len(),
+                    "oldest_ms": now_ms.saturating_sub(stall.backlog.oldest_ms),
+                    "told": stall.told,
                 }),
                 now_ms,
             )
             .await;
-            outcomes.push(RoundOutcome::Presence {
-                kind,
-                to: to[0].id.clone(),
-                subjects: vec![seat.id.to_string()],
-                delivery,
-            });
         }
         outcomes
     }
@@ -1088,6 +1130,37 @@ fn scope_for<'a>(
         })
 }
 
+/// Who a stalled seat's notice goes to: its scope's PAs, or with none its
+/// prime, never the seat itself. A brake on top: every target must be a
+/// watched PA or a prime (designated or by role), so a worker or a plain seat
+/// is never sent one, whatever the scope holds.
+fn stall_targets<'a>(
+    scope: &'a PresenceScope,
+    seat: &SeatDescriptor,
+    designated: Option<&SeatId>,
+) -> Vec<&'a SeatDescriptor> {
+    let eligible = |target: &&SeatDescriptor| {
+        target.id != seat.id
+            && live(target)
+            && (is_watched_pa(target) || supervisor_prime(target, designated))
+    };
+    let pas: Vec<&SeatDescriptor> = scope.pas.iter().filter(eligible).collect();
+    if !pas.is_empty() {
+        return pas;
+    }
+    scope.prime.iter().filter(eligible).collect()
+}
+
+/// One newly stalled seat in a round, claimed, and the notices it rode.
+struct Stall<'a> {
+    seat: &'a SeatDescriptor,
+    scope: &'a PresenceScope,
+    backlog: &'a Backlog,
+    fyis: Vec<HeldFyi>,
+    to: Vec<&'a SeatDescriptor>,
+    told: Vec<serde_json::Value>,
+}
+
 /// The designated prime of another scope is never in a fleet.
 fn supervisor_prime(seat: &SeatDescriptor, designated: Option<&SeatId>) -> bool {
     designated == Some(&seat.id) || seat.role.as_deref() == Some(PRIME_ROLE)
@@ -1139,4 +1212,64 @@ async fn last_pa(
         .into_iter()
         .max_by_key(|seat| (seat.tombstoned_at.unwrap_or(0), seat.id.clone()))
         .map(|seat| seat.id.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use pij_core::model::Harness;
+
+    use super::*;
+
+    fn seat(id: &str, role: Option<&str>) -> SeatDescriptor {
+        let mut seat = SeatDescriptor::new(id, Harness::Claude, "/repo");
+        seat.role = role.map(str::to_string);
+        seat
+    }
+
+    fn scope(prime: Option<SeatDescriptor>, pas: Vec<SeatDescriptor>) -> PresenceScope {
+        PresenceScope {
+            key: "/repo".into(),
+            prime,
+            members: Vec::new(),
+            pas,
+            workers: 0,
+            working: false,
+        }
+    }
+
+    fn ids(targets: &[&SeatDescriptor]) -> Vec<String> {
+        targets.iter().map(|seat| seat.id.to_string()).collect()
+    }
+
+    /// Jordan, 2026-11-22: a stall notice goes only to a watched PA or a
+    /// prime. A worker or a plain seat in the scope's PA or prime slot gets
+    /// nothing, and a relay PA is not watched.
+    #[test]
+    fn a_stall_notice_goes_only_to_a_watched_pa_or_a_prime() {
+        let stalled = seat("pij-idle", None);
+        let pa = seat("pij-pa", Some(PA_ROLE));
+        let prime = seat("pij-prime", Some(PRIME_ROLE));
+        let worker = seat("pij-worker", Some("worker"));
+        let plain = seat("pij-plain", None);
+        let mut relay = seat("pij-relay", Some(PA_ROLE));
+        relay.relay = true;
+
+        let both = scope(Some(prime.clone()), vec![pa.clone()]);
+        assert_eq!(ids(&stall_targets(&both, &stalled, None)), ["pij-pa"]);
+        let no_pa = scope(Some(prime.clone()), Vec::new());
+        assert_eq!(ids(&stall_targets(&no_pa, &stalled, None)), ["pij-prime"]);
+        assert_eq!(
+            ids(&stall_targets(&no_pa, &prime, None)),
+            Vec::<String>::new(),
+            "never the seat itself"
+        );
+
+        let odd = scope(Some(plain.clone()), vec![worker, plain.clone(), relay]);
+        assert!(stall_targets(&odd, &stalled, None).is_empty());
+        assert_eq!(
+            ids(&stall_targets(&odd, &stalled, Some(&plain.id))),
+            ["pij-plain"],
+            "a designated prime is a prime"
+        );
+    }
 }
