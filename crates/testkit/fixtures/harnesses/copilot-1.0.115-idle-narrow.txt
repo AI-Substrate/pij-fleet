@@ -1,0 +1,7 @@
+ ~/pi-hacking/pij [⎇ main*%]            Session: 0000.00 AIC used · 1 scheduled
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+ Update:    · ← open sidebar · Interactive · Allow All · / com… claude-opus-5.5
+0% pij ⎇ main ⛓ pij-previous-firefly ✉1 • claude-opus-5.5 · xhigh • xhigh •
+00k/0.0M • 0000.00 AIU • 000.00 prem • 000h00m

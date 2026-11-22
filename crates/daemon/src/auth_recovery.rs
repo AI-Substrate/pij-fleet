@@ -27,10 +27,20 @@
 //! held FYIs (proved on a throwaway seat, F212). F261 adds a second input to
 //! that policy (a lease lapse now triggers it), not a second policy.
 //!
-//! BRAKES, each of which can only turn a restart into a notice or nothing:
+//! BRAKES, each of which can only turn a restart into a notice, a wait or
+//! nothing:
 //! - the seat is not idle, or its composer is not empty or not readable (a
 //!   draft, a human typing, a layout pij cannot read): no restart; its live
-//!   parent and its projects' designated primes are told how to restart it;
+//!   parent and its projects' designated primes are told how to restart it.
+//!   F279: for a lapse, whether a turn runs is read from the pane (a launch-
+//!   free capture over the live tmux control client), never from the seat's
+//!   published turn state: the extension that publishes it is the thing that
+//!   died, so it is frozen at its last write. And a running turn only delays
+//!   a lapse's restart: the control is queued behind the turn, the control
+//!   path types it once the pane shows the turn ended (`pointer/worker.rs`),
+//!   and they are told it is queued. A draft or an unreadable pane is a
+//!   notice, as before. Each recorded decision names what held it
+//!   (`held_by`, [`Brake`]);
 //! - a restart already happened inside the window: never a second one. While
 //!   its control is still queued, nothing more; once it has settled with the
 //!   same process still running (Copilot refused `/restart`, or it was never
@@ -83,18 +93,21 @@
 //! latest recovery event once per daemon lifetime, the live payloads of the
 //! seat's control kind while a restart may be pending, its holdings when
 //! someone is told, and one composer capture through the existing
-//! interaction gate when a restart is possible. The restart is one queued
+//! interaction gate when a restart is possible (for a lapse, one launch-free
+//! capture over the live control client first). The restart is one queued
 //! control; a notice is one message per recipient.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use pij_core::delivery::DeliveryDeferralReason;
 use pij_core::events::EventFilter;
 use pij_core::model::{
     DeliveryOutcome, Event, Harness, Msg, SeatDescriptor, SeatId, Seq, SystemState,
 };
-use pij_core::ports::SeatFilter;
+use pij_core::ports::{SeatFilter, TmuxPort};
+use pij_harnesses::copilot_turn::{CopilotTurn, copilot_turn};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio_stream::StreamExt;
@@ -172,6 +185,51 @@ pub enum Action {
     Exited,
 }
 
+/// F279: what held a decision back, recorded as `held_by` on each
+/// `seat.auth_recovery` and lapse-held event. Stable wire names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Brake {
+    /// A turn is running. For a lapse, a restart is still queued: the
+    /// control waits until the pane shows the turn ended (`action: restart`).
+    /// For a report, the seat is told instead (`action: notify`).
+    Busy,
+    /// Text in the composer, or a human typing.
+    ComposerDraft,
+    /// A pane or composer pij cannot read (no pane, no live control client,
+    /// a dialog, a layout it does not know, a failed read).
+    ComposerUnreadable,
+    /// The restart control was refused or could not be queued.
+    NotQueued,
+    /// A restart already happened inside the window.
+    RecentRestart,
+    /// They were already told inside the window.
+    RecentNotice,
+    /// The seat's recorded process is gone, recycled or unreadable.
+    ProcGone,
+}
+
+/// The brake a fresh read of the pane names, or `None` when it shows the
+/// prompt with an empty composer.
+pub(crate) fn brake_of(turn: CopilotTurn) -> Option<Brake> {
+    match turn {
+        CopilotTurn::Idle => None,
+        CopilotTurn::Busy => Some(Brake::Busy),
+        CopilotTurn::Draft => Some(Brake::ComposerDraft),
+        CopilotTurn::Unreadable => Some(Brake::ComposerUnreadable),
+    }
+}
+
+/// F279: a Copilot pane's turn, read fresh over the daemon's live tmux control
+/// client. It never launches: with no live client, or a failed read, the pane
+/// is unreadable, which holds (a BRAKE).
+pub(crate) async fn fresh_turn(tmux: &dyn TmuxPort, pane: &str) -> CopilotTurn {
+    match tmux.capture_without_launch(pane).await {
+        Ok(Some(screen)) => copilot_turn(&screen),
+        Ok(None) | Err(_) => CopilotTurn::Unreadable,
+    }
+}
+
 /// The last decision that acted for one seat.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Entry {
@@ -247,6 +305,10 @@ pub(crate) struct Outcome {
     /// The restart control's msg_id, when one was queued.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) msg_id: Option<String>,
+    /// F279: what held the decision back, or what a queued restart waits
+    /// behind (`busy`, a lapse only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) held_by: Option<Brake>,
     /// Who was told, and each delivery's outcome word.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) told: Vec<(SeatId, String)>,
@@ -290,12 +352,27 @@ pub(crate) async fn handle(
         Some(msg_id) => !control_live(services, &seat.id, &msg_id).await,
         None => false,
     };
-    let free = if in_window.is_none() && alive {
-        composer_free(services, seat).await
+    // F279: what holds a restart now, read only when one is possible. A
+    // lapse's restart waits out a running turn: the control is queued, and the
+    // control path types it once a fresh read of the pane shows the turn
+    // ended (worker.rs). A draft or an unreadable pane holds it, as before.
+    let held = if in_window.is_none() && alive {
+        held_by(services, seat, cause).await
     } else {
-        false
+        None
+    };
+    let free = match held {
+        None => true,
+        Some(Brake::Busy) => cause == Cause::ExtensionLost,
+        Some(_) => false,
     };
     let mut action = decide(last.as_ref(), now, reporter, alive, || settled, || free);
+    let mut brake = match action {
+        Action::Restart | Action::Notify => held,
+        Action::NotRestarted | Action::Relogin | Action::Pending => Some(Brake::RecentRestart),
+        Action::Told => Some(Brake::RecentNotice),
+        Action::Exited => Some(Brake::ProcGone),
+    };
     let mut msg_id = None;
     if action == Action::Restart {
         // F274 (b): a lapse is decided from reads that take time (the
@@ -324,7 +401,7 @@ pub(crate) async fn handle(
             services,
             seat,
             reporter,
-            Action::Restart,
+            (Action::Restart, brake),
             cause,
             now_ms,
             Some(&id),
@@ -344,16 +421,29 @@ pub(crate) async fn handle(
             Ok(receipt) if !matches!(receipt.outcome, DeliveryOutcome::Refused { .. }) => {
                 msg_id = Some(id);
             }
-            Ok(_) => action = Action::Notify,
+            Ok(_) => {
+                action = Action::Notify;
+                brake = Some(Brake::NotQueued);
+            }
             Err(cause) => {
                 eprintln!("auth recovery: restart of {} not queued: {cause}", seat.id);
                 action = Action::Notify;
+                brake = Some(Brake::NotQueued);
             }
         }
     }
     let told = match action {
         Action::Notify | Action::NotRestarted | Action::Relogin | Action::Exited => {
-            record(services, seat, reporter, action, cause, now_ms, None).await?;
+            record(
+                services,
+                seat,
+                reporter,
+                (action, brake),
+                cause,
+                now_ms,
+                None,
+            )
+            .await?;
             *last = Some(Entry {
                 action,
                 since: now,
@@ -362,11 +452,20 @@ pub(crate) async fn handle(
             });
             tell(services, seat, action, cause, now_ms).await
         }
+        // F279: a restart queued behind a running turn is told, as the
+        // notice it replaces was, so someone knows to look if the turn ends
+        // with a draft. Their own restart control would not run twice: the
+        // first restart renews the receiver, and a control queued before
+        // that renewal is not typed (worker.rs).
+        Action::Restart if brake == Some(Brake::Busy) => {
+            tell(services, seat, action, cause, now_ms).await
+        }
         Action::Restart | Action::Pending | Action::Told => Vec::new(),
     };
     Ok(Some(Outcome {
         action,
         msg_id,
+        held_by: brake,
         told,
     }))
 }
@@ -427,20 +526,39 @@ async fn control_live(services: &Services, seat: &SeatId, msg_id: &str) -> bool 
     }
 }
 
-/// Idle in the registry, and the composer recognized and empty now. Any read
-/// that fails is not free: a brake.
-async fn composer_free(services: &Services, seat: &SeatDescriptor) -> bool {
-    if seat.state != SystemState::Idle {
-        return false;
-    }
+/// What holds a restart of `seat` now, or `None` when nothing does: the turn
+/// has ended and the composer is recognized and empty. Any read that fails
+/// holds: a BRAKE.
+///
+/// F279: a lapse is the extension's death, and the extension is what
+/// publishes the seat's turn state, so that state is frozen at its last
+/// write and is not read. A fresh read of the pane says whether a turn runs
+/// ([`fresh_turn`]). A reported loss comes from a live extension, whose
+/// published state stands, as before.
+async fn held_by(services: &Services, seat: &SeatDescriptor, cause: Cause) -> Option<Brake> {
     let Some(pane) = seat.pane.as_deref() else {
-        return false;
+        return Some(Brake::ComposerUnreadable);
     };
-    services
-        .interaction
-        .fresh_injection_verdict(pane)
-        .await
-        .is_ok_and(|verdict| verdict.permitted && verdict.composer_idle)
+    let turn = match cause {
+        Cause::ExtensionLost => brake_of(fresh_turn(services.tmux.as_ref(), pane).await),
+        Cause::Reported(_) => (seat.state != SystemState::Idle).then_some(Brake::Busy),
+    };
+    if turn.is_some() {
+        return turn;
+    }
+    match services.interaction.fresh_injection_verdict(pane).await {
+        Ok(verdict) if verdict.permitted && verdict.composer_idle => None,
+        Ok(verdict)
+            if matches!(
+                verdict.reason,
+                Some(DeliveryDeferralReason::Unrecognized | DeliveryDeferralReason::TapUnowned)
+            ) =>
+        {
+            Some(Brake::ComposerUnreadable)
+        }
+        Ok(_) => Some(Brake::ComposerDraft),
+        Err(_) => Some(Brake::ComposerUnreadable),
+    }
 }
 
 /// F261: whether `process` is the one running now: its pid exists with the
@@ -461,7 +579,7 @@ async fn record(
     services: &Services,
     seat: &SeatDescriptor,
     reporter: Incarnation,
-    action: Action,
+    (action, held_by): (Action, Option<Brake>),
     cause: Cause,
     at: u64,
     msg_id: Option<&str>,
@@ -481,6 +599,7 @@ async fn record(
                 "proc_start": reporter.proc_start,
                 "kind": cause.wire(),
                 "msg_id": msg_id,
+                "held_by": held_by,
             })
             .to_string(),
         })
@@ -573,6 +692,9 @@ pub(crate) fn notice(seat: &SeatDescriptor, action: Action, cause: Cause) -> Str
         ),
         Action::Exited => format!(
             "{id}'s Copilot is not running ({what}, and its process has exited or could not be checked), so pij did not restart it. Run `pij-rs revive {revive}`: it resumes the same session."
+        ),
+        Action::Restart => format!(
+            "{id}'s Copilot lost its login ({what}) during a turn. pij queued /restart for it: it is typed once the turn ends and its composer is empty, with nothing for you to do. If {id} has not restarted after its turn (text left in its composer holds it), type /restart in {pane}."
         ),
         _ => format!(
             "{id}'s Copilot lost its login ({what}), and pij did not restart it: it was busy, had text in its composer, or the restart could not be queued. When it is free, type /restart in {pane}, or run `pij send {id} --command restart`. Its session, roles and queue survive a /restart."
@@ -778,7 +900,12 @@ pub(crate) async fn on_lapse(
                 at: now_ms,
                 kind: LAPSE_HELD_KIND.to_string(),
                 seat: Some(row.id.clone()),
-                payload: json!({ "action": outcome.action, "at": now_ms }).to_string(),
+                payload: json!({
+                    "action": outcome.action,
+                    "at": now_ms,
+                    "held_by": outcome.held_by,
+                })
+                .to_string(),
             })
             .await
     {
