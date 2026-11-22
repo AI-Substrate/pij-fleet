@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Open before running mutants through shared-build, writing a test that waits for something to happen, or adding a brake that reads state before a slow step",
+				"tags": [
+					"mutants",
+					"hang",
+					"shared-build",
+					"race",
+					"brake",
+					"f279",
+					"f281"
+				],
+				"title": "Mutation runs and races: bound every wait in a test, cap every run, re-read before you act (F279, F281)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- **A test that waits for an event must have a bound.** In F279 R2 my regression did `while reads()==0 { sleep }` to publish a renewal between two pane reads. A mutant that removes the pane read made it spin forever: 10+ min at 0% CPU holding the shared-build lock, which blocked another seat's build. The prime killed it on Jordan's order. Write the loop as `for _ in 0..N { if ready { act; return } sleep }` so the assertions fail it instead.\n- **A killed mutation runner can leave the mutant in the file.** After any interruption, run `git diff` before anything else. I found M1b still applied in `auth_recovery.rs`, and the next suite run failed for no reason I could see.\n- **Run mutants with a cap.** First `test --no-run` at `PIJ_SHARED_BUILD_TEST_LIMIT=0` (compile), then `test … -- <filter>` at `PIJ_SHARED_BUILD_TEST_LIMIT=45s`, because the limit counts compiling. F281 adds a 3 min filtered-run limit and a 2 min idle stop, both measured from the first `Running` line.\n- **A brake that reads state before a slow step must read again after it** (B334-R1-01, the same lesson as F274). I read the receiver edge on claim, then settled 250 ms; a renewal inside that window still typed an obsolete `/restart`. Re-read at the point of action, and only redo the expensive lookup when the edge changed. A test that publishes the event BETWEEN drain passes never exposes this; publish it INSIDE the slow step, e.g. by `tokio::join!` with a watcher that triggers on the first fake capture.\n- **FakeTmux `commit_submit` resets the pane to an OMP box.** After a typed control, call `arrange_screen` again if the test needs the pane idle.\n- **bash 3.2 (macOS /bin/bash) `read -t` returns 1 for both a timeout and EOF.** Tell them apart by elapsed `$SECONDS`, and treat an instant failure as EOF only when it happens twice.\n- **`grep -c … && next`** exits 1 when the count is 0 and silently skips `next`. That skipped a push once and nearly committed conflict markers: check for markers with `grep -c` on its own line, then act.\n- **C35:** a new F-item needs Jordan's own yes. A prime's GO alone doesn't count; pm-001 will pause you.\n"
+		}
+	]
+}
