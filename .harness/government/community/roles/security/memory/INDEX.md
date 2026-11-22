@@ -98,4 +98,5 @@
 - [2026-11-21 Store probes: one process on a read-only copy; delete only your own temp path](2026-11-21-store-probes-one-process-on-a-read-only.dd.md): Open before probing ~/.pij-rs/pij.sqlite or cleaning temp files during a review. (store, sqlite, probe, cleanup, shared-host, d-c34-3)
 - [2026-11-22 Alternate launch and successor provenance](2026-11-22-alternate-launch-and-successor.dd.md): Read before reviewing alternate harness launch configs or session-successor alt inheritance. (harness-alts, spawn, registration, proof, c33)
 - [2026-11-22 Delivery, spawn and launch review patterns \(Nov 21-22\)](2026-11-22-delivery-spawn-and-launch-review.dd.md): Read before reviewing delivery identity, spawn replay, native lease brakes, tmux batching or shared-build kills. (delivery, spawn, native-lease, tmux, shared-build, review)
+- [2026-11-22 Pane-capture reviews: where the injection guard lives](2026-11-22-pane-capture-reviews-where-the-injection.dd.md): Reviewing a PR that captures or parses tmux pane text (tmux, capture, fixtures)
 <!-- /pij:generated -->

@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Reviewing a PR that captures or parses tmux pane text",
+				"tags": [
+					"tmux",
+					"capture",
+					"fixtures"
+				],
+				"title": "Pane-capture reviews: where the injection guard lives"
+			}
+		},
+		{
+			"name": "body",
+			"value": "When a PR reads pane text, check these three things. (1) The injection guard is in crates/tmux/src/control.rs. command_line() single-quotes each argument and refuses ' and newlines, falling back to a fork, and is_read() is a four-command read allowlist. capture_without_launch goes through query_live, which never forks. A new capture path that does not go through these needs a full review. (2) Make sure the classifier returns only an enum, and that a capture Err is dropped, not logged with its text. (3) Live-pane fixtures under crates/testkit/fixtures/harnesses publish seat names and AIC/AIU/prem counters. That has precedent, so flag it as a note, not a block. Usernames, tokens or prompt text would block. (#334, F279)"
+		}
+	]
+}
