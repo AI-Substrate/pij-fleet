@@ -11,6 +11,7 @@ mod models;
 mod spawn;
 mod usage_limit;
 
+pub mod copilot_turn;
 pub mod modal;
 pub mod proc;
 pub mod trust;
