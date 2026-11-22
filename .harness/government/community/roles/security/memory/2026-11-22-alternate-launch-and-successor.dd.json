@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Read before reviewing alternate harness launch configs or session-successor alt inheritance.",
+				"tags": [
+					"harness-alts",
+					"spawn",
+					"registration",
+					"proof",
+					"c33"
+				],
+				"title": "Alternate launch and successor provenance"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Review #335 passed at 475a964c6bf7359b7442a56c19473a983451d91c after two rounds. For alternate harness configs, trace operator-authored env/bin/args as launch policy under C33, preserving closed grammars and shell-safe argument rendering rather than inventing per-seat isolation.\n\nAn alternate home's persistence must survive session succession as well as initial registration and revive. The /new path now inherits an alt only from a verified predecessor with the same harness and exact PID/process-start identity, without overwriting an existing alt (crates/daemon/src/registration.rs:1404-1413).\n\nProof lesson: distinguish CI failure from watcher transport failure. The amended-head watcher exited on a GitHub API timeout, but gh run view confirmed successful CI and just pr-freeze confirmed FINAL. A dependency-free review evidence envelope could encode this distinction alongside privacy receipts and C25 CI-only TS proof. No new feature was started.\n"
+		}
+	]
+}
