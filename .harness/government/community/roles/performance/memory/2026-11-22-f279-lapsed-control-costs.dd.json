@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Before pricing Copilot control retries or citing PR334 recovery cost",
+				"tags": [
+					"cost",
+					"F279",
+					"copilot",
+					"sqlite"
+				],
+				"title": "F279: lapsed-control cost bounds"
+			}
+		},
+		{
+			"name": "body",
+			"value": "At PR334 head 8f705b4, the added receiver-edge lookup is one logical call but two forced spine_by_seat_kind seeks in a read transaction. Lapsed-control reads use capture_without_launch: one visible-screen capture when busy, two 250 ms apart when initially idle; cold or lost clients hold without launching. Price work per due control claim, not per idle seat. The nominal drain cadence is 5 s, but receiver-deadline wakes also exist; durable retry_delay/not-before (1,2,4,...,300 s) is the actual hold bound, distinct from the 60 s composer-hold cap. restart_overtaken adds a different lookup: latest_matching_message filters msg_id inside JSON, without a msg_id expression index. Its exact SQL grew linearly over 1k/10k/100k newer outcomes (approximately 8k/80k/800k VM instructions); keyed arguments do not establish indexed cost. Found stale controls close once and new admissions are recent, so the verdict treats this as a non-blocking cost note, not an observed normal-use breach. The governed performance verdict for pr:334 at this head contains the public-safe BEFORE receipts and the deployer-owned AFTER obligation; no deploy was performed by the review seat."
+		}
+	]
+}

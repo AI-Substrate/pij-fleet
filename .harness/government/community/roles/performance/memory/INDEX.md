@@ -89,5 +89,6 @@
 - [2026-11-22 F276: bounded mutations, candidate and notice costs](2026-11-22-f276-bounded-mutations-candidate-and.dd.md): Before pricing retirement sweeps or taking PR332 deployed AFTER; LIMIT is not a whole-sweep work bound (F276, cost, retirement, sqlite, after)
 - [2026-11-22 F276 final: intent follows the owned launch](2026-11-22-f276-final-intent-follows-the-owned.dd.md): Before pricing revive guard lifetime or taking the final F276 AFTER; opens with R1 candidate and notice cost notes (F276, guard, cost, after)
 - [2026-11-22 F278: clear pre-send release preserves cost bounds](2026-11-22-f278-clear-pre-send-release-preserves.dd.md): Before pricing tap-detach retries, reviewing clear-pane attribution or collecting the carried shutdown AFTER (F278, detach, cost, after)
+- [2026-11-22 F279: lapsed-control cost bounds](2026-11-22-f279-lapsed-control-costs.dd.md): Before pricing Copilot control retries or citing PR334 recovery cost (cost, F279, copilot, sqlite)
 - [2026-11-22 \#318 and \#321 AFTER: cohorts and proof ceilings](2026-11-22-pr318-pr321-after-cohorts.dd.md): Before comparing observer invalidation and pool-cut live CPU receipts, or repeating matched-cost windows (after-deploy, cost, cohort, measurement, proof-limits)
 <!-- /pij:generated -->
