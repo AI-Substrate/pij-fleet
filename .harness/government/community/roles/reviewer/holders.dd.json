@@ -3007,6 +3007,16 @@
 					"seat": "pij-cautious-quail",
 					"to": "2026-11-22T07:37:21.583Z",
 					"why": "#340 FYI-stall digest single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-22T07:55:44.007Z",
+					"harness": "copilot",
+					"harness_session": "a72a599c-d586-4811-9f8f-efe3afb135dd",
+					"instance_key": "341",
+					"machine": "studio",
+					"seat": "pij-selective-moose",
+					"why": "#341 cc-alt UDS single review (amended C34; Jordan-approved)"
 				}
 			]
 		}
