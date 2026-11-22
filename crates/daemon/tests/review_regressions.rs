@@ -286,8 +286,8 @@ async fn emitted_spawn_argv_is_the_stamp_that_opens_the_real_transport() {
     let socket = std::env::temp_dir().join(format!("pij-uds-agree-{}.sock", std::process::id()));
     let listener = UnixListener::bind(&socket).expect("bind socket witness");
     let utc_start = write_uds_record(&dir, &socket);
-    let transport = UdsTransport::from_sessions_dir(
-        dir.clone(),
+    let transport = UdsTransport::from_sessions_dirs(
+        [dir.clone()],
         std::sync::Arc::new(pij_harnesses::proc::observed_start),
     );
     let mut seat = SeatDescriptor::new("pij-claude-seat", Harness::Claude, "/abs/tree");
@@ -813,5 +813,52 @@ fn staged_key_must_not_be_clone_or_two_owners_share_one_drop() {
         "StagedKey must NOT be Clone: its Drop deletes the staged file, so a second \
          owner deletes the first owner's key and `publish` fails with 'No such file \
          or directory'. A guard that can be duplicated is not a guard."
+    );
+}
+
+/// #341 review F001 (pij-selective-moose): a daemon whose own environment names
+/// a cc-alt home (`CLAUDE_CONFIG_DIR=~/.claude-alt`, as when bounced from a
+/// cc-alt seat) still reaches a DEFAULT-home Claude seat on its socket.
+#[tokio::test]
+async fn a_daemon_under_an_alt_config_dir_still_finds_default_home_seats() {
+    let root = state_dir();
+    let default_sessions = root.join(".claude/sessions");
+    std::fs::create_dir_all(&default_sessions).expect("default home sessions");
+    std::fs::create_dir_all(root.join(".claude-alt/sessions")).expect("alt home sessions");
+    let socket = default_sessions.join("seat.sock");
+    write_uds_record(&default_sessions, &socket);
+    let env_homes = pij_harnesses::claude_homes_from(
+        Some(root.join(".claude-alt").into_os_string()),
+        Some(root.clone().into_os_string()),
+    );
+    assert!(
+        !env_homes.contains(&root.join(".claude")),
+        "the daemon's own CLAUDE_CONFIG_DIR replaced the default home"
+    );
+    let transport = UdsTransport::new(
+        pij_harnesses::claude_session_homes_from(env_homes, Some(root.clone().into_os_string())),
+        Arc::new(pij_harnesses::proc::observed_start),
+    )
+    .expect("homes");
+    let mut seat = SeatDescriptor::new("pij-default-home-seat", Harness::Claude, "/abs/tree");
+    seat.proc = Some(ProcIdentity {
+        pid: std::process::id(),
+        proc_start: pij_harnesses::proc::observed_start(std::process::id())
+            .expect("fixture process alive")
+            .local,
+    });
+    seat.cross_session_inbound_accept = Some(true);
+    let msg = Msg {
+        from: SeatId::from("pij-sender"),
+        to: seat.id.clone(),
+        body: "to the default home".to_string(),
+        msg_id: "default-home-under-alt-env".to_string(),
+        from_machine: None,
+        in_reply_to: None,
+        command: None,
+    };
+    assert!(
+        transport.can_deliver(&seat, &msg).await.expect("probe"),
+        "a default-home seat is found whatever home the daemon's env names"
     );
 }
