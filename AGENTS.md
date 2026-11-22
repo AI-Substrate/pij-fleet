@@ -209,9 +209,11 @@ citation disputes, all of which resolved as neither party being wrong.)
   binary. And every test run, whatever its limits, stops once it writes
   nothing for `PIJ_SHARED_BUILD_TEST_IDLE` (default 2; `0` for off) after its
   first test binary (F281). Past any of them the recipe names
-  the limit, the last `test ` line seen and what still runs in cargo's own
+  the limit, the last full `test ` line seen and what still runs in cargo's own
   process group, stops that group and only it, releases the lock and exits 8
-  (F273). Strict on purpose: raise a limit when real runs hit it. Parallelism is capped too, because `nice`
+  (F273). Strict on purpose (Jordan's ruling): a healthy test silent for more
+  than about 180 s (120 s in a serial run) is stopped; raise a limit when real
+  runs hit it. Parallelism is capped too, because `nice`
   lowers priority but does not shorten the run queue (F126). The repository's
   `.cargo/config.toml` sets `build.jobs = 4` and `RUST_TEST_THREADS = 4` for
   every cargo run in the repo, whatever its environment: recipes, `pij daemon

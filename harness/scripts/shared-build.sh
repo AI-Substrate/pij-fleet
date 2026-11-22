@@ -49,24 +49,32 @@
 #
 # F273: one hung test held the lock for 41 minutes with four builds waiting.
 # A `cargo test` past a limit is stopped: the script names the limit, the last
-# `test ` line seen, and every process still running in cargo's own process
-# group (the test binary, and any child it re-executed, by its command line),
-# stops that group and only it (never anything matched by name), and releases
-# the lock. F281: a filtered run that hung (a mutant run, 10+ min at 0% CPU,
-# well inside the 20 minutes) held the lock and blocked another seat's build,
-# so a filtered run gets 3 minutes once its tests start, and any run that
-# falls silent for 2 minutes stops. Strict on purpose: raise a limit when real
-# runs hit it. POLICIES on
-# elapsed time and on silence, each deciding only over this run's own group.
+# full `test ` line seen, and every process still running in cargo's own
+# process group (the test binary, and any child it re-executed, by its command
+# line), stops that group and only it (never anything matched by name), and
+# releases the lock. F281: a filtered run that hung (a mutant run, 10+ min at
+# 0% CPU, well inside the 20 minutes) held the lock and blocked another seat's
+# build, so a filtered run gets 3 minutes once its tests start, and any run
+# that falls silent for 2 minutes stops. "Its tests start" is a test binary
+# starting (cargo's `Running unittests …`/`Running tests/…`, or libtest's
+# `running N tests`), never a compile. Strict on purpose (Jordan's ruling:
+# raise a limit when real runs hit it): a healthy test that runs silent for
+# more than about 180 s (libtest prints one "has been running for over 60
+# seconds" line, then the 2 minutes start) or 120 s in a serial run (no such
+# line) is stopped. POLICIES on elapsed time and on silence, each deciding
+# only over this run's own group.
 # Cost: per `cargo test` command, one monitor and two relays (bash subshells,
 # no exec, each blocked in `read`), the three FIFOs made once per run (one
-# mkfifo), and one ps only when a limit falls. Silence is detected by the
-# monitor's `read -t` returning at its deadline with no line: no polling. The
-# relays copy cargo's output a line at a time (bash reads a pipe a byte per
-# call, so CPU grows with output: 40,000 test lines, 1.3 MB, took 3.8 s of
-# wall time and about 6 s of CPU on an M-series Mac). The F273 watchdog's
-# /bin/sleep is gone. Ending a command waits for its relays in 0.05 s steps,
-# at most 2 s.
+# mkfifo), one ps and at most one renice once per run (the relays and the
+# monitor run at cargo's niceness, max(19, the caller's)), and one ps only
+# when a limit falls. Silence is detected by the monitor's `read -t`
+# returning at its deadline with no line: no polling. The relays copy cargo's
+# output a line at a time (bash reads a pipe a byte per call, so CPU grows
+# with output, about 4 s per MB: 40,000 test lines took 3.8 to 19.9 s of wall
+# time and 6 to 9.4 s of CPU on an M-series Mac; a workspace run prints about
+# 3,000 lines, under 1 s). The F273 watchdog's /bin/sleep is gone. Ending a
+# command waits for its relays in 0.05 s steps, at most 2 s; a signal drains
+# every job this script started, recorded or not.
 #
 # A stale lock (its owner pid is gone) is reported with the command that clears
 # it and never cleared here: whether that build is really over is the caller's
@@ -344,6 +352,18 @@ stop_watchdog() {
 	watchdog=""
 }
 
+# F281 (N1): every job this script started runs in its own process group
+# (cargo, the relays, the monitor; `set -m`). A signal can land after one is
+# forked and before its pid is recorded (`child=$!`, `relays+=`), or while a
+# relay is still blocked opening its FIFO; `jobs -p` still lists it, so each
+# is drained here, this script's own groups and nothing else.
+drain_jobs() {
+	local pid
+	for pid in $(jobs -p); do
+		drain "$pid"
+	done
+}
+
 on_signal() {
 	stop_watchdog
 	if [ -n "$child" ]; then
@@ -351,6 +371,7 @@ on_signal() {
 		wait "$child" 2>/dev/null
 		child=""
 	fi
+	drain_jobs
 	release
 	exit "$1"
 }
@@ -360,6 +381,7 @@ on_signal() {
 on_exit() {
 	stop_watchdog
 	[ -z "$child" ] || drain "$child"
+	drain_jobs
 	release
 }
 
@@ -522,10 +544,30 @@ niced=(/bin/sh "$here/nice19.sh")
 # blocks in `read -t` until the next line or the nearest deadline, whichever
 # comes first, so idleness costs no polling: no line before the deadline IS
 # the idle limit. Its clocks: the test limit from the command's start; the
-# filtered-run limit and the idle limit from cargo's first `Running` line (the
-# first test binary), so compiling counts only against the test limit.
+# filtered-run limit and the idle limit from the first test binary's start
+# (see relay), so compiling counts only against the test limit.
 # Output through a pipe, not a terminal: cargo and libtest print no colour.
 USR2_NUMBER=$(kill -l USR2)
+
+# F281 (N2, rule 5): the relays and the monitor are this script's own
+# subshells, so they run at its niceness, not cargo's. Once per run, before
+# the first of them forks, this script lowers itself to max(19, the caller's):
+# one ps and one renice, nothing at 19 or above (never stacked, F220). A
+# niceness it cannot read is left as it is; cargo still gets nice19.sh.
+nice_self() {
+	local current
+	current=$("${NICE19_PS:-/bin/ps}" -o nice= -p $$) || return 0
+	current=${current//[[:space:]]/}
+	case "$current" in
+	-[0-9]* | [0-9]*) ;;
+	*) return 0 ;;
+	esac
+	case "${current#-}" in
+	*[!0-9]*) return 0 ;;
+	esac
+	[ "$current" -ge 19 ] || /usr/bin/renice 19 -p $$ >/dev/null 2>&1 || true
+}
+
 run_cargo() { # <cargo args>...
 	local status filtered=""
 	# A USR2 from an earlier command's monitor has run its trap by now
@@ -546,6 +588,7 @@ run_cargo() { # <cargo args>...
 	fi
 	if [ ! -p "$lock/act" ]; then
 		/usr/bin/mkfifo "$lock/out" "$lock/err" "$lock/act" || refuse 2 "could not make the output FIFOs in $lock"
+		nice_self
 	fi
 	: >"$lock/stopped"
 	set -m
@@ -611,19 +654,30 @@ has_filter() { # test <args>...
 	return 1
 }
 
-# F281: copy each line from stdin to fd <fd> unchanged, and pass it to the
-# monitor: a `Running` or `test ` line whole, any other as an empty line.
-# Writes to a monitor that has gone are dropped, never the copy.
+# F281: copy each line from stdin to fd <fd> unchanged, and tell the monitor
+# about it: `arm` for a test binary starting (cargo's `Running unittests …` or
+# `Running tests/….rs (…)`, or libtest's own `running N tests`, which -v and
+# doctests print too; never -v's `Running \`rustc …\``, a compile, N5), a
+# `test ` line whole, any other as an empty line. A write to the monitor fails
+# only once it is gone, which after a limit falls it is not (it reads on, N4):
+# bash 3.2 flushes a failed write's line into the copy, a duplicate. On a
+# signal it can be, so the first failure ends the writes there and at most one
+# line repeats; the copy itself never stops.
 relay() { # <fd>
-	local line
+	local line tell=1
 	trap '' PIPE
 	exec 7>"$lock/act"
 	while IFS= read -r line || [ -n "$line" ]; do
 		printf '%s\n' "$line" >&"$1"
+		[ -n "$tell" ] || continue
 		case "$line" in
-		*"Running "* | "test "*) printf '%s\n' "$line" >&7 ;;
+		*"Running "[!\`]* | "running "[0-9]*) printf 'arm\n' >&7 ;;
+		"test "*) printf '%s\n' "$line" >&7 ;;
 		*) printf '\n' >&7 ;;
-		esac 2>/dev/null
+		esac 2>/dev/null || {
+			exec 7>&-
+			tell=""
+		}
 	done
 }
 
@@ -643,10 +697,11 @@ finish_relays() {
 }
 
 # F273, F281: the limits of one `cargo test`, on the lines its relays pass:
-# <test limit> from the start; <filtered limit> and <idle limit> once a
-# `Running` line has been seen. Blocks in `read -t` until a line or the
-# nearest deadline. When one falls it writes which, and the last `test ` line,
-# to the lock, signals this script and ends. Ends too when the relays do.
+# <test limit> from the start; <filtered limit> and <idle limit> once the
+# first test binary started (`arm`). Blocks in `read -t` until a line or the
+# nearest deadline. When one falls it writes which, and the last full `test `
+# line, to the lock and signals this script, then reads on until the relays
+# end, so no relay ever writes to a monitor that has gone (N4).
 # bash 3.2 (macOS /bin/bash) answers 1 for both a timeout and the end of
 # input, so a failed read that took no time is taken as the end only when the
 # read after it fails at once too; a timeout lets the loop find the deadline.
@@ -673,6 +728,7 @@ monitor() { # <test secs> <filtered secs> <idle secs>
 		elif [ "$due" -le "$SECONDS" ]; then
 			printf '%s\n%s\n' "$which" "$last" >"$lock/stopped"
 			kill -USR2 "$$"
+			while IFS= read -r line; do :; done
 			return 0
 		else
 			before=$SECONDS
@@ -689,16 +745,18 @@ monitor() { # <test secs> <filtered secs> <idle secs>
 		fi
 		active=$SECONDS
 		case "$line" in
-		*"Running "*) [ -n "$armed" ] || armed=$SECONDS ;;
+		arm) [ -n "$armed" ] || armed=$SECONDS ;;
 		"test "*) last=$line ;;
 		esac
 	done
 }
 
-# F273, F281: name the limit that fell and the last test line seen, and what
-# still runs in cargo's group (the test binary, and any child it re-executed,
-# by command line); stop that group and only it, and leave the lock to the
-# EXIT trap. Exit 8.
+# F273, F281: name the limit that fell and the last full `test ` line seen
+# (N3: libtest prints `test name ... ` and ends that line only when the test
+# does, so in a serial run the test still running is the one after it), and
+# what still runs in cargo's group (the test binary, and any child it
+# re-executed, by command line); stop that group and only it, and leave the
+# lock to the EXIT trap. Exit 8.
 overrun() { # <cargo args>...
 	local running="" pgid rest which="test" last=""
 	while read -r pgid rest; do
@@ -720,7 +778,7 @@ overrun() { # <cargo args>...
 			"$*" "$test_limit_secs" "$TEST_LIMIT" "${PIJ_TEST_TIME_SCALE:-1}" >&2
 		;;
 	esac
-	printf '; last test line: %s; still running in its process group %s (pid, elapsed, command):%s\n' \
+	printf '; last full test line: %s (libtest ends a test'"'"'s line only when the test ends); still running in its process group %s (pid, elapsed, command):%s\n' \
 		"${last:-(none)}" "$child" "$running" >&2
 	printf 'shared-build: stopping that process group, and only it, then releasing %s\n' "$lock" >&2
 	drain "$child"
