@@ -572,6 +572,21 @@ pub struct SeatDescriptor {
     /// [`SeatDescriptor::cache_proxy_view`] reads as plain.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_proxy: Option<SeatCacheProxy>,
+    /// F280: the alternate launch the seat was started with (`--alt`), read
+    /// back by revive. `None` for a default launch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<SeatAlt>,
+}
+
+/// F280: which `[<harness>.<name>]` alt a seat was launched with.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeatAlt {
+    /// The alt's name under its harness.
+    pub name: String,
+    /// The Claude home the alt's env named at launch, where the binder looks
+    /// for the seat's session record. Absent when the alt names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<String>,
 }
 
 /// Plan 229: a Copilot seat's route to its model.
@@ -712,6 +727,7 @@ impl SeatDescriptor {
             provider: None,
             effort: None,
             cache_proxy: None,
+            alt: None,
         }
     }
 

@@ -1,0 +1,193 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Alternate launch configs per harness (`--alt`)",
+        "slug": "harness-alts",
+        "ordinal": 233,
+        "status": "ready",
+        "summary": "`pij-rs spawn --alt <name>` launches a harness with an alternate config from `~/.pij-rs/harness-alts.toml` (env, bin, args). The seat records the alt; revive re-reads and reuses it, refusing if it is gone; a Claude alt's home is where the binder looks for the seat. Doctor reports alts. F280.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Jordan runs a second Claude Code setup through a shell function (`CLAUDE_CONFIG_DIR=\"$HOME/.claude-alt\" claude --dangerously-skip-permissions`). pij can adopt such a seat but cannot spawn one, and revive relaunches it as plain `claude` in the default home, where `--resume` misses its transcript. This plan adds named alternate launches per harness in one TOML file, a `--alt` spawn flag, the alt recorded on the seat and reused by revive, and the Claude binder reading the alt's home."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Any harness can be started an alternate way by name, configured once in pij.",
+        "A seat started with an alt is revived with the same alt, or refused loudly, never relaunched with the default.",
+        "A Claude alt seat binds and resumes in its own home."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "No per-alt model, effort or role defaults: those stay spawn flags.",
+        "No `--alt` on revive to change a seat's alt.",
+        "No removal of the existing `~/.claude-alt` probe in `claude_homes_from` (proposed to the prime separately).",
+        "No hook install into a home configured after the daemon started: that happens at the next daemon start, and doctor says so.",
+        "No `pij-rs doctor harness-alts` verb (scope cut by the prime, 2026-11-22)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`<state-dir>/harness-alts.toml` (`~/.pij-rs/harness-alts.toml`) holds one table per alternate launch, `[<harness>.<name>]`, with optional `env` (a string table), `bin` (an absolute executable) and `args` (strings appended to the launch). A leading `~` in an env value or `bin` is the user's home. A missing file means no alts. The file is refused whole, naming the file and the fault, for an unknown harness key or field, an alt name outside `[A-Za-z0-9._-]{1,32}`, an env key outside `[A-Za-z_][A-Za-z0-9_]*` or starting `PIJ_`, a control character in any value, a relative `bin`, or a relative Claude `CLAUDE_CONFIG_DIR`. The config layer knows no harness's variables except where a Claude home is read (ac-0005).",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`pij-rs spawn --harness <h> --alt <name>` launches with the alt's env (applied after `PIJ_SESSION_ID`/`PIJ_SPAWN_ID` and before pij's own harness env, so pij's own values win), its `bin` in place of the harness name, and its `args` after pij's own. An alt absent from the file refuses `E-RS-ALT-UNKNOWN`, naming the file and the harness's known alts; an unreadable or invalid file refuses `E-RS-ALT-CONFIG`; `--bin` with an alt that sets `bin` refuses. A refusal launches nothing and writes no row. A spawn without `--alt` is unchanged and does not read the file.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "The seat records its alt as `alt: {name, home}` (`home`: the Claude home the alt's env names, else absent) in a new `seats.alt` column (migration 0051). Registration keeps it. `pij-rs state` shows it in the JSON and as an `alt:` line; `pij list` shows the harness cell as `<harness> alt:<name>` in both the Rust CLI and the TS shim (golden `list-sized`). A seat without an alt shows nothing new.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "`pij-rs revive` of a seat with an alt relaunches with that alt, re-reading the file at revive time, so edits apply. If the alt is gone from the file, or the file is unreadable, the revive refuses (`E-RS-ALT-UNKNOWN` / `E-RS-ALT-CONFIG`) before any write: no tombstone, no launch, never the default launch. A seat without an alt revives as before without reading the file.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "A pending spawned Claude seat whose alt names a Claude home binds from `<that home>/sessions`, not `~/.claude/sessions`; others are unchanged. `claude_homes()` also lists every existing Claude home named by a configured alt, so pij's hooks and inbound setting are installed there at daemon start and its transcripts and session records are read.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "`pij-rs spawn --help` documents `--alt`, and `docs/how/pij-rs-api.md` gains a short Harness alts section (file, fields, precedence, refusals, revive, Claude home, cost). Doctor needs no new verb: an alt's Claude home is one of `claude_homes()`, so `just doctor`'s existing claude-hooks rows report its hooks with their fix.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0006"
+        },
+        {
+          "id": "ac-0007",
+          "claim": "Cost: no new loop, poll, timer or per-tick work, and no process launch. The file is read only by a spawn with `--alt` (once), a revive of a seat with an alt (twice: the pre-write check and the launch), each `claude_homes()` call (daemon start, CLI doctor commands, revive `--ask`/`--cheap`), and `doctor harness-alts`. The Claude binder still reads one sessions directory per pending seat per pass; only which directory changes.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0007"
+        },
+        {
+          "id": "ac-0008",
+          "claim": "Canary on the live daemon: an alt matching the operator's `cc-alt` (`CLAUDE_CONFIG_DIR=~/.claude-alt`; pij already passes `--dangerously-skip-permissions`) spawns a throwaway Claude seat from a scratch folder that binds, with its transcript under `~/.claude-alt/projects/`; after close, revive resumes the same session in the same home; then close. Nothing is added to or deleted from `~/.claude-alt` beyond what the seat writes.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0008"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-f280",
+          "title": "Harness alts shipped",
+          "brief": "All ACs, one PR (coder pij-musical-takin). Config module in pij-harnesses; SpawnRequest.alt; daemon resolves at spawn/revive; SeatAlt on the descriptor + migration 0051; binder home; state/list/doctor; docs; canary.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Code map (main 3707709e). Spawn argv: `pij_harnesses::build_spawn_plan` (crates/harnesses/src/spawn.rs) builds `env PIJ_SESSION_ID=.. PIJ_SPAWN_ID=.. [COPILOT_*] <harness> <args>`; `--bin` replaces the harness name after `validate_executable_override`. The daemon's `launch_owned` (crates/daemon/src/http/mod.rs) builds the plan and writes the descriptor; revive (crates/daemon/src/http/revive.rs) rebuilds a `SpawnRequest` from the prior row (`executable: None`, so `--bin` is not durable today). Durable per-seat launch facts precedent: `cache_proxy` (JSON TEXT column, migration 0047; `opted_out` survives revive). Registration clones the existing row, so a new descriptor field survives binding unless cleared. Claude binder (crates/daemon/src/claude_bind.rs `matching_record`) reads only `$HOME/.claude/sessions`. `claude_homes_from` already appends `~/.claude-alt` when it exists. Config precedent: `cache-proxy.toml` in the state dir, parsed with `toml` + `deny_unknown_fields`. The roster table is rendered by both `crates/cli/src/roster.rs` and `.omp/extensions/pij/core/roster-table.ts`, pinned by golden `list-sized`."
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    },
+    {
+      "name": "gate_matrix",
+      "value": []
+    },
+    {
+      "name": "implementation_summary",
+      "value": ""
+    },
+    {
+      "name": "key_findings",
+      "value": []
+    },
+    {
+      "name": "acceptance_coverage",
+      "value": []
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "An alt's env carries a secret (an API key) that then shows in a receipt or doctor.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "Only the alt name and the Claude home are recorded on the seat; doctor prints env keys, never values. The launch argv carries the env as `env` does today for pij's own variables (visible to `ps`), stated in the docs."
+        },
+        {
+          "risk": "An alt home configured after the daemon started lacks pij's hooks.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "The binder needs no hook (it reads Claude's own session record). `just doctor`'s claude-hooks rows list the home with its fix; docs say hooks land at the next daemon start."
+        },
+        {
+          "risk": "An edit moves an alt's Claude home, and revive then resumes in a home without the transcript.",
+          "likelihood": "Low",
+          "impact": "Medium",
+          "mitigation": "The brief asks that edits apply. Docs say so; the recorded home shows in `pij-rs state` so the change is visible."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Worktree coder-f280-harness-alts, branch coder/f280-harness-alts.",
+        "Cargo only via `just shared-build` (niced, one at a time); never pkill or delete by pattern.",
+        "No operator login, email or machine path in committed files: examples use `~`.",
+        "`~/.claude-alt` is the operator's real setup: add nothing beyond what the canary seat writes, delete nothing."
+      ]
+    }
+  ]
+}

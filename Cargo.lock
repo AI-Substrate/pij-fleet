@@ -1297,9 +1297,11 @@ dependencies = [
  "pij-core",
  "pij-testkit",
  "proc_pidinfo",
+ "serde",
  "serde_json",
  "sha2",
  "time",
+ "toml",
 ]
 
 [[package]]

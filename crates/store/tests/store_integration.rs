@@ -1418,6 +1418,11 @@ async fn bind_evidence_round_trips_and_absent_stays_absent() {
     spawned.model = Some("github-copilot/gpt-5.6-sol-fast".to_string());
     spawned.provider = Some("github-copilot".to_string());
     spawned.effort = Some("high".to_string());
+    // F280: the alt revive reads back.
+    spawned.alt = Some(pij_core::model::SeatAlt {
+        name: "1".to_string(),
+        home: Some("/home/someone/.claude-alt".to_string()),
+    });
 
     registry.put(spawned.clone()).await.expect("put");
     assert_eq!(
