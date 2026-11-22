@@ -67,6 +67,7 @@ use pij_core::watchdog::{
     scope_prime,
 };
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use super::{PaWatchdog, RoundOutcome, Stops, audit, bg_msg, outcome_word, wake_pa};
 use crate::Services;
@@ -950,19 +951,21 @@ impl PaWatchdog {
         }
         let mut outcomes = Vec::new();
         for (target, members) in targets.into_values() {
-            let notice: Vec<(SeatId, Vec<HeldFyi>)> = members
+            let notice: Vec<(&SeatId, &[HeldFyi])> = members
                 .iter()
-                .map(|&index| (stalls[index].seat.id.clone(), stalls[index].fyis.clone()))
+                .map(|&index| (&stalls[index].seat.id, stalls[index].fyis.as_slice()))
                 .collect();
-            let about = match notice.as_slice() {
-                [(seat, _)] => seat.to_string(),
-                _ => FYI_STALL_DIGEST.to_string(),
-            };
-            let msg_id = format!("{FYI_STALL_ID_PREFIX}{about}:{}:{now_ms}", target.id);
+            let msg_id = format!(
+                "{FYI_STALL_ID_PREFIX}{}:{}:{now_ms}",
+                stall_about(&notice),
+                target.id
+            );
+            let body = stall_notice(&notice, now_ms);
+            let subjects: Vec<String> = notice.iter().map(|(seat, _)| seat.to_string()).collect();
             let (delivery, cold_check) = wake_pa(
                 services,
                 target,
-                stall_notice(&notice, now_ms),
+                body,
                 msg_id.clone(),
                 FYI_STALL_REASON,
                 now_ms,
@@ -980,7 +983,7 @@ impl PaWatchdog {
             outcomes.push(RoundOutcome::Presence {
                 kind,
                 to: target.id.clone(),
-                subjects: notice.iter().map(|(seat, _)| seat.to_string()).collect(),
+                subjects,
                 delivery,
             });
         }
@@ -1130,10 +1133,26 @@ fn scope_for<'a>(
         })
 }
 
+/// What a stall notice's msg id says it is about: the seat, or for a digest
+/// `digest-<hash>` of its sorted seat ids, so two distinct batches to one
+/// target in the same millisecond never share a queue key (review of #340).
+fn stall_about(notice: &[(&SeatId, &[HeldFyi])]) -> String {
+    if let [(seat, _)] = notice {
+        return seat.to_string();
+    }
+    let mut seats: Vec<&str> = notice.iter().map(|(seat, _)| seat.as_str()).collect();
+    seats.sort_unstable();
+    let hash = Sha256::digest(seats.join("\n").as_bytes());
+    let short: String = hash[..6].iter().map(|byte| format!("{byte:02x}")).collect();
+    format!("{FYI_STALL_DIGEST}-{short}")
+}
+
 /// Who a stalled seat's notice goes to: its scope's PAs, or with none its
-/// prime, never the seat itself. A brake on top: every target must be a
-/// watched PA or a prime (designated or by role), so a worker or a plain seat
-/// is never sent one, whatever the scope holds.
+/// prime, never the seat itself. Each eligibility exclusion is a brake: every
+/// target must be a watched PA or a prime (designated or by role), so a worker
+/// or a plain seat is never sent one, whatever the scope holds. The fallback
+/// from PAs to the prime is a routing policy, not a brake: excluding every PA
+/// routes to the prime instead, so the recipient set is not monotonic.
 fn stall_targets<'a>(
     scope: &'a PresenceScope,
     seat: &SeatDescriptor,

@@ -140,7 +140,7 @@ pub const FYI_STALL_DIGEST: &str = "digest";
 /// One round's stall notice to one target: [`stall_body`] when one seat is
 /// newly stalled, else [`stall_digest`]. `stalls` are each seat's pending FYIs.
 #[must_use]
-pub fn stall_notice(stalls: &[(SeatId, Vec<HeldFyi>)], now_ms: u64) -> String {
+pub fn stall_notice(stalls: &[(&SeatId, &[HeldFyi])], now_ms: u64) -> String {
     match stalls {
         [(seat, fyis)] => stall_body(seat, fyis, now_ms),
         _ => stall_digest(stalls, now_ms),
@@ -153,14 +153,14 @@ pub fn stall_notice(stalls: &[(SeatId, Vec<HeldFyi>)], now_ms: u64) -> String {
 /// sender and first line (fenced), within [`STALL_NOTICE_MAX`], then
 /// `+N more seats`.
 #[must_use]
-pub fn stall_digest(stalls: &[(SeatId, Vec<HeldFyi>)], now_ms: u64) -> String {
+pub fn stall_digest(stalls: &[(&SeatId, &[HeldFyi])], now_ms: u64) -> String {
     let mut seats: Vec<(&SeatId, &HeldFyi, usize)> = stalls
         .iter()
         .filter_map(|(seat, fyis)| {
             let oldest = fyis
                 .iter()
                 .min_by(|a, b| a.held_at_ms.cmp(&b.held_at_ms).then(a.id.cmp(&b.id)))?;
-            Some((seat, oldest, fyis.len()))
+            Some((*seat, oldest, fyis.len()))
         })
         .collect();
     seats.sort_by(|a, b| a.1.held_at_ms.cmp(&b.1.held_at_ms).then(a.0.cmp(b.0)));
@@ -475,6 +475,13 @@ mod tests {
         assert!(!hostile.contains('\u{1b}'), "{hostile}");
     }
 
+    fn borrowed(stalls: &[(SeatId, Vec<HeldFyi>)]) -> Vec<(&SeatId, &[HeldFyi])> {
+        stalls
+            .iter()
+            .map(|(seat, fyis)| (seat, fyis.as_slice()))
+            .collect()
+    }
+
     /// Jordan, 2026-11-22: one round's stalls reach a target as one notice.
     /// One seat keeps its detailed notice; several share a digest naming each
     /// (count, oldest age, first line), oldest first, within the 2 KB budget
@@ -489,7 +496,7 @@ mod tests {
             ],
         )];
         assert_eq!(
-            stall_notice(&one, NOW),
+            stall_notice(&borrowed(&one), NOW),
             stall_body(&one[0].0, &one[0].1, NOW)
         );
 
@@ -511,7 +518,7 @@ mod tests {
                     )
                 })
                 .collect();
-        let body = stall_notice(&three, NOW);
+        let body = stall_notice(&borrowed(&three), NOW);
         assert!(
             body.starts_with("[pij watchdog] 3 seats have held 2 or more FYIs while idle."),
             "{body}"
@@ -538,7 +545,7 @@ mod tests {
                 )
             })
             .collect();
-        let body = stall_notice(&forty, NOW);
+        let body = stall_notice(&borrowed(&forty), NOW);
         assert!(body.len() <= STALL_NOTICE_MAX, "{} bytes", body.len());
         assert!(body.starts_with("[pij watchdog] 40 seats"), "{body}");
         let shown = body.matches("\n- pij-").count();

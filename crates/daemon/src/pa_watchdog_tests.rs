@@ -3556,6 +3556,48 @@ async fn seats_stalled_in_one_round_reach_their_pa_as_one_digest() {
     );
 }
 
+/// Review of #340: two distinct digests to one target in the same
+/// millisecond are two messages, never one queue key that keeps the first.
+#[tokio::test]
+async fn two_digests_to_one_target_in_one_millisecond_are_both_delivered() {
+    let repos = Repos::new();
+    let (services, _store) = services().await;
+    let _fleet = active_fleet(&services, &repos).await;
+    let pa = seat("pij-pa", &repos.path("main"), Some("pij-prime"));
+    make_pa(&services, &pa).await;
+    for id in ["pij-idle-b", "pij-idle-c", "pij-idle-d"] {
+        services
+            .registry
+            .put(seat(id, &repos.path("main"), Some("pij-prime")))
+            .await
+            .unwrap();
+    }
+    let watchdog = PaWatchdog::default();
+    let at = now_ms() + 16 * MINUTE;
+    let batches = [["pij-idle", "pij-idle-b"], ["pij-idle-c", "pij-idle-d"]];
+    for pair in batches {
+        for id in pair {
+            hold(&services, id, &format!("{id}-1"), &format!("from {id}")).await;
+            hold(&services, id, &format!("{id}-2"), "withdrawn").await;
+        }
+        let sent = kind_of(
+            &watchdog.round(&services, INTERVAL, at).await.unwrap(),
+            "fyi-stall",
+        );
+        assert_eq!(sent.len(), 1, "{sent:?}");
+    }
+    let told = handed(&services, "pij-pa").await;
+    assert_eq!(told.len(), 2, "one carrier per batch: {told:?}");
+    for (message, pair) in told.iter().zip(&batches) {
+        for id in pair {
+            assert!(
+                message.body.contains(&format!("\"from {id}\"")),
+                "{message:?}"
+            );
+        }
+    }
+}
+
 async fn to_pa(services: &crate::Services, msg_id: &str) {
     services
         .delivery
