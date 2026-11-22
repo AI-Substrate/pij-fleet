@@ -196,6 +196,10 @@ pub struct SpawnRequest {
     /// launch. Absent: the daemon mints one and a resend launches again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spawn_id: Option<String>,
+    /// F280: launch with `[<harness>.<alt>]` from the daemon's
+    /// `harness-alts.toml`, read at this launch. Revive passes the seat's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.
@@ -559,6 +563,9 @@ pub struct StateCard {
     pub cwd: String,
     /// TS `harness` (cli.ts:3644).
     pub harness: Harness,
+    /// F280: the alt the seat was launched with; absent for a default launch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<pij_core::model::SeatAlt>,
     /// Loaded pij extension build, explicitly unknown for pre-144 registrations.
     #[serde(default, rename = "extension_build")]
     pub extension_build: Option<String>,

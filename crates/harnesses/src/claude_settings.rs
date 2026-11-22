@@ -92,10 +92,28 @@ pub struct ClaudeStatuslineState {
     pub error: Option<String>,
 }
 
-/// Discover every Claude configuration home this process can govern.
+/// Discover every Claude configuration home this process can govern: the
+/// default (or `CLAUDE_CONFIG_DIR`), `~/.claude-alt`, and each existing home a
+/// configured Claude alt names (F280, `~/.pij-rs/harness-alts.toml`). An
+/// unreadable alts file adds no home; spawn and revive refuse it by name.
 #[must_use]
 pub fn claude_homes() -> Vec<PathBuf> {
-    claude_homes_from(env::var_os("CLAUDE_CONFIG_DIR"), env::var_os("HOME"))
+    let alt_homes = crate::alts::default_path()
+        .and_then(|file| crate::alts::load(&file, crate::alts::home().as_deref()).ok())
+        .map(|alts| alts.claude_homes())
+        .unwrap_or_default();
+    let mut homes = claude_homes_from(env::var_os("CLAUDE_CONFIG_DIR"), env::var_os("HOME"));
+    add_existing(&mut homes, alt_homes);
+    homes
+}
+
+/// Append each existing home not already listed.
+fn add_existing(homes: &mut Vec<PathBuf>, more: Vec<PathBuf>) {
+    for home in more {
+        if home.exists() && !homes.contains(&home) {
+            homes.push(home);
+        }
+    }
 }
 
 /// Resolve Claude homes from explicit environment values.
@@ -111,11 +129,8 @@ pub fn claude_homes_from(config_dir: Option<OsString>, home: Option<OsString>) -
     } else if let Some(home) = &home {
         homes.push(home.join(".claude"));
     }
-    if let Some(alt) = home.map(|home| home.join(".claude-alt"))
-        && alt.exists()
-        && !homes.contains(&alt)
-    {
-        homes.push(alt);
+    if let Some(alt) = home.map(|home| home.join(".claude-alt")) {
+        add_existing(&mut homes, vec![alt]);
     }
     homes
 }
@@ -1747,6 +1762,22 @@ mod tests {
         fs::create_dir_all(&alt).expect("alt home");
         let homes = claude_homes_from(Some(configured.clone().into()), Some(root.path().into()));
         assert_eq!(homes, vec![configured, alt]);
+    }
+
+    /// F280: a configured alt's home joins the list only when it exists, once.
+    #[test]
+    fn configured_alt_homes_join_only_when_they_exist() {
+        let root = TestDir::new();
+        let alt = root.path().join(".claude-alt");
+        let work = root.path().join("work-claude");
+        fs::create_dir_all(&alt).expect("alt home");
+        fs::create_dir_all(&work).expect("work home");
+        let mut homes = claude_homes_from(None, Some(root.path().into()));
+        super::add_existing(
+            &mut homes,
+            vec![alt.clone(), root.path().join("missing"), work.clone()],
+        );
+        assert_eq!(homes, vec![root.path().join(".claude"), alt, work]);
     }
 
     #[test]

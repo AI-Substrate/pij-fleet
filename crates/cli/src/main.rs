@@ -361,6 +361,13 @@ enum Command {
         /// the spawn at once and leaves the pane waiting on it (F215).
         #[arg(long, conflicts_with = "no_wait")]
         trust_folder: bool,
+        /// Launch with an alternate config, `[<harness>.<ALT>]` in
+        /// ~/.pij-rs/harness-alts.toml: its `env` table, `bin` (absolute
+        /// executable) and `args` (appended). The seat records it and revive
+        /// reuses it (F280). Refused, naming the file and the known alts, when
+        /// the alt isn't there.
+        #[arg(long, value_name = "ALT")]
+        alt: Option<String>,
     },
     /// Relaunch a tombstoned or observed-dead seat with its prior launch intent.
     Revive {
@@ -4251,6 +4258,13 @@ fn render_state(envelope: &Envelope<pij_daemon::http::StateCard>, json: bool) ->
         if let Some(first) = card.held.iter().min_by_key(|hold| hold.since_ms) {
             let _ = write!(output, " ({} since {} ms)", first.reason, first.since_ms);
         }
+        // F280: the alt the seat was launched with, which revive reuses.
+        if let Some(alt) = &card.alt {
+            let _ = write!(output, "\nalt: {}", pij_core::render::line(&alt.name));
+            if let Some(home) = &alt.home {
+                let _ = write!(output, " (Claude home {})", pij_core::render::line(home));
+            }
+        }
         for deferred in &card.delivery_deferrals {
             let _ = write!(
                 output,
@@ -4462,6 +4476,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         wait_seconds,
         no_cache_proxy,
         trust_folder,
+        alt,
     } = command
     else {
         return Ok(None);
@@ -4540,6 +4555,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         no_cache_proxy: *no_cache_proxy,
         trust_folder: *trust_folder,
         spawn_id: None,
+        alt: alt.clone(),
     }))
 }
 

@@ -3073,6 +3073,7 @@ async fn spawned_registration_adopts_prebind_row_and_preserves_port() {
             no_cache_proxy: false,
             trust_folder: false,
             spawn_id: None,
+            alt: None,
         })
         .send()
         .await
@@ -3676,6 +3677,7 @@ async fn spawn_wait_reports_child_exit_with_log_tail() {
             no_cache_proxy: false,
             trust_folder: false,
             spawn_id: None,
+            alt: None,
         })
         .send();
     let report_exit = async {
@@ -3815,6 +3817,7 @@ async fn codex_spawn_timeout_names_the_prompt_on_screen() {
             no_cache_proxy: false,
             trust_folder: false,
             spawn_id: None,
+            alt: None,
         })
         .send()
         .await
@@ -3999,6 +4002,7 @@ fn f211_spawn(id: &str, wait_seconds: u64) -> SpawnRequest {
         no_cache_proxy: false,
         trust_folder: false,
         spawn_id: None,
+        alt: None,
     }
 }
 
@@ -5188,6 +5192,7 @@ async fn spawn_wait_returns_bound_process_and_publishes_event() {
             no_cache_proxy: false,
             trust_folder: false,
             spawn_id: None,
+            alt: None,
         })
         .send();
     let register = async {
@@ -5306,6 +5311,7 @@ async fn spawn_reports_model_mismatch_without_killing_registered_seat() {
             no_cache_proxy: false,
             trust_folder: false,
             spawn_id: None,
+            alt: None,
         })
         .send();
     let register = async {
@@ -5904,6 +5910,7 @@ async fn spawn_into_the_control_session_is_refused_by_name() {
                 no_cache_proxy: false,
                 trust_folder: false,
                 spawn_id: None,
+                alt: None,
             })
             .send()
             .await
@@ -5979,6 +5986,7 @@ async fn spawn_stamps_only_the_argv_that_reached_the_observed_launch() {
             no_cache_proxy: false,
             trust_folder: false,
             spawn_id: None,
+            alt: None,
         };
 
     for (id, accept, session, pane) in [
@@ -6112,6 +6120,7 @@ async fn direct_http_spawn_carries_no_claude_default_the_cli_owns_it() {
             no_cache_proxy: false,
             trust_folder: false,
             spawn_id: None,
+            alt: None,
         })
         .send()
         .await

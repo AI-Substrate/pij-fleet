@@ -1,0 +1,218 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Harness alts shipped",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Config module `pij_harnesses::alts`: parse, validate, resolve, `~` expansion; `claude_homes()` adds configured Claude alt homes",
+          "phase": "ph-f280",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "Spawn: `SpawnRequest.alt`, CLI `--alt`, daemon resolves from `<state>/harness-alts.toml`, plan argv carries env/bin/args; refusals",
+          "phase": "ph-f280",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Seat record: `SeatAlt` on the descriptor, migration 0051, store codec, registration keeps it; state card and list cell (Rust + TS + golden)",
+          "phase": "ph-f280",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Revive: pre-write alt check, relaunch with the recorded alt",
+          "phase": "ph-f280",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "Claude binder reads the alt's home",
+          "phase": "ph-f280",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "Docs section and `--help` text",
+          "phase": "ph-f280",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006",
+            "../../../plan.dd.json#acceptance_criteria/ac-0007"
+          ],
+          "done": "#done_when/tk-0006"
+        },
+        {
+          "id": "tk-0007",
+          "title": "Canary with a cc-alt alt; receipts in assets/canary.md",
+          "phase": "ph-f280",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0008"
+          ],
+          "done": "#done_when/tk-0007"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "Parse/refuse/expand unit tests pass",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          },
+          {
+            "id": "dw-0002",
+            "assertion": "claude_homes_from lists existing configured Claude alt homes",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0003",
+            "assertion": "argv order unit test and daemon spawn tests (apply, unknown, --bin conflict) pass",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0004",
+            "assertion": "seats.alt round-trips and survives binding; state and list show it; golden passes in Rust and TS",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0003"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0005",
+            "assertion": "revive with alt relaunches with it; removed alt refuses before any write",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0004"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0006",
+            "assertion": "binder reads the alt home's sessions record",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0005"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0007",
+            "assertion": "help and docs section exist; claude-hooks doctor lists alt homes",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0006"
+          },
+          {
+            "id": "dw-0008",
+            "assertion": "no per-tick work or launch added",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0007"
+          }
+        ],
+        "tk-0007": [
+          {
+            "id": "dw-0009",
+            "assertion": "canary receipts recorded",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0008"
+          }
+        ]
+      }
+    },
+    {
+      "name": "goals",
+      "value": []
+    },
+    {
+      "name": "non_goals",
+      "value": []
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": []
+    },
+    {
+      "name": "phases",
+      "value": []
+    },
+    {
+      "name": "research_context",
+      "value": ""
+    },
+    {
+      "name": "testing_strategy",
+      "value": {}
+    },
+    {
+      "name": "documentation_strategy",
+      "value": {}
+    },
+    {
+      "name": "risks_assumptions",
+      "value": ""
+    },
+    {
+      "name": "open_questions",
+      "value": []
+    },
+    {
+      "name": "workshop_opportunities",
+      "value": []
+    },
+    {
+      "name": "clarifications",
+      "value": []
+    },
+    {
+      "name": "planning_seam",
+      "value": []
+    }
+  ]
+}

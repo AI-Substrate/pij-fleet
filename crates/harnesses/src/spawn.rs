@@ -64,6 +64,10 @@ pub struct SpawnPlanInput {
     /// daemon's spawn gate sets it, and only for Copilot; any other harness
     /// refuses it.
     pub copilot_provider: Option<CopilotProviderWiring>,
+    /// F280: the alternate launch `--alt` named, from `harness-alts.toml`:
+    /// its env goes after pij's identity and before pij's own harness env,
+    /// its `bin` replaces the harness name, its args follow pij's.
+    pub alt: Option<crate::alts::Alt>,
 }
 
 /// Plan 229 (blueprint 003 c-spawn-gate): the provider settings that send a
@@ -135,7 +139,20 @@ pub fn validate_executable_override(harness: Harness, executable: Option<&str>) 
 /// Refuses `--effort` with a Copilot HydraFusion model, which routes effort itself.
 /// Executable overrides must be absolute paths and cannot name another harness.
 pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
-    validate_executable_override(input.harness, input.executable.as_deref())?;
+    if let Some(bin) = input.alt.as_ref().and_then(|alt| alt.bin.as_deref())
+        && input.executable.is_some()
+    {
+        return Err(PijError::Adapter {
+            adapter: "spawn".to_string(),
+            message: format!(
+                "--bin and the alt's bin ({bin}) both set the executable; drop --bin or the alt's bin"
+            ),
+        });
+    }
+    let executable = input
+        .executable
+        .or_else(|| input.alt.as_ref().and_then(|alt| alt.bin.clone()));
+    validate_executable_override(input.harness, executable.as_deref())?;
     if input.spawn_id.trim().is_empty() {
         return Err(PijError::Adapter {
             adapter: "spawn".to_string(),
@@ -172,13 +189,14 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
             message: "a resumed conversation id must be non-empty and not an option".to_string(),
         });
     }
-    let harness_executable = input
-        .executable
-        .unwrap_or_else(|| input.harness.as_str().to_string());
+    let harness_executable = executable.unwrap_or_else(|| input.harness.as_str().to_string());
     let mut args = vec![
         format!("{PIJ_SESSION_ID}={}", input.seat_id),
         format!("{PIJ_SPAWN_ID}={}", input.spawn_id),
     ];
+    if let Some(alt) = &input.alt {
+        args.extend(alt.env.iter().map(|(key, value)| format!("{key}={value}")));
+    }
     if let Some(wiring) = &input.copilot_provider {
         args.extend([
             "COPILOT_PROVIDER_TYPE=anthropic".to_string(),
@@ -282,6 +300,9 @@ pub fn build_spawn_plan(input: SpawnPlanInput) -> Result<SpawnPlan> {
                 args.extend(["-c".to_string(), format!("model_reasoning_effort={effort}")]);
             }
         }
+    }
+    if let Some(alt) = &input.alt {
+        args.extend(alt.args.iter().cloned());
     }
 
     let cross_session_inbound_accept = args
@@ -453,7 +474,62 @@ mod tests {
             accept_inbound: false,
             resume: None,
             copilot_provider: None,
+            alt: None,
         }
+    }
+
+    fn alt(bin: Option<&str>) -> crate::alts::Alt {
+        crate::alts::Alt {
+            name: "1".to_string(),
+            env: vec![
+                (
+                    "CLAUDE_CONFIG_DIR".to_string(),
+                    "/h/.claude-alt".to_string(),
+                ),
+                ("COPILOT_AUTO_UPDATE".to_string(), "true".to_string()),
+            ],
+            bin: bin.map(str::to_string),
+            args: vec!["--alt-flag".to_string(), "v".to_string()],
+            claude_home: Some("/h/.claude-alt".to_string()),
+        }
+    }
+
+    /// F280: an alt's env follows pij's identity and precedes pij's own
+    /// harness env (so `env` gives pij's the last word), its bin replaces the
+    /// harness name, and its args come last, on a resume too.
+    #[test]
+    fn an_alt_sets_env_bin_and_trailing_args() {
+        let mut copilot = input(Harness::Copilot);
+        copilot.alt = Some(alt(None));
+        copilot.resume = Some("S-1".to_string());
+        let args = build_spawn_plan(copilot).expect("copilot plan").args;
+        assert_eq!(
+            &args[..6],
+            [
+                format!("{PIJ_SESSION_ID}=pij-assigned"),
+                format!("{PIJ_SPAWN_ID}=spawn-assigned"),
+                "CLAUDE_CONFIG_DIR=/h/.claude-alt".to_string(),
+                "COPILOT_AUTO_UPDATE=true".to_string(),
+                "COPILOT_AUTO_UPDATE=false".to_string(),
+                "copilot".to_string(),
+            ]
+        );
+        assert_eq!(args[6], "--resume=S-1");
+        assert_eq!(&args[args.len() - 2..], ["--alt-flag", "v"]);
+
+        let mut claude = input(Harness::Claude);
+        claude.alt = Some(alt(Some("/opt/alt/claude")));
+        let args = build_spawn_plan(claude).expect("claude plan").args;
+        assert_eq!(args[4], "/opt/alt/claude");
+
+        let mut both = input(Harness::Claude);
+        both.alt = Some(alt(Some("/opt/alt/claude")));
+        both.executable = Some("/opt/other/claude".to_string());
+        let error = build_spawn_plan(both).expect_err("two executables");
+        assert!(
+            error.to_string().contains("--bin and the alt's bin"),
+            "{error}"
+        );
     }
 
     /// Plan 156 AC3: revive relaunches the recorded conversation with each
@@ -805,6 +881,7 @@ mod tests {
             accept_inbound: false,
             resume: None,
             copilot_provider: None,
+            alt: None,
         })
         .expect("build plan");
 

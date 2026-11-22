@@ -145,6 +145,14 @@
           "kind": null
         },
         {
+          "name": "serde",
+          "kind": null
+        },
+        {
+          "name": "toml",
+          "kind": null
+        },
+        {
           "name": "sha2",
           "kind": null
         },

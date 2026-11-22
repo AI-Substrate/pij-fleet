@@ -52,10 +52,12 @@ pub fn render_table(data: &Value) -> String {
             Some(lapse) => format!("{state}, {lapse}"),
             None => state,
         };
-        rows.push((
-            mark,
-            [id, text("harness"), state, column(0), column(1), column(2)],
-        ));
+        // F280: a seat launched with an alt shows it beside its harness.
+        let harness = match seat["alt"]["name"].as_str() {
+            Some(alt) => format!("{} alt:{alt}", text("harness")),
+            None => text("harness"),
+        };
+        rows.push((mark, [id, harness, state, column(0), column(1), column(2)]));
     }
     let mut widths = HEADERS.map(|header| header.chars().count());
     for (_, row) in &rows {

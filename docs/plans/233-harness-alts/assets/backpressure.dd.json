@@ -1,0 +1,117 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 233 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-f280",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Unit tests in crates/harnesses/src/alts.rs: a full file parses; each refusal (unknown harness, unknown field, bad name, bad env key, PIJ_ key, control char, relative bin, relative CLAUDE_CONFIG_DIR) names the file; `~` expands; missing file is empty.",
+          "state": "unchecked",
+          "probe": "see proof"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-f280",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Unit tests on build_spawn_plan argv order with an alt (env after PIJ ids and before COPILOT_*; bin; args last). Daemon HTTP test: spawn with an alt writes the launch argv; unknown alt refuses E-RS-ALT-UNKNOWN with known alts and launches nothing; --bin with alt bin refuses.",
+          "state": "unchecked",
+          "probe": "see proof"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-f280",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Store round-trip test for seats.alt; registration keeps it (bind of a spawned seat); state card carries it; golden list-sized gains an alt row rendered identically by roster.rs and roster-table.ts (existing golden tests).",
+          "state": "unchecked",
+          "probe": "see proof"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-f280",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Daemon HTTP test: revive of an alt seat relaunches with the alt from the re-read file; with the alt removed, revive refuses E-RS-ALT-UNKNOWN and the row is untouched (not tombstoned) and nothing launched.",
+          "state": "unchecked",
+          "probe": "see proof"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-f280",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "claude_bind unit test: a seat whose alt home is a temp dir binds from that dir's sessions record and not from HOME/.claude; claude_homes_from test with configured alt homes (existing only, deduped).",
+          "state": "unchecked",
+          "probe": "see proof"
+        },
+        {
+          "id": "bp-0006",
+          "criterion": "AC6",
+          "phase": "ph-f280",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Live `pij-rs spawn --help` shows --alt; `pij-rs doctor claude-hooks` lists the alt home; reviewer reads the docs section.",
+          "state": "unchecked",
+          "probe": "see proof"
+        },
+        {
+          "id": "bp-0007",
+          "criterion": "AC7",
+          "phase": "ph-f280",
+          "mode": "ABSENT",
+          "tier": "human-judgement",
+          "proof": "Reviewer checks no loop/timer/launch added (grep of the diff) and the read sites listed; live `pij-rs --json ping | jq .data.spawns` before/after shows no new spawn site.",
+          "state": "unchecked",
+          "probe": "see proof"
+        },
+        {
+          "id": "bp-0008",
+          "criterion": "AC8",
+          "phase": "ph-f280",
+          "mode": "EXISTS",
+          "tier": "computational",
+          "proof": "Live canary on the bounced daemon, receipts in assets/canary.md (ids, home, transcript path, revive resume of the same session).",
+          "state": "unchecked",
+          "probe": "see proof"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "rust gate",
+          "command": "just rust-check",
+          "dimension": "correctness"
+        },
+        {
+          "id": "sn-0002",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        }
+      ]
+    }
+  ]
+}
