@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:338",
+				"writer": "pij-coherent-sawfish",
+				"writer_holds_role": false
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Single C34 review at 32c21991d55b831a175a283d48c55f4a3181de15: no introduced normal-use correctness, security/privacy or cost defect found. Formal verdict withheld: pr-freeze NOT FINAL. Deterministic CI repair: http/tests.rs:7635 subscribes without peer_state=true but 7657-7673 waits for PeerState::Unavailable; opt this test consumer in. Node24 failure is untouched shared-build.test.ts:605. Both affected TS suites pass on Node22/24 (52 tests); CI artifact 14739764890 confirms all three affected Rust regressions PASS. Base decoder RED and reviewed decoder GREEN verified directly. Zero new launches or polling; one in-memory filter per remote frame per subscriber. External chainglass evidence requested from prime. magicWand: exact-head named CI proof collection for dependency-free review worktrees; observation captured, no new feature started."
+		}
+	]
+}
