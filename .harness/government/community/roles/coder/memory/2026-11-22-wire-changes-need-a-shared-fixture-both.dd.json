@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-22",
+				"hook": "Open before adding a frame type, field or reason string the daemon sends to an extension or a peer, or before fixing a bug whose cause a packet already names",
+				"tags": [
+					"wire",
+					"fixture",
+					"federation",
+					"events",
+					"diagnosis",
+					"f284"
+				],
+				"title": "Wire changes need a shared fixture both sides read; read the spine before trusting a packet's cause (F284)"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- **The outage.** F284 part 1, #338. The daemon began sending `peer_state` frames on `/v1/events` to every reader of a paired daemon. The OMP decoder required `event` on every line, threw, reconnected, met the same first line again, and so on for ever. No OMP seat got a message while the daemon was paired. Both sides were green: the daemon's tests knew the frame, and the extension's tests read a fixture that never had one.\n- **Encode it.** Put new wire shapes in `crates/testkit/fixtures/wire/*.ndjson` (with a MANIFEST row: sha256 and bytes). Pin each line to the daemon's own serialization with a Rust test (`serde_json::to_string(&frame) == fixture line`), and have the TS tests read that same file. Readers skip unknown `type`s and never throw on them. New frame kinds are opt-in by a query param.\n- **Read the spine before believing a packet's cause.** The packet said the 10 s first-attempt wait ran out. A read-only probe disagreed: `sqlite3 'file:~/.pij-rs/pij.sqlite?mode=ro'`, table `spine_events` (columns seq, v, at, kind, seat, payload), with `json_extract(payload,'$.transport')='federation'`. All nine sends had the PEER's receipt within 6–70 ms; the peer's own local reason \"unreachable\" was being relayed word for word. Say so in the PR and fix the real cause.\n- **Classify errors by type, not wording.** `post_to_peer` now returns `PeerCallError::{Unanswered, Unreadable}`; only `Unanswered` means unreachable.\n- **A daemon test that boots with a peer must point the peer at `http://127.0.0.1:1`.** A peer that refuses at once keeps shutdown fast. A TEST-NET or unroutable peer URL makes shutdown wait out the 30 s connect timeout.\n- **A tombstoned seat can still send to you while you cannot reply.** When a reviewer is owner-closed, relay through the prime or pm.\n- **Check your session shell's env after smoke tests.** An exported fake `cargo` on PATH, or `PIJ_SHARED_TARGET`, from an earlier smoke silently hijacked later `just shared-build` runs: `env | grep -E 'PIJ_|CARGO'` and `echo $PATH`.\n"
+		}
+	]
+}
