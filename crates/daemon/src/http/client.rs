@@ -16,32 +16,47 @@ pub struct PeerEndpoint {
     pub bearer_key: String,
 }
 
+/// Why one peer POST failed (F284). Only an UNANSWERED call (no HTTP answer:
+/// connect, timeout, a cut body) says the peer is unreachable; an answer this
+/// build cannot read came from a peer that is up.
+#[derive(Debug)]
+pub enum PeerCallError {
+    /// The request got no complete HTTP answer.
+    Unanswered(PijError),
+    /// The peer answered with something that is not a readable envelope.
+    Unreadable(PijError),
+}
+
 /// POST one JSON request to a peer and decode its versioned envelope.
 ///
 /// This primitive deliberately performs exactly one request. Retry, discovery,
 /// peer selection, and long-lived federation workers belong to `federation`.
 ///
 /// # Errors
-/// Network failures, unreadable responses, and malformed or future envelopes.
+/// Network failures ([`PeerCallError::Unanswered`]), and unreadable,
+/// malformed or future envelopes ([`PeerCallError::Unreadable`]).
 pub async fn post_to_peer<Request, Response>(
     client: &reqwest::Client,
     peer: &PeerEndpoint,
     path: &str,
     request: &Request,
-) -> Result<Envelope<Response>>
+) -> std::result::Result<Envelope<Response>, PeerCallError>
 where
     Request: Serialize + ?Sized,
     Response: DeserializeOwned,
 {
     let url = peer_url(peer, path);
+    let unanswered = |error| PeerCallError::Unanswered(peer_error(&url, error));
     let response = client
         .post(&url)
         .bearer_auth(&peer.bearer_key)
         .json(request)
         .send()
         .await
-        .map_err(|error| peer_error(&url, error))?;
-    decode_peer_envelope(&url, response).await
+        .map_err(unanswered)?;
+    let body = response.text().await.map_err(unanswered)?;
+    wire::decode_envelope(&body)
+        .map_err(|error| PeerCallError::Unreadable(unreadable_envelope(&url, error)))
 }
 
 /// GET one authenticated peer envelope.
@@ -249,10 +264,14 @@ where
         .text()
         .await
         .map_err(|error| peer_error(url, error))?;
-    wire::decode_envelope(&body).map_err(|error| PijError::Adapter {
+    wire::decode_envelope(&body).map_err(|error| unreadable_envelope(url, error))
+}
+
+fn unreadable_envelope(url: &str, error: impl std::fmt::Display) -> PijError {
+    PijError::Adapter {
         adapter: "daemon/http-peer".to_string(),
         message: format!("peer {url} returned an unreadable envelope: {error}"),
-    })
+    }
 }
 
 fn peer_url(peer: &PeerEndpoint, path: &str) -> String {

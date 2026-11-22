@@ -4,6 +4,8 @@
 //!
 //! ```toml
 //! machine = "mac-studio"
+//! listen  = "100.64.0.9:7461"     # optional (F284): the second listener
+//! insecure_listen = false         # optional (F284): opt `listen` past check_bind
 //! [[peer]]
 //! alias = "laptop"
 //! url   = "http://100.64.0.7:7461"
@@ -17,6 +19,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::Write as _;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use pij_core::config::PeerDefinition;
@@ -37,6 +40,36 @@ pub struct Pairing {
     pub machine: String,
     /// Paired machines, in file order.
     pub peers: Vec<PeerDefinition>,
+    /// Where the daemon listens when neither `--bind` nor `PIJ_RS_BIND` says
+    /// (F284), so a restart keeps a peer-facing listener. Machine-local.
+    pub listen: Option<SocketAddr>,
+    /// `listen`'s own `--insecure-bind`: it opts in that address only, never
+    /// one given on the command line (F284).
+    pub insecure_listen: bool,
+}
+
+/// Where the daemon listens, and whether a non-Tailscale address is opted in
+/// (F284). The flag or `PIJ_RS_BIND`, already resolved to `resolved`, wins
+/// when `explicit`; then the file's `listen`; then `resolved` (the default).
+/// `--insecure-bind` opts in whatever address is used; the file's
+/// `insecure_listen` opts in only the file's own `listen`, so an address
+/// typed on the command line is never opted in by the file.
+///
+/// The file's two keys are inputs to [`crate::http::check_bind`], a BRAKE:
+/// they can only add a listener that rule allows, never bypass it.
+#[must_use]
+pub fn listen(
+    resolved: &str,
+    explicit: bool,
+    insecure_flag: bool,
+    pairing: Option<&Pairing>,
+) -> (String, bool) {
+    match pairing.and_then(|pairing| pairing.listen.map(|addr| (addr, pairing.insecure_listen))) {
+        Some((addr, insecure_listen)) if !explicit => {
+            (addr.to_string(), insecure_flag || insecure_listen)
+        }
+        _ => (resolved.to_string(), insecure_flag),
+    }
 }
 
 /// Why a pairing file is refused.
@@ -70,6 +103,10 @@ pub enum PairingError {
     ShortKey(String),
     /// Two peers share a key, so calls could not be attributed.
     DuplicateKey(String, String),
+    /// `listen` is not an `IP:port` socket address. Its text is never shown.
+    BadListen,
+    /// `insecure_listen` without a `listen` it could apply to.
+    InsecureWithoutListen,
 }
 
 impl fmt::Display for PairingError {
@@ -125,6 +162,12 @@ impl fmt::Display for PairingError {
                 formatter,
                 "peers `{first}` and `{second}` share one key; every machine pair needs its own"
             ),
+            Self::BadListen => formatter.write_str(
+                "`listen` must be an IP:port socket address such as \"0.0.0.0:7461\" or \"100.64.0.9:7461\" (file text is never shown)",
+            ),
+            Self::InsecureWithoutListen => formatter.write_str(
+                "`insecure_listen` opts in only the file's own `listen`; set `listen`, or pass --insecure-bind with --bind",
+            ),
         }
     }
 }
@@ -153,6 +196,11 @@ impl fmt::Display for AliasSite {
 #[serde(deny_unknown_fields)]
 struct PairingFile {
     machine: String,
+    /// Top-level, so above the first `[[peer]]`.
+    #[serde(default)]
+    listen: Option<String>,
+    #[serde(default)]
+    insecure_listen: bool,
     #[serde(default, rename = "peer")]
     peers: Vec<PeerRow>,
 }
@@ -207,7 +255,15 @@ fn malformed(text: &str, error: &toml::de::Error) -> PairingError {
 
 /// Every name the schema knows. Only these are ever printed back: any other
 /// text on a line may be a value, a pasted key included (review F05).
-const KNOWN_FIELDS: [&str; 5] = ["machine", "peer", "alias", "url", "key"];
+const KNOWN_FIELDS: [&str; 7] = [
+    "machine",
+    "listen",
+    "insecure_listen",
+    "peer",
+    "alias",
+    "url",
+    "key",
+];
 
 /// The schema field a line names (`name = …`, `[name]` or `[[name]]`), only if
 /// it is one of [`KNOWN_FIELDS`]. Otherwise `None`: the line is reported as
@@ -229,11 +285,20 @@ fn field_name(line: &str) -> Option<&'static str> {
 ///
 /// # Errors
 /// Malformed TOML, bad or duplicate aliases, a self alias, a bad URL, a short
-/// key, or two peers sharing a key.
+/// key, two peers sharing a key, a `listen` that is not `IP:port`, or
+/// `insecure_listen` without `listen`.
 pub fn parse(text: &str) -> Result<Pairing, PairingError> {
     let file: PairingFile = toml::from_str(text).map_err(|error| malformed(text, &error))?;
     if !valid_alias(&file.machine) {
         return Err(PairingError::BadAlias(AliasSite::Machine));
+    }
+    let listen = file
+        .listen
+        .map(|listen| listen.trim().parse::<SocketAddr>())
+        .transpose()
+        .map_err(|_| PairingError::BadListen)?;
+    if file.insecure_listen && listen.is_none() {
+        return Err(PairingError::InsecureWithoutListen);
     }
     let mut aliases = BTreeSet::new();
     let mut peers: Vec<PeerDefinition> = Vec::with_capacity(file.peers.len());
@@ -263,6 +328,8 @@ pub fn parse(text: &str) -> Result<Pairing, PairingError> {
     Ok(Pairing {
         machine: file.machine,
         peers,
+        listen,
+        insecure_listen: file.insecure_listen,
     })
 }
 
@@ -361,7 +428,9 @@ pub fn new_key() -> pij_core::error::Result<String> {
 mod tests {
     use std::path::Path;
 
-    use super::{MIN_KEY_CHARS, PairingError, check_permissions, fingerprint, new_key, parse};
+    use super::{
+        MIN_KEY_CHARS, PairingError, check_permissions, fingerprint, listen, new_key, parse,
+    };
 
     const KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const KEY_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -447,6 +516,86 @@ mod tests {
             parse("machine = \"m\"\nsecret = 1\n"),
             Err(PairingError::Malformed { .. })
         ));
+    }
+
+    /// F284: the LAN listener a hand-started daemon had (`--bind <lan>:7461
+    /// --insecure-bind`) is written once in peers.toml, so a flagless restart
+    /// (`just bounce-rs`, the LaunchAgent) keeps it.
+    #[test]
+    fn peers_toml_listen_is_the_bind_unless_the_command_line_names_one() {
+        let with = |extra: &str| {
+            parse(&format!(
+                "machine = \"studio\"\n{extra}[[peer]]\nalias = \"laptop\"\nurl = \"http://192.168.1.20:7461\"\nkey = \"{KEY_A}\"\n"
+            ))
+            .expect("valid")
+        };
+        let lan = with("listen = \"0.0.0.0:7461\"\ninsecure_listen = true\n");
+        assert_eq!(
+            listen("127.0.0.1:7461", false, false, Some(&lan)),
+            ("0.0.0.0:7461".to_string(), true),
+            "a flagless restart keeps the file's listener and its opt-in"
+        );
+        assert_eq!(
+            listen("100.64.0.9:7461", true, false, Some(&lan)),
+            ("100.64.0.9:7461".to_string(), false),
+            "--bind/PIJ_RS_BIND wins, and the file never opts in an address it did not name"
+        );
+        assert_eq!(
+            listen("192.168.1.9:7461", true, true, Some(&lan)),
+            ("192.168.1.9:7461".to_string(), true),
+            "--insecure-bind still opts in a command-line address"
+        );
+        let tailscale = with("listen = \"100.64.0.9:7461\"\n");
+        assert_eq!(
+            listen("127.0.0.1:7461", false, false, Some(&tailscale)),
+            ("100.64.0.9:7461".to_string(), false),
+            "no insecure_listen, no opt-in: check_bind decides as for --bind"
+        );
+        assert_eq!(
+            listen("127.0.0.1:7461", false, false, Some(&with(""))),
+            ("127.0.0.1:7461".to_string(), false),
+            "no listen key: the default, as before"
+        );
+        assert_eq!(
+            listen("127.0.0.1:7461", false, false, None),
+            ("127.0.0.1:7461".to_string(), false)
+        );
+    }
+
+    /// F284: a `listen` that is not IP:port, or an opt-in with nothing to opt
+    /// in, refuses the boot rather than silently dropping the LAN listener;
+    /// neither message shows the file's text.
+    #[test]
+    fn a_bad_listen_or_an_orphan_insecure_listen_is_refused() {
+        for (text, expected) in [
+            (
+                format!("machine = \"m\"\nlisten = \"{KEY_A}\"\n"),
+                PairingError::BadListen,
+            ),
+            (
+                "machine = \"m\"\nlisten = \"localhost:7461\"\n".to_string(),
+                PairingError::BadListen,
+            ),
+            (
+                "machine = \"m\"\ninsecure_listen = true\n".to_string(),
+                PairingError::InsecureWithoutListen,
+            ),
+        ] {
+            let refused = parse(&text).expect_err("refused");
+            assert_eq!(refused, expected);
+            assert!(!refused.to_string().contains(KEY_A), "{refused}");
+        }
+        // Below a [[peer]] header the key belongs to that peer: refused, by name.
+        let misplaced = format!(
+            "machine = \"m\"\n[[peer]]\nalias = \"laptop\"\nurl = \"http://h:1\"\nkey = \"{KEY_A}\"\nlisten = \"0.0.0.0:7461\"\n"
+        );
+        assert_eq!(
+            parse(&misplaced).expect_err("misplaced"),
+            PairingError::Malformed {
+                line: Some(6),
+                field: Some("listen")
+            }
+        );
     }
 
     /// Review S6: a malformed file names the line and field, never a value, so

@@ -62,7 +62,7 @@ impl fmt::Display for BindRefusal {
             ),
             Self::Insecure(addr) => write!(
                 formatter,
-                "refusing to bind {addr}: the daemon speaks plain HTTP, so bearer keys would cross this network in clear. Bind a Tailscale address (100.64.0.0/10 or fd7a:115c:a1e0::/48), or pass --insecure-bind to accept that"
+                "refusing to bind {addr}: the daemon speaks plain HTTP, so bearer keys would cross this network in clear. Bind a Tailscale address (100.64.0.0/10 or fd7a:115c:a1e0::/48), or pass --insecure-bind (for peers.toml's `listen`: insecure_listen = true) to accept that"
             ),
         }
     }

@@ -72,6 +72,19 @@ back inline as `E-RS-COLD-WAKE`, with the cold facts in `details`. A
 peer does not answer in time, the message stays queued and is retried with
 backoff.
 
+What the sender's receipt says (F284):
+
+| Receipt | Means |
+|---|---|
+| `delivered` | the peer delivered it to the seat |
+| `queued — accepted by laptop; queued there for <seat> (<its reason>)` | the peer has it, durably, and will deliver it as it would a local message; the reason in brackets is the PEER's local one (`unreachable` there means the recipient's live channel was not ready, not the machine) |
+| `queued — peer laptop unreachable; queued here, retrying` | the connection to the peer failed; this machine retries with backoff |
+| `queued — peer laptop answered an error; queued here, retrying` | the peer is up but answered an error or something this build cannot read |
+| `queued — forwarding to laptop (pending)` | no attempt finished within the wait; nothing is known about the peer yet |
+
+The spine's `delivery.outcome` event keeps the peer's receipt exactly as the
+peer sent it; only the sender's inline answer is worded for the reader.
+
 ## Setup on two machines
 
 On either machine, mint the pair's key:
@@ -90,6 +103,18 @@ Bind each daemon to its Tailscale address and restart it:
 ```bash
 PIJ_RS_BIND=100.101.102.103:7461 pij-rs daemon     # or: pij-rs daemon --bind …
 ```
+
+Or write it into `peers.toml`, above the first `[[peer]]`, so every restart
+keeps it, a flagless one included (`just bounce-rs`, `pij-rs daemon bounce`,
+the `rs-autostart` LaunchAgent):
+
+```toml
+machine = "mac-studio"
+listen  = "100.101.102.103:7461"   # IP:port; --bind and PIJ_RS_BIND still win
+```
+
+The address is resolved as `--bind`, then `PIJ_RS_BIND`, then `listen`, then
+`127.0.0.1:7461`. A `listen` that is not `IP:port` refuses the boot.
 
 The daemon **always** listens on `127.0.0.1:<port>` too, so local clients,
 hooks and extensions keep their default address. The Tailscale address is a
@@ -136,13 +161,28 @@ listener (`check_bind`, one function; loopback is always bound):
 | Second listener | Unpaired | Paired |
 |---|---|---|
 | Tailscale (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) | refused | allowed (WireGuard encrypts) |
-| anything else, including `0.0.0.0` / `::` | refused | refused unless `--insecure-bind` |
+| anything else, including `0.0.0.0` / `::` | refused | refused unless `--insecure-bind` (or, for peers.toml's `listen`, `insecure_listen = true`) |
 
 A refused second listener costs only itself; loopback keeps serving.
 
 `--insecure-bind` prints a loud warning on stderr at boot. It is never a
 default. It is a brake on where the daemon listens, not a policy on what
 callers may do.
+
+On a plain LAN with no Tailscale, put the opt-in beside the address in
+`peers.toml`, so a restart keeps both (F284):
+
+```toml
+machine = "studio"
+listen  = "0.0.0.0:7461"
+insecure_listen = true    # this file's `listen` only; never a --bind address
+```
+
+`insecure_listen` opts in the file's own `listen` and nothing else: an address
+given with `--bind` or `PIJ_RS_BIND` still needs `--insecure-bind`, and
+`insecure_listen` without `listen` refuses the boot. The same loud warning
+prints at every boot. Both keys only feed `check_bind`: they can add a
+listener the rule allows, never bypass it. They are read once, at boot.
 
 ## Key rotation and revocation
 

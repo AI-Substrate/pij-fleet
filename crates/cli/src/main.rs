@@ -70,8 +70,9 @@ enum Command {
         #[command(subcommand)]
         action: Option<DaemonAction>,
         /// Address to listen on. Resolution is `--bind`, then `PIJ_RS_BIND`,
-        /// then `127.0.0.1:7461`. Loopback on the same port is ALWAYS bound; a
-        /// non-loopback address is a second listener for paired machines.
+        /// then `listen` in `<state-dir>/peers.toml`, then `127.0.0.1:7461`.
+        /// Loopback on the same port is ALWAYS bound; a non-loopback address is
+        /// a second listener for paired machines.
         #[arg(long)]
         bind: Option<String>,
         /// Boot with every adapter FAKE: no store, no process table, nothing
@@ -82,6 +83,8 @@ enum Command {
         /// Allow a non-loopback, non-Tailscale bind on a paired daemon. The
         /// daemon speaks plain HTTP, so paired machines' keys then cross that
         /// network in clear. Never needed for loopback or a Tailscale address.
+        /// `insecure_listen = true` in peers.toml does the same for its own
+        /// `listen` only.
         #[arg(long)]
         insecure_bind: bool,
     },
@@ -1279,7 +1282,11 @@ async fn run(cli: Cli) -> ExitCode {
         insecure_bind,
     } = &cli.command
     {
-        let bind = match resolve_bind_addr(bind.as_deref(), std::env::var_os("PIJ_RS_BIND")) {
+        let bind_env = std::env::var_os("PIJ_RS_BIND");
+        // F284: an address from the flag or the environment beats peers.toml's
+        // `listen`; the default does not.
+        let explicit_bind = bind.is_some() || bind_env.is_some();
+        let bind = match resolve_bind_addr(bind.as_deref(), bind_env) {
             Ok(bind) => bind,
             Err(message) => return emit_config_error(&cli, message),
         };
@@ -1290,6 +1297,7 @@ async fn run(cli: Cli) -> ExitCode {
             };
         return run_daemon(
             &bind,
+            explicit_bind,
             state_dir,
             hook_dir,
             *offline,
@@ -2950,6 +2958,7 @@ fn run_claude_statusline_doctor(json: bool, state_dir: &Path) -> ExitCode {
 
 async fn run_daemon(
     bind: &str,
+    explicit_bind: bool,
     state_dir: PathBuf,
     hook_dir: PathBuf,
     offline: bool,
@@ -2966,6 +2975,9 @@ async fn run_daemon(
             return ExitCode::FAILURE;
         }
     };
+    // F284: peers.toml's `listen` survives a restart that passes no flags.
+    let (bind, insecure_bind) =
+        pij_daemon::pairing::listen(bind, explicit_bind, insecure_bind, pairing.as_ref());
     let homes = claude_homes();
     let inbound_reports = ensure_claude_inbound_accept(&homes);
     let hook_script = install_claude_session_start_script(&hook_dir)
@@ -3019,7 +3031,7 @@ async fn run_daemon(
                 .map(|script| ensure_copilot_statusline(&home, &script))
         })
         .unwrap_or_default();
-    let mut config = daemon_config(bind, &state_dir.join("pij.sqlite"), offline);
+    let mut config = daemon_config(&bind, &state_dir.join("pij.sqlite"), offline);
     config.retired_harnesses = retired_harnesses;
     // A test's private server (review S3); unset is the operator's default one.
     config.tmux_server = std::env::var("PIJ_TMUX_SERVER")
