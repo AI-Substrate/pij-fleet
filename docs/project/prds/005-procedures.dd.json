@@ -182,7 +182,7 @@
 					"statement": "Each runnable step names one `just` recipe. A step already done is a no-op that says so; `--again` reruns it. Step ids have one numbered form.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Running a finished step twice changes nothing the second time and prints `already done (--again to run it anyway)`.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md"
 				},
@@ -192,7 +192,7 @@
 					"statement": "Each step lists its inputs and named arguments, what to do when an input is missing, and the role allowed to run it. Arguments reach the step's precondition and done checks.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A step run without a required input refuses and names the input and its fallback; a precondition check receives the step's arguments.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (6 of 8 seats hit preconditions that lived in one head)"
 				},
@@ -202,7 +202,7 @@
 					"statement": "Each precondition is a runnable check. A step whose precondition fails refuses, naming the reason and the step or command to run first. A precondition is never only prose: \"common mistakes\" may explain, but never holds one.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Breaking a step's precondition makes the step refuse with its reason and the fix, and change nothing.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (automatic-wombat, smart-marlin)"
 				},
@@ -212,7 +212,7 @@
 					"statement": "A step can require a result that another procedure produces, and refuses, naming that procedure and step, when it isn't there. The check reads the live state the other procedure leaves; it falls back to that procedure's recorded progress only for state that can't be observed, because the other procedure may have run in another checkout or on another machine.",
 					"actor": "seat",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A step that needs another procedure's result refuses while the result is missing, and passes once it exists, even when the other procedure ran in a different worktree.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (automatic-wombat: each missed order cost an hour)"
 				},
@@ -222,7 +222,7 @@
 					"statement": "A step that changes access, permissions or secrets ends with a done check that reads the live state, not the exit code of the command that changed it. No step prints a secret or puts one in an argument list.",
 					"actor": "reviewer",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A step whose change silently did not take effect reports not done.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (smart-marlin)"
 				},
@@ -232,7 +232,7 @@
 					"statement": "Running a procedure with no step lists its steps as done, next or to do, with `--json` for agents. A procedure run without a key uses one default key, so simple procedures never mention keys; a procedure run once per environment or target gives each run its own key. A trial run's progress can be cleared.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "After step 0001 of a three-step procedure the listing shows 0001 done and 0002 next, and clearing the run's key empties it.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
 				},
@@ -242,7 +242,7 @@
 					"statement": "A flag passed to a procedure reaches its step. An unknown flag refuses instead of being ignored.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`--again` passed through the procedure's recipe reruns the step, and an unknown flag exits non-zero naming it.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (automatic-wombat: a release ran without a step because `--again` was dropped)"
 				},
@@ -252,7 +252,7 @@
 					"statement": "A procedure can carry plain commands that sit outside the step model, such as serve, watch or a tunnel, listed with it but not tracked as steps.",
 					"actor": "author",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A procedure with a `serve` command lists it separately, and running it does not mark any step done.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (rising-crane)"
 				},
@@ -262,7 +262,7 @@
 					"statement": "A procedure is runnable, mixed (commands plus a person's decision), guide-only or meta. A decision step refuses until its decision is recorded (a progress entry or a signed changelog row) and names who must give it; nothing waits or polls. A guide step may point at another procedure, which runs as a sub-procedure.",
 					"actor": "author",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A mixed procedure's decision step refuses, naming who must decide, until the decision is recorded, and a guide step's link resolves to a procedure.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
 				},
@@ -504,6 +504,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s03: req-01, 02, 03, 07 and 08 shipped (schema pij/procedure, layout, `proc new` booking through pij claim procedure-<area>, any-directory runner); req-04 and 05 in progress until the first procedures prove them."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s04: req-09 to req-17 shipped: idempotent steps with --again, declared inputs (secret ones never on the command line), preconditions that refuse with their fix, order inside and across procedures by live done checks, per-key progress, flags that reach the step or refuse, commands outside the steps, decision and guide steps."
 				}
 			]
 		}

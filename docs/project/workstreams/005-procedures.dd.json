@@ -61,7 +61,7 @@
 				{
 					"id": "s04",
 					"title": "The runner: steps, preconditions, progress and flags",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/005-procedures.dd.json#requirements/req-09",
 						"../prds/005-procedures.dd.json#requirements/req-10",
@@ -185,6 +185,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s03 complete."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s04 complete."
 				}
 			]
 		}

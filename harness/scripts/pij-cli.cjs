@@ -121,30 +121,44 @@ if (found !== undefined && found.verb === "fleet-map") {
 	process.exit(exitCode(result));
 }
 
-if (forwardsToPijRs(args, process.env, native)) {
-	const pijRs = resolvePijRs(process.env);
-	if (pijRs === undefined) {
-		console.error("pij: cannot run pij-rs: it is not on PATH (run `just rs-install`)");
-		process.exit(127);
+/** PRD 005: `pij proc` is the procedure runner, a skill tool loaded in-process (no second node, no daemon). */
+function runProcedures(rest) {
+	const runner = require(
+		path.resolve(__dirname, "..", "..", "skills", "pij", "tools", "procedures", "procedures.ts"),
+	);
+	process.exitCode = runner.main(rest, runner.realIo());
+}
+
+/** Everything else: pij-rs for the verbs it owns, else the TypeScript CLI. Never returns. */
+function runCli() {
+	if (forwardsToPijRs(args, process.env, native)) {
+		const pijRs = resolvePijRs(process.env);
+		if (pijRs === undefined) {
+			console.error("pij: cannot run pij-rs: it is not on PATH (run `just rs-install`)");
+			process.exit(127);
+		}
+		const result = spawnSync(pijRs, args, { stdio: "inherit" });
+		if (result.error) {
+			console.error(`pij: cannot run ${pijRs}: ${result.error.message}`);
+			process.exit(127);
+		}
+		process.exit(exitCode(result));
 	}
-	const result = spawnSync(pijRs, args, { stdio: "inherit" });
+
+	const tsxCli = require.resolve("tsx/cli");
+	const pijCli = path.resolve(__dirname, "..", "..", ".omp", "extensions", "pij", "cli.ts");
+	const result = spawnSync(process.execPath, [tsxCli, pijCli, ...args], {
+		stdio: "inherit",
+		env: { ...process.env, NODE_NO_WARNINGS: "1" },
+	});
+
 	if (result.error) {
-		console.error(`pij: cannot run ${pijRs}: ${result.error.message}`);
-		process.exit(127);
+		console.error(`pij: ${result.error.message}`);
+		process.exit(1);
 	}
-	process.exit(exitCode(result));
+
+	process.exit(result.status ?? 1);
 }
 
-const tsxCli = require.resolve("tsx/cli");
-const pijCli = path.resolve(__dirname, "..", "..", ".omp", "extensions", "pij", "cli.ts");
-const result = spawnSync(process.execPath, [tsxCli, pijCli, ...args], {
-	stdio: "inherit",
-	env: { ...process.env, NODE_NO_WARNINGS: "1" },
-});
-
-if (result.error) {
-	console.error(`pij: ${result.error.message}`);
-	process.exit(1);
-}
-
-process.exit(result.status ?? 1);
+if (found !== undefined && found.verb === "proc") runProcedures(found.rest);
+else runCli();

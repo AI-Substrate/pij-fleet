@@ -72,6 +72,7 @@ function usage(): string {
 		"sessions accepts only bare invocation or --json; all filters are refused.",
 		"pij generation [verb] [--json] — read-only routing diagnostic",
 		"pij fleet-map init|generate|open — the fleet metro map, a skill tool (skills/pij/tools/fleet-map) the shim runs with node; no daemon",
+		"pij proc [list|new|status|check|report|<proc> [<step>]] — procedures (PRD 005), a skill tool the shim loads in-process; no daemon",
 		"pij --version",
 		"",
 		...RS_ROUTE_TABLE.map(routeDescription),

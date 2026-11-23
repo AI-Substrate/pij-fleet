@@ -77,7 +77,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-16",
 						"../prds/005-procedures.dd.json#requirements/req-17"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-progress",
@@ -89,7 +89,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-14",
 						"../prds/005-procedures.dd.json#requirements/req-12"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-verbs",
@@ -101,7 +101,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-08",
 						"../prds/005-procedures.dd.json#requirements/req-15"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-list",
@@ -330,6 +330,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s03: c-schema, c-layout and c-booking shipped."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s04: c-runner, c-progress and c-verbs shipped."
 				}
 			]
 		}

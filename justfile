@@ -260,6 +260,16 @@ cache-ttl-audit *ARGS:
 # (macOS lsof) inside one spares it. --prune is macOS only; elsewhere it refuses.
 # Runs on node's own TypeScript stripping, so it needs no node_modules (F109):
 # it works from any review worktree.
+# Procedures (PRD 005): run, list, write and check them. `just proc help`. The runner is a skill tool
+# (skills/pij/tools/procedures); `pij proc` is the same thing in any repo.
+proc *ARGS:
+    @harness/scripts/nice19.sh node --experimental-strip-types --disable-warning=ExperimentalWarning skills/pij/tools/procedures/procedures.ts "$@"
+
+# The procedures drift check (harness checks stage "procedures", PRD 005 req-19): layout, recipe names, links,
+# declared paths, and numbered commands outside a procedure folder. One git ls-files, one just --summary per justfile.
+procedures-check:
+    @harness/scripts/nice19.sh node --experimental-strip-types --disable-warning=ExperimentalWarning skills/pij/tools/procedures/procedures.ts check
+
 # Is a PR head final for verdicts? `just pr-freeze <pr> [--worktree]`
 pr-freeze *ARGS:
     node --experimental-strip-types --disable-warning=ExperimentalWarning harness/scripts/pr-freeze.ts "$@"
@@ -355,6 +365,7 @@ self-check:
     just omp-config-check
     just ddocs-check
     just coverage-check
+    just procedures-check
     just pij-skill-check
     just lockfile-allowlist
     just typecheck
