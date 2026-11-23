@@ -163,7 +163,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-30",
 						"../prds/005-procedures.dd.json#requirements/req-27"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-docs-procedures",
@@ -181,7 +181,7 @@
 					"where": "docs/project/procedures/{fleet,daemon,release}/",
 					"responsibility": "Change a live seat's reasoning effort, bounce the daemon after an rs merge, and take a Copilot or OMP update.",
 					"realises": ["../prds/005-procedures.dd.json#requirements/req-24"],
-					"state": "planned"
+					"state": "in-progress"
 				},
 				{
 					"id": "c-page-sort",
@@ -340,6 +340,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s05: c-list, c-status, c-check, c-report and c-page-sort shipped."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s06: c-meta shipped; c-exemplars in progress (drafts awaiting the operator and a full run)."
 				}
 			]
 		}

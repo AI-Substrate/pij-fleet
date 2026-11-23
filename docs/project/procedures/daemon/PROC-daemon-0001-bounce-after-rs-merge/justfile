@@ -1,0 +1,16 @@
+# PROC-daemon-0001's own recipes, run by the procedure runner from the repo root. Steps 0002 and 0003 run the root
+# justfile's bounce-rs and doctor.
+
+in-main-checkout:
+    #!/bin/sh
+    [ -d .git ] || { echo "$(pwd) is a linked worktree, not the main checkout" >&2; exit 1; }
+    [ "$(git symbolic-ref --short -q HEAD)" = main ] || { echo "the main checkout is not on main" >&2; exit 1; }
+
+update-main:
+    @git pull --ff-only --quiet origin main
+
+main-current:
+    @git fetch --quiet origin main && test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
+
+daemon-runs-head:
+    @test "$(pij-rs --json ping | jq -r .data.commit)" = "$(git rev-parse --short=10 HEAD)"

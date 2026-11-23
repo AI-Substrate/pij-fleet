@@ -1,0 +1,145 @@
+{
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-docs-0001",
+				"title": "Write a PRD",
+				"area": "docs",
+				"kind": "mixed",
+				"owner": "docs-system",
+				"status": "draft",
+				"updated": "2026-11-24",
+				"summary": "Write a PRD: what to build and why, as requirement rows with a state and a test of done. Then the blueprint and workstream."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "The PM that owns the work, or the prime when the operator asks.",
+				"when": "When a project needs a new PRD. Run it with `--key <slug>` so each document keeps its own progress."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": [
+				{
+					"name": "slug",
+					"description": "the kebab-case slug the PRD, blueprint and workstream share",
+					"required": "yes",
+					"fallback": "take the PRD's slug"
+				}
+			]
+		},
+		{
+			"name": "preconditions",
+			"value": []
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Claim the PRD number",
+					"kind": "run",
+					"done_when": "`pij claim prd` holds a number for the slug, or `docs/project/prds/NNN-<slug>.dd.json` already exists.",
+					"run": "claim",
+					"done": "claimed",
+					"inputs": ["slug"]
+				},
+				{
+					"id": "s0002",
+					"title": "Write the PRD",
+					"kind": "guide",
+					"done_when": "The PRD's sections are filled as `writing.md` says, every placeholder replaced.",
+					"follow": "./writing.md"
+				},
+				{
+					"id": "s0003",
+					"title": "Validate and render it",
+					"kind": "run",
+					"done_when": "`ddocs validate` reports 0 errors and 0 warnings and the `.dd.md` is rebuilt and staged.",
+					"run": "validate",
+					"done": "valid",
+					"inputs": ["slug"]
+				},
+				{
+					"id": "s0004",
+					"title": "Write or update the blueprint",
+					"kind": "guide",
+					"done_when": "The blueprint realises every requirement (PROC-docs-0002 is done for this slug), or an existing blueprint already does.",
+					"follow": "PROC-docs-0002"
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "`docs/project/prds/NNN-<slug>.dd.json` validates clean, its rendering is current, and both are staged."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "Run ddocs from the repo root; the recipes do. From a subdirectory ddocs can't find the pij/* schemas (E401)."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Guessing the number from the folder listing instead of claiming it."
+				},
+				{
+					"id": "m-2",
+					"text": "Hand-editing the `.dd.md`: it is generated."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": [
+				{
+					"row": "../../../../../docs/project/prds/001-pij-community.dd.json#requirements/req-23",
+					"guarantees": "The PRD how-to is this procedure; the old page points here."
+				}
+			]
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": []
+		},
+		{
+			"name": "side_effects",
+			"value": []
+		},
+		{
+			"name": "comments",
+			"value": []
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "First draft (PRD 005 s06)."
+				}
+			]
+		}
+	],
+	"references": []
+}

@@ -1,0 +1,179 @@
+{
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-meta-0001",
+				"title": "Write a procedure",
+				"area": "meta",
+				"kind": "meta",
+				"owner": "docs-system",
+				"status": "draft",
+				"updated": "2026-11-24",
+				"summary": "How to write a procedure: look first, book the id, write it from what really happens with recipes that check their own preconditions, pass the drift check, then get the operator's yes."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "Any seat doing repeatable work that no procedure covers yet; the operator approves it.",
+				"when": "Before repeatable work with no procedure, or while doing it the first time (rule 0: find the procedure and follow it, or write it as you go)."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": [
+				{
+					"name": "area",
+					"description": "the procedure's area (lowercase letters and digits)",
+					"required": "yes",
+					"fallback": "pick the area of the role that will own it: daemon, fleet, build, release in pij; meta and docs only in the skill"
+				},
+				{
+					"name": "slug",
+					"description": "a few kebab-case words naming the job",
+					"required": "yes"
+				},
+				{
+					"name": "title",
+					"description": "the title, as an instruction (\"Bounce the daemon after an rs merge\")",
+					"required": "yes"
+				},
+				{
+					"name": "kind",
+					"description": "runnable, mixed, guide or meta",
+					"required": "no",
+					"fallback": "runnable"
+				}
+			]
+		},
+		{
+			"name": "preconditions",
+			"value": []
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Look for a procedure that already covers the job",
+					"kind": "run",
+					"done_when": "You know no procedure covers it. If one does, follow that one instead and fix it if it is wrong.",
+					"run": "look-first"
+				},
+				{
+					"id": "s0002",
+					"title": "Book the id and create the folder",
+					"kind": "run",
+					"done_when": "The folder exists with a valid procedure document (and a justfile for a runnable one), staged in your feature worktree.",
+					"run": "book",
+					"done": "booked",
+					"inputs": ["area", "slug", "title", "kind"]
+				},
+				{
+					"id": "s0003",
+					"title": "Write it from what really happens",
+					"kind": "guide",
+					"done_when": "Every placeholder is replaced: steps are recipes with preconditions and done checks, inputs say their fallback, links carry a sentence.",
+					"follow": "./writing.md"
+				},
+				{
+					"id": "s0004",
+					"title": "Pass the drift check",
+					"kind": "run",
+					"done_when": "`check` reports the procedure clean.",
+					"run": "check",
+					"done": "check"
+				},
+				{
+					"id": "s0005",
+					"title": "Get the operator's yes",
+					"kind": "decision",
+					"done_when": "The operator said yes and `proc status current <id> --approved-by <operator>` recorded it. Until then the draft is usable as it is.",
+					"decide": "operator"
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "A procedure exists for the job, it passes the drift check, and the operator's approval (or its absence) is on record."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "`who` on a step is stated and printed, not enforced (PRD 005 q-05)."
+				},
+				{
+					"id": "l-2",
+					"text": "The runner reads preconditions as recipes; there is no predicate language (PRD 005 n-1)."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Writing a precondition only in prose or in \"common mistakes\". If a step can fail because something isn't ready, make it a `pre` check that refuses with its fix."
+				},
+				{
+					"id": "m-2",
+					"text": "Booking in the main checkout or on main: `new` refuses; make a feature worktree first."
+				},
+				{
+					"id": "m-3",
+					"text": "Copying a shared script into the folder. Only what this procedure alone uses lives here; shared tooling is listed in `uses`."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": [
+				{
+					"row": "../../../../../docs/project/prds/005-procedures.dd.json#requirements/req-23",
+					"guarantees": "This is the procedure req-23 asks for: how to write a procedure, with the survey's pitfalls, the two rules and the drafting pattern."
+				},
+				{
+					"row": "../../../../../docs/project/prds/005-procedures.dd.json#requirements/req-22",
+					"guarantees": "Step 0001 is rule 0: look for the procedure before doing repeatable work."
+				}
+			]
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": []
+		},
+		{
+			"name": "side_effects",
+			"value": []
+		},
+		{
+			"name": "comments",
+			"value": []
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "First draft (PRD 005 s06)."
+				}
+			]
+		}
+	],
+	"references": []
+}

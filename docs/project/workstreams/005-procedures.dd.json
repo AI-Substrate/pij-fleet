@@ -110,7 +110,7 @@
 				{
 					"id": "s06",
 					"title": "Exemplars: the meta procedure and pij's first procedures",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/005-procedures.dd.json#requirements/req-23",
 						"../prds/005-procedures.dd.json#requirements/req-24",
@@ -205,6 +205,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s05 complete; s09 added (planned) for req-32."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s06 complete."
 				}
 			]
 		}

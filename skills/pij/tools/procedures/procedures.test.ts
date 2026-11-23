@@ -160,15 +160,15 @@ function procedure(
 const THREE_STEPS = {
 	steps: [
 		{
-			id: "0001",
+			id: "s0001",
 			title: "first",
 			kind: "run",
 			run: "one",
 			done: "one-done",
 			done_when: "one is there",
 		},
-		{ id: "0002", title: "second", kind: "run", run: "two", done_when: "two is there" },
-		{ id: "0003", title: "third", kind: "run", run: "three", done_when: "three is there" },
+		{ id: "s0002", title: "second", kind: "run", run: "two", done_when: "two is there" },
+		{ id: "s0003", title: "third", kind: "run", run: "three", done_when: "three is there" },
 	],
 };
 const THREE_RECIPES = "one:\n    true\none-done:\n    true\ntwo:\n    true\nthree:\n    true\n";
@@ -245,14 +245,14 @@ describe("listing", () => {
 
 	it("shows a run's steps from progress alone, launching nothing", () => {
 		procedure("fleet", "0001", "change-effort", THREE_STEPS, THREE_RECIPES);
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_OK);
 		calls = [];
 		out = [];
 		expect(run(["change-effort", "--json"])).toBe(EXIT_OK);
 		expect(calls).toEqual([]);
 		const shown = JSON.parse(out.join("\n"));
 		expect(shown.steps.map((s: { state: string }) => s.state)).toEqual(["done", "next", "todo"]);
-		expect(shown.next).toBe("0002");
+		expect(shown.next).toBe("s0002");
 	});
 });
 
@@ -260,25 +260,30 @@ describe("running steps", () => {
 	beforeEach(() => procedure("fleet", "0001", "change-effort", THREE_STEPS, THREE_RECIPES));
 
 	it("skips a step whose done check passes, and reruns it with --again", () => {
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_OK);
 		expect(runsOf("one")).toHaveLength(0);
 		expect(out.join("\n")).toContain("already done (one is there) (--again to run it anyway)");
-		expect(run(["PROC-fleet-0001", "0001", "--again"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0001", "s0001", "--again"])).toBe(EXIT_OK);
 		expect(runsOf("one")).toHaveLength(1);
 	});
 
 	it("runs a step, then a second run without a done check is a no-op", () => {
-		expect(run(["PROC-fleet-0001", "0002"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0001", "s0002"])).toBe(EXIT_OK);
 		expect(runsOf("two")).toHaveLength(1);
-		expect(run(["PROC-fleet-0001", "0002"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0001", "s0002"])).toBe(EXIT_OK);
 		expect(runsOf("two")).toHaveLength(1);
 		expect(out.join("\n")).toContain("already done (ran");
 	});
 
+	it("takes a step's digits alone as its id", () => {
+		expect(run(["PROC-fleet-0001", "0002"])).toBe(EXIT_OK);
+		expect(runsOf("two")).toHaveLength(1);
+	});
+
 	it("refuses a step whose earlier step isn't done, naming it", () => {
-		expect(run(["PROC-fleet-0001", "0003"])).toBe(EXIT_REFUSED);
+		expect(run(["PROC-fleet-0001", "s0003"])).toBe(EXIT_REFUSED);
 		expect(err.join("\n")).toContain(
-			"step 0002 (second) isn't done yet: run just proc PROC-fleet-0001 0002 first",
+			"step s0002 (second) isn't done yet: run just proc PROC-fleet-0001 s0002 first",
 		);
 		expect(runsOf("three")).toHaveLength(0);
 	});
@@ -286,24 +291,24 @@ describe("running steps", () => {
 	it("records nothing when a step fails, or when its done check fails after it ran", () => {
 		recipes["one-done"] = () => 1;
 		recipes.one = () => 4;
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_FAIL);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_FAIL);
 		expect(err.join("\n")).toContain("failed (exit 4); nothing recorded");
 		recipes.one = () => 0;
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_FAIL);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_FAIL);
 		expect(err.join("\n")).toContain("its done check (one-done) fails: one is there");
 		expect(readProgress(root).runs["PROC-fleet-0001"]).toBeUndefined();
 	});
 
 	it("keeps runs apart by key and clears one", () => {
-		expect(run(["PROC-fleet-0001", "0002", "--key", "staging"])).toBe(EXIT_OK);
-		expect(readProgress(root).runs["PROC-fleet-0001"]?.staging?.["0002"]?.how).toBe("ran");
+		expect(run(["PROC-fleet-0001", "s0002", "--key", "staging"])).toBe(EXIT_OK);
+		expect(readProgress(root).runs["PROC-fleet-0001"]?.staging?.["s0002"]?.how).toBe("ran");
 		expect(readProgress(root).runs["PROC-fleet-0001"]?.default).toBeUndefined();
 		expect(run(["PROC-fleet-0001", "--key", "staging", "--clear"])).toBe(EXIT_OK);
 		expect(readProgress(root).runs["PROC-fleet-0001"]?.staging).toBeUndefined();
 	});
 
 	it("refuses unknown flags and flags that don't apply, passing --again through", () => {
-		expect(run(["PROC-fleet-0001", "0001", "--agian"])).toBe(EXIT_USAGE);
+		expect(run(["PROC-fleet-0001", "s0001", "--agian"])).toBe(EXIT_USAGE);
 		expect(err.join("\n")).toContain("unknown flag --agian");
 		expect(run(["PROC-fleet-0001", "--again"])).toBe(EXIT_USAGE);
 		expect(run(["list", "--key", "x"])).toBe(EXIT_USAGE);
@@ -318,28 +323,36 @@ describe("inputs, preconditions and order across procedures", () => {
 			"x",
 			{
 				inputs: [
-					{ name: "seat", description: "the seat id", required: true, fallback: "ask the prime" },
-					{ name: "token", description: "a secret", required: false, secret: true },
+					{ name: "seat", description: "the seat id", required: "yes", fallback: "ask the prime" },
+					{ name: "token", description: "a secret", required: "no", secret: "yes" },
 				],
 				steps: [
-					{ id: "0001", title: "first", kind: "run", run: "one", inputs: ["seat"], done_when: "x" },
+					{
+						id: "s0001",
+						title: "first",
+						kind: "run",
+						run: "one",
+						inputs: ["seat"],
+						done_when: "x",
+					},
 				],
 			},
 			"one:\n    true\n",
 		);
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_REFUSED);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_REFUSED);
 		expect(err.join("\n")).toContain(
 			"needs input seat (the seat id): pass --arg seat=<value>. If you don't have it: ask the prime",
 		);
-		expect(run(["PROC-fleet-0001", "0001", "--arg", "token=hunter2"])).toBe(EXIT_USAGE);
+		expect(run(["PROC-fleet-0001", "s0001", "--arg", "token=hunter2"])).toBe(EXIT_USAGE);
 		expect(err.join("\n")).toContain("input token is secret");
 		expect(
-			run(["PROC-fleet-0001", "0001", "--arg", "seat=pij-a"], { env: { PROC_IN_TOKEN: "t" } }),
+			run(["PROC-fleet-0001", "s0001", "--arg", "seat=pij-a"], { env: { PROC_IN_TOKEN: "t" } }),
 		).toBe(EXIT_OK);
 		const env = runsOf("one")[0]?.env;
 		expect(env?.PROC_IN_SEAT).toBe("pij-a");
 		expect(env?.PROC_IN_TOKEN).toBe("t");
 		expect(env?.PROC_ID).toBe("PROC-fleet-0001");
+		expect(env?.PROC_RUNNER).toMatch(/procedures\.ts$/);
 	});
 
 	it("refuses on a failing precondition with its fix, and runs nothing", () => {
@@ -353,7 +366,7 @@ describe("inputs, preconditions and order across procedures", () => {
 				],
 				steps: [
 					{
-						id: "0001",
+						id: "s0001",
 						title: "first",
 						kind: "run",
 						run: "one",
@@ -365,12 +378,12 @@ describe("inputs, preconditions and order across procedures", () => {
 			"one:\n    true\nidle:\n    true\n",
 		);
 		recipes.idle = () => 1;
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_REFUSED);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_REFUSED);
 		expect(err.join("\n")).toContain("precondition p-1 (the seat is idle) fails");
 		expect(err.join("\n")).toContain("fix: wait for idle");
 		recipes.idle = () => 0;
 		recipes.shared = () => 1;
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_REFUSED);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_REFUSED);
 		expect(err.join("\n")).toContain("fix: run the shared thing");
 		expect(runsOf("one")).toHaveLength(0);
 	});
@@ -383,7 +396,7 @@ describe("inputs, preconditions and order across procedures", () => {
 			{
 				steps: [
 					{
-						id: "0001",
+						id: "s0001",
 						title: "bounce it",
 						kind: "run",
 						run: "bounce",
@@ -401,11 +414,11 @@ describe("inputs, preconditions and order across procedures", () => {
 			{
 				steps: [
 					{
-						id: "0001",
+						id: "s0001",
 						title: "first",
 						kind: "run",
 						run: "one",
-						requires: ["../../daemon/PROC-daemon-0001-bounce/procedure.dd.json#steps/0001"],
+						requires: ["../../daemon/PROC-daemon-0001-bounce/procedure.dd.json#steps/s0001"],
 						done_when: "x",
 					},
 				],
@@ -413,12 +426,12 @@ describe("inputs, preconditions and order across procedures", () => {
 			"one:\n    true\n",
 		);
 		recipes.bounced = () => 1;
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_REFUSED);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_REFUSED);
 		expect(err.join("\n")).toContain(
-			"needs PROC-daemon-0001 step 0001 (bounce it) first: just proc PROC-daemon-0001 0001",
+			"needs PROC-daemon-0001 step s0001 (bounce it) first: just proc PROC-daemon-0001 s0001",
 		);
 		recipes.bounced = () => 0;
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_OK);
 		expect(runsOf("one")).toHaveLength(1);
 	});
 });
@@ -428,7 +441,7 @@ describe("decision, guide and commands", () => {
 		procedure("fleet", "0001", "x", {
 			steps: [
 				{
-					id: "0001",
+					id: "s0001",
 					title: "approve",
 					kind: "decision",
 					decide: "operator",
@@ -436,13 +449,13 @@ describe("decision, guide and commands", () => {
 				},
 			],
 		});
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_REFUSED);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_REFUSED);
 		expect(err.join("\n")).toContain("needs a decision from operator");
-		expect(run(["PROC-fleet-0001", "0001", "--decided-by", "jordan"])).toBe(EXIT_USAGE);
-		expect(run(["PROC-fleet-0001", "0001", "--decided-by", "jordan", "--note", "yes"])).toBe(
+		expect(run(["PROC-fleet-0001", "s0001", "--decided-by", "jordan"])).toBe(EXIT_USAGE);
+		expect(run(["PROC-fleet-0001", "s0001", "--decided-by", "jordan", "--note", "yes"])).toBe(
 			EXIT_OK,
 		);
-		expect(readProgress(root).runs["PROC-fleet-0001"]?.default?.["0001"]).toMatchObject({
+		expect(readProgress(root).runs["PROC-fleet-0001"]?.default?.["s0001"]).toMatchObject({
 			by: "jordan",
 			how: "decided",
 			note: "yes",
@@ -454,14 +467,14 @@ describe("decision, guide and commands", () => {
 			"daemon",
 			"0001",
 			"bounce",
-			{ steps: [{ id: "0001", title: "bounce", kind: "run", run: "bounce", done_when: "up" }] },
+			{ steps: [{ id: "s0001", title: "bounce", kind: "run", run: "bounce", done_when: "up" }] },
 			"bounce:\n    true\n",
 		);
 		procedure("fleet", "0001", "x", {
 			meta: { kind: "guide" },
 			steps: [
 				{
-					id: "0001",
+					id: "s0001",
 					title: "bounce first",
 					kind: "guide",
 					follow: "PROC-daemon-0001",
@@ -469,13 +482,14 @@ describe("decision, guide and commands", () => {
 				},
 			],
 		});
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_REFUSED);
-		expect(run(["PROC-daemon-0001", "0001"])).toBe(EXIT_OK);
-		expect(run(["PROC-fleet-0001", "0001"])).toBe(EXIT_OK);
-		expect(readProgress(root).runs["PROC-fleet-0001"]?.default?.["0001"]?.how).toBe("found-done");
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_REFUSED);
+		expect(run(["PROC-daemon-0001", "s0001"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_OK);
+		expect(readProgress(root).runs["PROC-fleet-0001"]?.default?.["s0001"]?.how).toBe("found-done");
 	});
 
 	it("runs a command without recording progress", () => {
+		write("skills/pij/SKILL.md", "# pij\n");
 		procedure(
 			"docs",
 			"0001",
@@ -517,6 +531,19 @@ describe("new", () => {
 		]);
 		expect(calls.some((c) => c.file === "git" && c.args[0] === "add")).toBe(true);
 		expect(out.join("\n")).toContain(`worktree: ${root} (branch feature)`);
+	});
+
+	it("writes a skill procedure into pij's repo before its procedures folder exists", () => {
+		write("skills/pij/SKILL.md", "# pij\n");
+		expect(
+			run(["new", "meta", "write-one", "--skill", "--kind", "meta", "--title", "Write one"]),
+		).toBe(EXIT_OK);
+		const doc = readFileSync(
+			join(root, "skills/pij/procedures/meta/PROC-meta-0001-write-one/procedure.dd.json"),
+			"utf8",
+		);
+		expect(doc).toContain("PROC-meta-0001");
+		expect(run(["new", "fleet", "x", "--skill", "--title", "t"])).toBe(EXIT_REFUSED);
 	});
 
 	it("refuses on main, in the main checkout, for a skill area, and below an existing number", () => {
@@ -579,7 +606,7 @@ describe("check", () => {
 			"x",
 			{
 				steps: [
-					{ id: "1", title: "a", kind: "run", run: "nope", changes_access: true, done_when: "x" },
+					{ id: "1", title: "a", kind: "run", run: "nope", changes_access: "yes", done_when: "x" },
 				],
 			},
 			"x:\n    harness/scripts/only-me.sh\n",
@@ -587,7 +614,7 @@ describe("check", () => {
 		write(`${dir}/notes.md`, '[pij from "pij-a"] a body\n');
 		expect(run(["check"])).toBe(EXIT_FAIL);
 		const text = out.join("\n");
-		expect(text).toContain("step id 1 is not four digits");
+		expect(text).toContain("step id 1 is not s and four digits");
 		expect(text).toContain(
 			"names recipe nope, which is in neither its justfile nor the root justfile",
 		);
@@ -629,10 +656,10 @@ describe("check", () => {
 describe("progress file", () => {
 	it("lives under the repo root, whatever the working directory", () => {
 		const dir = procedure("fleet", "0001", "x", THREE_STEPS, THREE_RECIPES);
-		expect(run(["PROC-fleet-0001", "0002"], { cwd: join(root, dir) })).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0001", "s0002"], { cwd: join(root, dir) })).toBe(EXIT_OK);
 		expect(
 			JSON.parse(readFileSync(join(root, PROGRESS_FILE), "utf8")).runs["PROC-fleet-0001"].default[
-				"0002"
+				"s0002"
 			].how,
 		).toBe("ran");
 	});

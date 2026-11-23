@@ -47,7 +47,8 @@ export const AREA_RE = /^[a-z][a-z0-9]*$/;
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const FOLDER_RE = /^PROC-([a-z][a-z0-9]*)-(\d{4})-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 export const ID_RE = /^PROC-([a-z][a-z0-9]*)-(\d{4})$/;
-export const STEP_ID_RE = /^\d{4}$/;
+/** A step id: `s` and four digits (ddocs address segments start with a letter). The CLI also takes the digits alone. */
+export const STEP_ID_RE = /^s\d{4}$/;
 export const STATUSES: readonly string[] = ["draft", "current", "superseded", "retired"];
 export const KINDS: readonly string[] = ["runnable", "mixed", "guide", "meta"];
 /** A page that numbers commands but is reference, not a procedure, says why (PRD 005 req-31, q-09). */
@@ -195,6 +196,15 @@ type Json = Record<string, unknown>;
 
 function isObj(value: unknown): value is Json {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The schema's yes/no fields (ddocs has no boolean type); `true` and `false` are read the same way. */
+function isYes(value: unknown): boolean {
+	return value === "yes" || value === true;
+}
+
+function isNo(value: unknown): boolean {
+	return value === "no" || value === false;
 }
 
 function str(value: unknown): string | undefined {
@@ -374,7 +384,7 @@ export function parseProcedure(doc: unknown, file: string, home: Home): Procedur
 				done: str(v.done),
 				doneWhen: str(v.done_when) ?? "",
 				who: str(v.who),
-				changesAccess: v.changes_access === true,
+				changesAccess: isYes(v.changes_access),
 			};
 		});
 	return {
@@ -392,9 +402,9 @@ export function parseProcedure(doc: unknown, file: string, home: Home): Procedur
 			.map((v) => ({
 				name: str(v.name) ?? "",
 				description: str(v.description) ?? "",
-				required: v.required !== false,
+				required: !isNo(v.required),
 				fallback: str(v.fallback),
-				secret: v.secret === true,
+				secret: isYes(v.secret),
 			})),
 		preconditions: list(s.get("preconditions"))
 			.filter(isObj)
@@ -421,12 +431,16 @@ export function parseProcedure(doc: unknown, file: string, home: Home): Procedur
 	};
 }
 
+/** Whether `root` is pij's own repo, the one that holds the skill (and so the skill's procedures). */
+export function isPijRepo(root: string): boolean {
+	return isFile(join(root, "skills", "pij", "SKILL.md"));
+}
+
 /** The homes for a checkout: its own project home, and the skill's (in pij's repo, else beside this runner). */
 export function homesFor(root: string, skillHome: string): Home[] {
-	const repoSkill = join(root, SKILL_HOME);
 	return [
 		{ kind: "project", dir: join(root, PROJECT_HOME) },
-		{ kind: "skill", dir: isDir(repoSkill) ? repoSkill : skillHome },
+		{ kind: "skill", dir: isPijRepo(root) ? join(root, SKILL_HOME) : skillHome },
 	];
 }
 
@@ -526,6 +540,13 @@ export function findProcedure(
 	const bySlug = procedures.filter((p) => FOLDER_RE.exec(basenameOf(p.dir))?.[3] === lower);
 	if (bySlug.length === 1) return bySlug[0];
 	return bySlug.length > 1 ? bySlug : undefined;
+}
+
+/** Where a guide step's page is: `./` and `../` paths are relative to the procedure's folder, others to the repo root. */
+export function followPath(root: string, procedure: Procedure, follow: string): string {
+	return follow.startsWith("./") || follow.startsWith("../")
+		? resolve(procedure.dir, follow)
+		: join(root, follow);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -819,6 +840,7 @@ function stepEnv(
 		PROC_KEY: key,
 		PROC_DIR: procedure.dir,
 		PROC_ROOT: ctx.root,
+		PROC_RUNNER: RUNNER_FILE,
 	};
 	for (const [name, value] of inputs) env[inputVar(name)] = value;
 	return env;
@@ -845,7 +867,7 @@ export const HELP = `proc: run, list, write and check pij procedures (PRD 005).
   proc check [--json]                           the drift check (harness checks stage "procedures")
   proc report [--json]                          files only one procedure uses; components no procedure operates
 
-<proc> is an id (PROC-daemon-0001), a folder name or a slug. Inputs also come from PROC_IN_<NAME> in the
+<proc> is an id (PROC-daemon-0001), a folder name or a slug; <step> is its id (s0001) or the digits (0001). Inputs also come from PROC_IN_<NAME> in the
 environment; a secret input only from there. Exit: 0 ok, 1 failed, 2 usage, 3 refused (fix, then rerun).`;
 
 /** Entry point. Returns the exit code. */
@@ -879,7 +901,7 @@ export function main(argv: string[], io: Io, options: Options = {}): number {
 	if (rest.length > 1) return usage(ctx, `one step at a time (got ${rest.join(" ")})`);
 	const target = rest[0];
 	if (target === undefined) return showCmd(ctx, flags, found);
-	const step = found.steps.find((s) => s.id === target);
+	const step = found.steps.find((s) => s.id === target || s.id === `s${target}`);
 	if (step) return stepCmd(ctx, flags, found, step);
 	const command = found.commands.find((c) => c.name === target);
 	if (command) return commandCmd(ctx, flags, found, command);
@@ -1070,7 +1092,7 @@ function resolveRequire(
 	link: string,
 ): { procedure: Procedure; step: Step } | undefined {
 	const [path, anchor] = link.split("#");
-	const stepId = /^steps\/(\d{4})$/.exec(anchor ?? "")?.[1];
+	const stepId = /^steps\/(s\d{4})$/.exec(anchor ?? "")?.[1];
 	if (!path || !stepId) return undefined;
 	const file = resolve(procedure.dir, path);
 	const target = ctx.loaded.procedures.find((p) => p.file === file);
@@ -1255,7 +1277,7 @@ function stepCmd(ctx: Ctx, flags: Flags, procedure: Procedure, step: Step): numb
 		}
 		return refuse(
 			ctx,
-			`step ${step.id}: read and follow ${follow}, then mark it: ${ctx.entry} ${procedure.id} ${step.id}${keyFlag(key)} --done`,
+			`step ${step.id}: read and follow ${rel(ctx, followPath(ctx.root, procedure, follow))}, then mark it: ${ctx.entry} ${procedure.id} ${step.id}${keyFlag(key)} --done`,
 		);
 	}
 
@@ -1331,14 +1353,14 @@ function procedureSkeleton(
 	const step =
 		kind === "guide"
 			? {
-					id: "0001",
+					id: "s0001",
 					title: "<first step>",
 					kind: "guide",
 					follow: "<a procedure id or a repo path>",
 					done_when: "<what is true after it>",
 				}
 			: {
-					id: "0001",
+					id: "s0001",
 					title: "<first step>",
 					kind: "run",
 					run: "step-0001",
@@ -1380,13 +1402,14 @@ function procedureSkeleton(
 function justfileSkeleton(id: string): string {
 	return `# ${id}'s own recipes. The procedure runner runs this file directly (\`just --justfile <this file>
 # --working-directory <repo root>\`); the root justfile never imports it. Each recipe gets PROC_ROOT, PROC_DIR,
-# PROC_KEY, PROC_STEP and PROC_IN_<NAME> for each input.
+# PROC_KEY, PROC_STEP, PROC_IN_<NAME> for each input, and PROC_RUNNER (the runner itself:
+# node --experimental-strip-types "$PROC_RUNNER" check).
 
-# Step 0001: replace with the real work.
+# Step s0001: replace with the real work.
 step-0001:
     @echo "${id} step 0001 is not written yet" >&2; exit 1
 
-# Step 0001's done check: exit 0 only when step 0001's result is really there.
+# Step s0001's done check: exit 0 only when its result is really there.
 step-0001-done:
     @exit 1
 `;
@@ -1438,7 +1461,7 @@ function newCmd(ctx: Ctx, flags: Flags, rest: string[]): number {
 	const repoSkill = join(ctx.root, SKILL_HOME);
 	let home: Home;
 	if (flags.skill) {
-		if (!isDir(repoSkill))
+		if (!isPijRepo(ctx.root))
 			return refuse(
 				ctx,
 				"--skill writes into pij's own repo (skills/pij/procedures); this checkout isn't pij's",
@@ -1453,7 +1476,7 @@ function newCmd(ctx: Ctx, flags: Flags, rest: string[]): number {
 		if (SKILL_AREAS.includes(area)) {
 			return refuse(
 				ctx,
-				`area ${area} belongs to the pij skill's procedures: pick another area${isDir(repoSkill) ? ", or add --skill" : ""}`,
+				`area ${area} belongs to the pij skill's procedures: pick another area${isPijRepo(ctx.root) ? ", or add --skill" : ""}`,
 			);
 		}
 		home = { kind: "project", dir: join(ctx.root, PROJECT_HOME) };
@@ -1708,7 +1731,8 @@ export function checkFindings(ctx: Ctx): string[] {
 			findings.push(`${path}: a procedure document outside a procedure home`);
 	}
 
-	for (const procedure of ctx.loaded.procedures) {
+	// Only this repo's procedures: the skill's own, seen from another repo, are pij's to check.
+	for (const procedure of ctx.loaded.procedures.filter((p) => p.dir.startsWith(ctx.root + sep))) {
 		const where = rel(ctx, procedure.file);
 		if (!KINDS.includes(procedure.kind))
 			findings.push(`${where}: meta.kind ${procedure.kind} is not one of ${KINDS.join(", ")}`);
@@ -1717,7 +1741,7 @@ export function checkFindings(ctx: Ctx): string[] {
 		const ids = new Set<string>();
 		for (const step of procedure.steps) {
 			if (!STEP_ID_RE.test(step.id))
-				findings.push(`${where}: step id ${step.id} is not four digits`);
+				findings.push(`${where}: step id ${step.id} is not s and four digits (s0001)`);
 			if (ids.has(step.id)) findings.push(`${where}: step id ${step.id} is used twice`);
 			ids.add(step.id);
 			if (step.kind === "run" && !step.run)
@@ -1728,7 +1752,7 @@ export function checkFindings(ctx: Ctx): string[] {
 				const follow = step.follow ?? "";
 				if (
 					!findProcedure(ctx.loaded.procedures, follow) &&
-					!(follow && existsSync(join(ctx.root, follow)))
+					!(follow && existsSync(followPath(ctx.root, procedure, follow)))
 				) {
 					findings.push(
 						`${where}: guide step ${step.id} follows ${follow || "nothing"}, which is no procedure and no path`,
@@ -1881,6 +1905,12 @@ function reportCmd(ctx: Ctx, flags: Flags, rest: string[]): number {
 // Real side effects
 
 export function realIo(): Io {
+	// A reader that closes early (`pij proc list | head -1`) is not an error.
+	for (const stream of [process.stdout, process.stderr]) {
+		stream.on("error", (error: NodeJS.ErrnoException) => {
+			if (error.code !== "EPIPE") throw error;
+		});
+	}
 	return {
 		cwd: process.cwd(),
 		env: process.env,

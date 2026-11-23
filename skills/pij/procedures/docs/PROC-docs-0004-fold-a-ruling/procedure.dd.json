@@ -1,0 +1,131 @@
+{
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-docs-0004",
+				"title": "Fold a ruling into the project docs",
+				"area": "docs",
+				"kind": "mixed",
+				"owner": "docs-system",
+				"status": "draft",
+				"updated": "2026-11-24",
+				"summary": "Fold a ruling into the PRD, blueprint and workstream it changes: find the rows, amend them with changelog rows, validate everything, tell the owner."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "The PM that owns the affected docs, or the prime.",
+				"when": "After a ruling (the operator's, or the prime's within the operator's rulings) changes what a PRD, blueprint or workstream says. Run it with `--key <ruling id>`."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": []
+		},
+		{
+			"name": "preconditions",
+			"value": []
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Find every row the ruling touches",
+					"kind": "guide",
+					"done_when": "You have the list of requirement rows, components and steps it changes, including those that link to them.",
+					"follow": "./writing.md"
+				},
+				{
+					"id": "s0002",
+					"title": "Amend the rows and add changelog rows",
+					"kind": "guide",
+					"done_when": "Each affected row is amended (never deleted), new rows take the next free id, dropped rows say why, and each changed doc has a changelog row naming the ruling.",
+					"follow": "./writing.md"
+				},
+				{
+					"id": "s0003",
+					"title": "Validate every project doc",
+					"kind": "run",
+					"done_when": "Every document under docs/project validates clean and every rendering is current.",
+					"run": "validate-all",
+					"done": "all-valid"
+				},
+				{
+					"id": "s0004",
+					"title": "Tell the owner",
+					"kind": "guide",
+					"done_when": "If a plan's acceptance criteria quote the old wording, its owner has the changed row ids.",
+					"follow": "./writing.md"
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "Every doc the ruling touches says what the ruling says, with a changelog row naming it, and all project docs validate."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "Validating every document takes one ddocs launch per document."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Editing only the PRD: links cross files, so components and steps that point at a changed row need checking too."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": [
+				{
+					"row": "../../../../../docs/project/prds/001-pij-community.dd.json#requirements/req-23",
+					"guarantees": "Folding a ruling in is this procedure; the old page points here."
+				}
+			]
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": []
+		},
+		{
+			"name": "side_effects",
+			"value": []
+		},
+		{
+			"name": "comments",
+			"value": []
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "First draft (PRD 005 s06)."
+				}
+			]
+		}
+	],
+	"references": []
+}

@@ -1,0 +1,161 @@
+{
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-fleet-0001",
+				"title": "Change a live Copilot seat's reasoning effort",
+				"area": "fleet",
+				"kind": "mixed",
+				"owner": "prime",
+				"status": "draft",
+				"updated": "2026-11-24",
+				"summary": "Relaunch a running Copilot seat on a new `--effort` in the same pane, resuming the same conversation, with its pij identity and cache-proxy environment kept. Replaces docs/how/change-seat-effort.md."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "The operator, or the prime or the seat's parent with the operator's yes. Never the seat itself: the relaunch ends its own process.",
+				"when": "When the operator wants a live Copilot seat on a different effort without losing its context. Run it with `--key <seat>`."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": [
+				{
+					"name": "seat",
+					"description": "the seat id, e.g. pij-capable-marten",
+					"required": "yes"
+				},
+				{
+					"name": "effort",
+					"description": "the effort: none, minimal, low, medium, high, xhigh or max (`copilot --help`, --reasoning-effort); which work depends on the model",
+					"required": "yes",
+					"fallback": "ask the operator which effort"
+				}
+			]
+		},
+		{
+			"name": "preconditions",
+			"value": []
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Get the operator's yes",
+					"kind": "decision",
+					"done_when": "The operator agreed to relaunch this seat now.",
+					"decide": "operator"
+				},
+				{
+					"id": "s0002",
+					"title": "Relaunch the seat in its pane on the new effort",
+					"kind": "run",
+					"done_when": "The seat's process runs with `--effort <effort>`, resumed on the same session, in the same pane.",
+					"run": "relaunch",
+					"done": "effort-is",
+					"inputs": ["seat", "effort"],
+					"pre": [
+						{
+							"check": "seat-is-idle-copilot",
+							"fix": "Wait until `pij list` shows the seat idle with an empty composer; only Copilot seats take this procedure."
+						}
+					],
+					"proven_in_practice": "By hand on pij-capable-marten, 2026-11-23, by the prime (medium to xhigh). The script itself has not yet run on a live seat."
+				},
+				{
+					"id": "s0003",
+					"title": "Check it re-registered with its context",
+					"kind": "run",
+					"done_when": "`pij list` shows the seat on its new process with its extension build, and its footer shows the new effort with the context figure unchanged.",
+					"run": "show",
+					"done": "registered",
+					"inputs": ["seat"]
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "The seat runs on the new effort, resumed with its context, and pij lists it registered on the new process."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "pij keeps the old recorded effort, so a later `pij-rs revive` puts the seat back on it; `revive --effort` does not exist yet."
+				},
+				{
+					"id": "l-2",
+					"text": "pij records the relaunched seat as plain, not proxied: the new process doesn't descend from the launch the daemon stamped (F213). Its traffic still goes through the cache proxy, because the COPILOT_PROVIDER_* environment came with it (check with `ps -Eww -p <pid>`)."
+				},
+				{
+					"id": "l-3",
+					"text": "The relaunched process runs without `pij-rs __spawn-child`, so if it exits there is no exit-status file or launch log for a post-mortem."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Dropping the COPILOT_PROVIDER_* environment: the seat silently leaves the cache proxy and its next wake after five minutes idle rebuilds its whole context."
+				},
+				{
+					"id": "m-2",
+					"text": "Carrying PIJ_SPAWN_ID: it ties the new process to a spawn that has finished."
+				},
+				{
+					"id": "m-3",
+					"text": "Leaving out --resume=<session>: the seat starts a new conversation and loses its context."
+				},
+				{
+					"id": "m-4",
+					"text": "Using `/settings effortLevel` (changes the default for every new session) or `/restart` (keeps the old flag)."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": []
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": []
+		},
+		{
+			"name": "side_effects",
+			"value": []
+		},
+		{
+			"name": "comments",
+			"value": []
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "First draft (PRD 005 s06)."
+				}
+			]
+		}
+	],
+	"references": []
+}

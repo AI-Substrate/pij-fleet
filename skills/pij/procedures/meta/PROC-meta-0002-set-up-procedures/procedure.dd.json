@@ -1,0 +1,182 @@
+{
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-meta-0002",
+				"title": "Set up procedures in a repo",
+				"area": "meta",
+				"kind": "runnable",
+				"owner": "docs-system",
+				"status": "draft",
+				"updated": "2026-11-24",
+				"summary": "Set a repo up for procedures: copy the schema, make the home, add the `proc` and `procedures-check` recipes, ignore run progress, write a first procedure and pass the drift check. Every step is idempotent."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "The seat adopting procedures in a project (its prime, PM or docs role).",
+				"when": "Once per repo, when a project starts writing procedures. Run it from the target repo: `pij proc PROC-meta-0002 <step>`."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": []
+		},
+		{
+			"name": "preconditions",
+			"value": [
+				{
+					"id": "p-1",
+					"check": "on-a-branch",
+					"text": "the repo is a git checkout on a branch other than main",
+					"fix": "make a feature branch (ideally its own worktree) and run again from there"
+				}
+			]
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Copy the pij/procedure schema",
+					"kind": "run",
+					"done_when": "The repo's `.dd/schemas/pij/procedure/schema.json` matches the skill's copy, so `ddocs validate` reads procedure documents.",
+					"run": "copy-schema",
+					"done": "schema-copied"
+				},
+				{
+					"id": "s0002",
+					"title": "Make the procedures home",
+					"kind": "run",
+					"done_when": "`docs/project/procedures/` exists with its README.",
+					"run": "make-home",
+					"done": "home-made"
+				},
+				{
+					"id": "s0003",
+					"title": "Add the `proc` and `procedures-check` recipes",
+					"kind": "run",
+					"done_when": "The root justfile has both recipes, each calling `pij proc`.",
+					"run": "add-recipes",
+					"done": "recipes-added"
+				},
+				{
+					"id": "s0004",
+					"title": "Ignore run progress",
+					"kind": "run",
+					"done_when": "`.pij/` is in `.gitignore`, so per-checkout progress is never committed.",
+					"run": "ignore-progress",
+					"done": "progress-ignored"
+				},
+				{
+					"id": "s0005",
+					"title": "Write the first procedure",
+					"kind": "guide",
+					"done_when": "The repo has one procedure, written by following PROC-meta-0001.",
+					"follow": "PROC-meta-0001"
+				},
+				{
+					"id": "s0006",
+					"title": "Pass the drift check",
+					"kind": "run",
+					"done_when": "`just procedures-check` is clean; add it to the repo's gate (its `self-check` or CI).",
+					"run": "check",
+					"done": "check"
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "The repo validates and checks procedures, ignores run progress, and has a first procedure that passes the drift check. Running every step again changes nothing."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "It adds recipes to the root justfile only when that file has no `proc` recipe; a repo with its own `proc` keeps it."
+				},
+				{
+					"id": "l-2",
+					"text": "The repo still needs `ddocs` and `pij` on PATH; this procedure does not install them."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Running it from the pij skill's folder instead of the target repo: every step works on the repo you run it from."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": [
+				{
+					"row": "../../../../../docs/project/prds/005-procedures.dd.json#requirements/req-30",
+					"guarantees": "Setting up procedures in a repo is this procedure, with the schema it copies kept in the skill."
+				}
+			]
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": [
+				{
+					"path": "skills/pij/schemas/pij/procedure/schema.json",
+					"why": "The schema step 0001 copies; shared with the skill's other doc schemas."
+				}
+			]
+		},
+		{
+			"name": "side_effects",
+			"value": [
+				{
+					"path": ".dd/schemas/pij/procedure/schema.json",
+					"why": "Step 0001 writes the schema into the target repo."
+				},
+				{
+					"path": "docs/project/procedures/README.md",
+					"why": "Step 0002 writes the home's README."
+				},
+				{
+					"path": "justfile",
+					"why": "Step 0003 appends the proc and procedures-check recipes."
+				},
+				{
+					"path": ".gitignore",
+					"why": "Step 0004 adds .pij/."
+				}
+			]
+		},
+		{
+			"name": "comments",
+			"value": []
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "First draft (PRD 005 s06)."
+				}
+			]
+		}
+	],
+	"references": []
+}

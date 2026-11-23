@@ -132,7 +132,7 @@
 					"statement": "Anything that belongs only to one procedure lives in its folder: the procedure document, its justfile module, step scripts, step tests, fixtures and templates, and the how-to for humans. Deleting the folder removes the procedure completely.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "Deleting one procedure's folder leaves no file in the repo that only it used, and `harness checks` still passes.",
 					"source": "operator, 2026-11-23"
 				},
@@ -142,7 +142,7 @@
 					"statement": "What a procedure builds or operates, tests of a package's own code, shared tooling (the root justfile, `harness/scripts/`), anything that handles secrets and rules shared across procedures stay where they are. The procedure links each one by path or id, and declares every file it changes outside its folder.",
 					"actor": "author",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "Every path a procedure's steps run or change outside its folder appears in its links or declared side effects.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md"
 				},
@@ -272,7 +272,7 @@
 					"statement": "A procedure links to the PRD rows it carries out, the blueprint components it operates and other procedures it uses. Each link to a PRD row carries a sentence saying what the procedure guarantees for it; on a blueprint component link the sentence is optional.",
 					"actor": "reviewer",
 					"priority": "should",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "`ddocs validate` refuses a PRD-row link without its sentence, and `ddocs links` on a PRD row lists the procedures that carry it out.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (relaxed-deer: links without a rule are paperwork)"
 				},
@@ -322,7 +322,7 @@
 					"statement": "PROC-meta-0001 says how to write a procedure, including the pitfalls the survey found (no arguments to checks, ids unique across sections, root-relative links, what to do when the design changes under review), two rules (a run that finds a wrong step fixes the procedure in the same PR; a procedure past about 10 steps splits into sub-procedures) and a drafting pattern: draft from the main source, mark each gap, then send each specialist lettered questions keyed to step and gap ids and take their answers as files, not messages.",
 					"actor": "author",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A seat with no other briefing writes a procedure that passes `ddocs validate` and the drift check by following PROC-meta-0001.",
 					"source": "survey of 8 osk-central seats; drafting pattern from accelerated-decomposition's dogfood 02 (five specialists answered lettered questions in about 15 minutes)"
 				},
@@ -332,9 +332,10 @@
 					"statement": "pij's first procedures are: change a live seat's reasoning effort (from `docs/how/change-seat-effort.md`), bounce the daemon after an rs merge, and take a Copilot or OMP update. Diagnosing a seat that receives nothing moved to req-32.",
 					"actor": "operator",
 					"priority": "should",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "Each is a current procedure that a fresh seat has run end to end from the procedure alone. A disruptive one (bouncing the daemon) may be rehearsed at a quiet time or on a second daemon.",
-					"source": "pij-ultimate-scallop's recommendations, 2026-11-23; operator, 2026-11-23"
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23; operator, 2026-11-23",
+					"note": "Drafts: PROC-fleet-0001, PROC-daemon-0001, PROC-release-0001. Each needs the operator's yes (proc status current) and one full run; the daemon bounce at a quiet time or after the next rs merge."
 				},
 				{
 					"id": "req-25",
@@ -362,7 +363,7 @@
 					"statement": "No procedure tells a seat to save relayed messages or other raw input into the repo. Data locations are cited from one blueprint, not written into procedure text.",
 					"actor": "reviewer",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "The meta procedure and the drift check reject a step that writes relayed message bodies under `docs/`.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (relaxed-deer)"
 				},
@@ -393,7 +394,7 @@
 					"statement": "PROC-meta-0002, \"set up procedures in a repo\", is stored with the pij skill, with everything it needs in its folder (the `pij/procedure` schema to copy, templates and setup scripts). Run against any repo, it adds the schema, the procedures folder, the justfile import and the drift check, and does nothing on a repo already set up.",
 					"actor": "author",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Run in a fresh repo, it leaves a first procedure that validates and a drift check that passes; run a second time, it changes nothing.",
 					"source": "operator, 2026-11-23"
 				},
@@ -525,6 +526,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s05: req-06, 19, 20, 21, 28 and 31 shipped (report, harness checks stage, generated list, status with the approver, no background cost: the daemon spawn counter did not move across list and check, and the check runs in about 0.1 s; every how-to page has a fate). req-18 and 27 in progress until the first procedures carry links and PROC-meta-0001 states the rule. req-24 narrowed; diagnosing a seat and three pages marked for later become req-32."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s06: req-04, 05, 18, 23, 27 and 30 shipped. Nine procedures written (PROC-meta-0001, 0002; PROC-docs-0001 to 0004; PROC-fleet-0001, PROC-daemon-0001, PROC-release-0001). PROC-meta-0002 ran on a fresh repo and a second run changed nothing; deleting PROC-fleet-0001 left no file only it used and the checks green; ddocs links lists PROC-meta-0002 carrying out req-30. Step ids became s0001 (ddocs address segments start with a letter) and yes/no fields replaced booleans (ddocs has no boolean type). req-24 stays in progress: the three pij procedures are drafts until the operator approves them and each has run end to end (the daemon one at a quiet time)."
 				}
 			]
 		}

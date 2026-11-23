@@ -24,6 +24,12 @@
         "decision",
         "guide"
       ]
+    },
+    "yes_no": {
+      "values": [
+        "yes",
+        "no"
+      ]
     }
   },
   "sections": {
@@ -107,13 +113,15 @@
               "type": "text"
             },
             "required": {
-              "type": "boolean"
+              "type": "enum",
+              "enum": "yes_no"
             },
             "fallback": {
               "type": "text"
             },
             "secret": {
-              "type": "boolean"
+              "type": "enum",
+              "enum": "yes_no"
             }
           }
         }
@@ -221,7 +229,8 @@
               "type": "string"
             },
             "changes_access": {
-              "type": "boolean"
+              "type": "enum",
+              "enum": "yes_no"
             },
             "proven_in_practice": {
               "type": "text"

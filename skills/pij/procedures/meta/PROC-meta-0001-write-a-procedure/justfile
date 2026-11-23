@@ -1,0 +1,13 @@
+# PROC-meta-0001's own recipes. PROC_RUNNER is the runner that is running this procedure.
+
+look-first:
+    @node --experimental-strip-types --disable-warning=ExperimentalWarning "$PROC_RUNNER" list
+
+book:
+    @node --experimental-strip-types --disable-warning=ExperimentalWarning "$PROC_RUNNER" new "$PROC_IN_AREA" "$PROC_IN_SLUG" --title "$PROC_IN_TITLE" --kind "${PROC_IN_KIND:-runnable}"
+
+booked:
+    @ls -d docs/project/procedures/"$PROC_IN_AREA"/PROC-*-"$PROC_IN_SLUG" skills/pij/procedures/"$PROC_IN_AREA"/PROC-*-"$PROC_IN_SLUG" 2>/dev/null | grep -q .
+
+check:
+    @node --experimental-strip-types --disable-warning=ExperimentalWarning "$PROC_RUNNER" check
