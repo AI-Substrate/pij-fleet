@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-23",
+				"hook": "task-end",
+				"tags": [
+					"claims",
+					"scan",
+					"c34"
+				],
+				"title": "Claim scan: literal kinds and metadata errors"
+			}
+		},
+		{
+			"name": "body",
+			"value": "# Claim folder review: exact kind pairs and metadata errors\n\nPR #342 at df1a9d9ef6da21d019b8588b381417b0d5a97604 exposed two allocation hazards:\n\n- A generic kind whose literal name ends in `s` already has seeds `<kind>` and `<kind>s`. Stripping the suffix of both seeds admits a third, unrelated name: `status` unexpectedly scans `statu`. A literal-kind / plural pair must remain the authority.\n- `Path::is_dir()` hides metadata errors. A parent with mode 0400 can be enumerated while metadata of its children fails; silently skipping them hands out an existing number. A scan refusal test must cover failed child metadata, not only `read_dir` of an unreadable seed folder.\n\nBoth isolated HTTP regression assertions failed at this head and passed with main's allocation scan. Decorated and nested decoys, non-ASCII lookalikes, files, other folder-scanning kinds and shallow symlink reads had positive controls. Auto-release for uppercase delivered paths is a separate bookkeeping problem: an open claim still prevents reuse. It remains a C35 proposal, not an excuse to widen this approved fix.\n\n**Magic wand:** retain a shared claim-folder contract fixture covering both directory enumeration and delivered-path recognition, including generic kinds ending in `s` and real metadata errors. This prevents the help, allocation reader and release reader from drifting.\n\n**Difficulties:** the dependency-free review tree's harness boot is NOT-READY, and quick checks fail on missing TS tools and ambient Biome skew. C25 remains authoritative: no dependency symlink or install; exact-head CI carries TS proof. Mutants were run from an owned git archive with the canonical shared target, nice19, one build at a time; only that owned directory was cleaned.\n\nCurrent C34 is one reviewer, one round: author fixes; prime checks fix commits. Do not follow the older two-round memory entries.\n"
+		}
+	]
+}
