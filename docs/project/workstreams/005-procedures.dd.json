@@ -39,7 +39,7 @@
 				{
 					"id": "s03",
 					"title": "Schema, layout, id booking and the scaffold command",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/005-procedures.dd.json#requirements/req-01",
 						"../prds/005-procedures.dd.json#requirements/req-02",
@@ -180,6 +180,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s02 complete: blueprint 004. Steps s03 to s07 name the components they build; req-31 moves to s05 (the check), req-30 to s06 (the meta procedures)."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s03 complete."
 				}
 			]
 		}

@@ -102,7 +102,7 @@
 					"statement": "A procedure is a ddoc with schema `pij/procedure`: id, title, area, kind, status, owning role, who runs it and when, inputs, preconditions, steps, done when, known limits, common mistakes, links, comments (the notes a run leaves for the next one, kept apart from the changelog) and a changelog. Each step can record `proven_in_practice`: where and when it last ran for real, kept apart from status, because a step can exist without ever having run on real input.",
 					"actor": "author",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`ddocs validate` passes a complete procedure and fails one missing its steps or done-when.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23; proven_in_practice from accelerated-decomposition's dogfood 02 (2026-11-23)"
 				},
@@ -112,7 +112,7 @@
 					"statement": "Each procedure has an id `PROC-<area>-NNNN`, booked with `pij claim procedure --for <slug>`, from one ledger, never reused. Before `procedure` is added as a kind, `pij claim` finds a project's existing docs whatever the folder's case (`prds/` or `PRD/`).",
 					"actor": "author",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Two seats booking in the same area at once get different numbers, a released number is never handed out again, and in a repo whose PRDs live in `docs/project/PRD/` the next PRD number follows the highest one there.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
 				},
@@ -122,7 +122,7 @@
 					"statement": "Every procedure lives in its own folder: `docs/project/procedures/<area>/PROC-<area>-NNNN-<slug>/` for a project's own procedures, or the same shape under `skills/pij/procedures/` for procedures that ship with the pij skill to every project. There is no flat, single-file form.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A check fails on a procedure document outside a `PROC-*` folder in either home, and on a folder without exactly one procedure document.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (3 seats: two layouts were the worst confusion)"
 				},
@@ -132,7 +132,7 @@
 					"statement": "Anything that belongs only to one procedure lives in its folder: the procedure document, its justfile module, step scripts, step tests, fixtures and templates, and the how-to for humans. Deleting the folder removes the procedure completely.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "Deleting one procedure's folder leaves no file in the repo that only it used, and `harness checks` still passes.",
 					"source": "operator, 2026-11-23"
 				},
@@ -142,7 +142,7 @@
 					"statement": "What a procedure builds or operates, tests of a package's own code, shared tooling (the root justfile, `harness/scripts/`), anything that handles secrets and rules shared across procedures stay where they are. The procedure links each one by path or id, and declares every file it changes outside its folder.",
 					"actor": "author",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "Every path a procedure's steps run or change outside its folder appears in its links or declared side effects.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md"
 				},
@@ -162,7 +162,7 @@
 					"statement": "One command (`just proc new <area> <slug>`, or `pij proc new` outside pij) books the id and creates the folder, a valid procedure document and, for a runnable procedure, its own justfile, in the caller's own worktree. It refuses in the main checkout or on main, and prints the worktree it wrote to. The runner runs a procedure's justfile directly, so there is no import line in the root justfile and no recipe name can clash.",
 					"actor": "author",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Run from a feature worktree it creates a folder that passes `ddocs validate`; run from main it refuses and changes nothing.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (rising-crane: proc-new wrote into main)"
 				},
@@ -172,7 +172,7 @@
 					"statement": "Every procedure command works from any directory inside the checkout, not only the repo root. Commands that need `ddocs` (validate, status) run it from the repo root for you, because `ddocs` itself finds its schemas only from there.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Running a procedure's listing from inside its own folder and from the repo root gives the same output, and `just proc check` passes from a subdirectory.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (3 seats)"
 				},
@@ -499,6 +499,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "Workshop 003 settled by the operator's ruling of 2026-11-24: q-01 to q-09 answered with their proposed answers (q-05 and q-07 say what is left for later). Folded in accelerated-decomposition's dogfood 02 (req-01 proven_in_practice, req-23 drafting pattern). req-04, req-07 and req-08 follow the runner design: no root justfile import line; ddocs runs from the root for you."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s03: req-01, 02, 03, 07 and 08 shipped (schema pij/procedure, layout, `proc new` booking through pij claim procedure-<area>, any-directory runner); req-04 and 05 in progress until the first procedures prove them."
 				}
 			]
 		}

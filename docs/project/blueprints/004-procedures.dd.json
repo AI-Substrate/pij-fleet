@@ -33,7 +33,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-18",
 						"../prds/005-procedures.dd.json#requirements/req-21"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-layout",
@@ -46,7 +46,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-04",
 						"../prds/005-procedures.dd.json#requirements/req-05"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-booking",
@@ -58,7 +58,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-02",
 						"../prds/005-procedures.dd.json#requirements/req-07"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-runner",
@@ -325,9 +325,13 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "First draft (PRD 005, workstream 005 s02)."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s03: c-schema, c-layout and c-booking shipped."
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }

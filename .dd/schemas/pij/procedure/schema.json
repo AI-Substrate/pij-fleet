@@ -1,0 +1,438 @@
+{
+  "dd_schema": 1,
+  "description": "A pij procedure (PRD 005): how one piece of repeatable work is done. It lives in its own folder, `<home>/<area>/PROC-<area>-NNNN-<slug>/procedure.dd.json`, with everything only it uses. Steps are `just` recipes (run), a person's recorded decision (decision) or a pointer to another procedure or page (guide). Preconditions and done checks are recipes that pass on exit 0. The runner (`just proc`, `pij proc`) runs steps and records progress per checkout; status records approval and gates nothing.",
+  "enums": {
+    "proc_status": {
+      "values": [
+        "draft",
+        "current",
+        "superseded",
+        "retired"
+      ]
+    },
+    "proc_kind": {
+      "values": [
+        "runnable",
+        "mixed",
+        "guide",
+        "meta"
+      ]
+    },
+    "step_kind": {
+      "values": [
+        "run",
+        "decision",
+        "guide"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "area",
+          "kind",
+          "status",
+          "owner"
+        ],
+        "fields": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "enum",
+            "enum": "proc_kind"
+          },
+          "status": {
+            "type": "enum",
+            "enum": "proc_status"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "text"
+          },
+          "superseded_by": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "who_when": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "who",
+          "when"
+        ],
+        "fields": {
+          "who": {
+            "type": "text"
+          },
+          "when": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "inputs": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "description"
+          ],
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "text"
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "fallback": {
+              "type": "text"
+            },
+            "secret": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "preconditions": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "check",
+            "text",
+            "fix"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "check": {
+              "type": "string"
+            },
+            "text": {
+              "type": "text"
+            },
+            "fix": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "steps": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "kind",
+            "done_when"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "enum",
+              "enum": "step_kind"
+            },
+            "run": {
+              "type": "string"
+            },
+            "decide": {
+              "type": "string"
+            },
+            "follow": {
+              "type": "string"
+            },
+            "inputs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "pre": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "check",
+                  "fix"
+                ],
+                "fields": {
+                  "check": {
+                    "type": "string"
+                  },
+                  "fix": {
+                    "type": "text"
+                  }
+                }
+              }
+            },
+            "requires": {
+              "type": "array",
+              "items": {
+                "type": "link",
+                "target": "pij/procedure/section/steps",
+                "rel": "requires"
+              }
+            },
+            "done": {
+              "type": "string"
+            },
+            "done_when": {
+              "type": "text"
+            },
+            "who": {
+              "type": "string"
+            },
+            "changes_access": {
+              "type": "boolean"
+            },
+            "proven_in_practice": {
+              "type": "text"
+            },
+            "note": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "commands": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "title",
+            "run"
+          ],
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "run": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "done_when": {
+      "required": true,
+      "shape": {
+        "type": "text"
+      }
+    },
+    "known_limits": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "text"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "mistakes": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "text"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "carries_out": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "row",
+            "guarantees"
+          ],
+          "fields": {
+            "row": {
+              "type": "link",
+              "target": "pij/prd/section/requirements",
+              "rel": "carries_out"
+            },
+            "guarantees": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "operates": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "component"
+          ],
+          "fields": {
+            "component": {
+              "type": "link",
+              "target": "pij/blueprint/section/components",
+              "rel": "operates"
+            },
+            "note": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "uses": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "path",
+            "why"
+          ],
+          "fields": {
+            "path": {
+              "type": "string"
+            },
+            "why": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "side_effects": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "path",
+            "why"
+          ],
+          "fields": {
+            "path": {
+              "type": "string"
+            },
+            "why": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "comments": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "by",
+            "text"
+          ],
+          "fields": {
+            "date": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "text": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "by",
+            "change"
+          ],
+          "fields": {
+            "date": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "change": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}
