@@ -30,11 +30,11 @@
 				{
 					"id": "s02",
 					"title": "Blueprint: how procedures are built",
-					"state": "planned",
+					"state": "complete",
 					"depends_on": ["#steps/s01"],
 					"needs": ["role:reviewer"],
 					"done_when": "A blueprint realises every PRD 005 requirement with a component, and states the runner's cost (req-28).",
-					"note": "Claim its number with `pij claim blueprint --for procedures`. Steps s03 to s05 gain their `builds` once it exists."
+					"note": "Blueprint 004 (docs/project/blueprints/004-procedures.dd.json)."
 				},
 				{
 					"id": "s03",
@@ -47,10 +47,13 @@
 						"../prds/005-procedures.dd.json#requirements/req-04",
 						"../prds/005-procedures.dd.json#requirements/req-05",
 						"../prds/005-procedures.dd.json#requirements/req-07",
-						"../prds/005-procedures.dd.json#requirements/req-08",
-						"../prds/005-procedures.dd.json#requirements/req-31"
+						"../prds/005-procedures.dd.json#requirements/req-08"
 					],
-					"builds": [],
+					"builds": [
+						"../blueprints/004-procedures.dd.json#components/c-schema",
+						"../blueprints/004-procedures.dd.json#components/c-layout",
+						"../blueprints/004-procedures.dd.json#components/c-booking"
+					],
 					"depends_on": ["#steps/s02"],
 					"needs": ["role:coder", "role:reviewer"],
 					"done_when": "`pij/procedure` validates a complete procedure; `pij claim procedure` books ids; the scaffold creates a valid folder from a feature worktree, refuses on main, and works from any directory."
@@ -70,7 +73,11 @@
 						"../prds/005-procedures.dd.json#requirements/req-16",
 						"../prds/005-procedures.dd.json#requirements/req-17"
 					],
-					"builds": [],
+					"builds": [
+						"../blueprints/004-procedures.dd.json#components/c-runner",
+						"../blueprints/004-procedures.dd.json#components/c-progress",
+						"../blueprints/004-procedures.dd.json#components/c-verbs"
+					],
 					"depends_on": ["#steps/s03"],
 					"needs": ["role:coder", "role:reviewer", "role:performance"],
 					"done_when": "A three-step trial procedure shows idempotent steps, a refusing precondition with its fix, an order check across procedures, per-key progress, flags passed through and a long-running command outside the steps."
@@ -86,9 +93,16 @@
 						"../prds/005-procedures.dd.json#requirements/req-20",
 						"../prds/005-procedures.dd.json#requirements/req-21",
 						"../prds/005-procedures.dd.json#requirements/req-27",
-						"../prds/005-procedures.dd.json#requirements/req-28"
+						"../prds/005-procedures.dd.json#requirements/req-28",
+						"../prds/005-procedures.dd.json#requirements/req-31"
 					],
-					"builds": [],
+					"builds": [
+						"../blueprints/004-procedures.dd.json#components/c-list",
+						"../blueprints/004-procedures.dd.json#components/c-status",
+						"../blueprints/004-procedures.dd.json#components/c-check",
+						"../blueprints/004-procedures.dd.json#components/c-report",
+						"../blueprints/004-procedures.dd.json#components/c-page-sort"
+					],
 					"depends_on": ["#steps/s03"],
 					"needs": ["role:coder", "role:reviewer", "role:performance"],
 					"done_when": "`harness checks` fails on a broken link, a missing recipe or a misplaced file; the list is generated; a status change records the operator's yes; the spawn counter doesn't move while listing or checking."
@@ -99,12 +113,17 @@
 					"state": "planned",
 					"delivers": [
 						"../prds/005-procedures.dd.json#requirements/req-23",
-						"../prds/005-procedures.dd.json#requirements/req-24"
+						"../prds/005-procedures.dd.json#requirements/req-24",
+						"../prds/005-procedures.dd.json#requirements/req-30"
 					],
 					"depends_on": ["#steps/s04", "#steps/s05"],
 					"needs": ["role:coder", "role:reviewer"],
 					"done_when": "PROC-meta-0001 and the four first procedures are current, each run end to end by a fresh seat from the procedure alone.",
-					"note": "The first is docs/how/change-seat-effort.md (branch docs/change-seat-effort), moved into a procedure folder."
+					"note": "The first is docs/how/change-seat-effort.md (branch docs/change-seat-effort), moved into a procedure folder.",
+					"builds": [
+						"../blueprints/004-procedures.dd.json#components/c-meta",
+						"../blueprints/004-procedures.dd.json#components/c-exemplars"
+					]
 				},
 				{
 					"id": "s07",
@@ -114,12 +133,15 @@
 						"../prds/005-procedures.dd.json#requirements/req-22",
 						"../prds/005-procedures.dd.json#requirements/req-25",
 						"../prds/005-procedures.dd.json#requirements/req-26",
-						"../prds/005-procedures.dd.json#requirements/req-29",
-						"../prds/005-procedures.dd.json#requirements/req-30"
+						"../prds/005-procedures.dd.json#requirements/req-29"
 					],
 					"depends_on": ["#steps/s06"],
 					"needs": ["role:reviewer"],
-					"done_when": "The skill, packets and AGENTS.md carry the rule and point at procedures; the project-doc how-tos are PROC-docs procedures; the schema and PROC-meta-0002 (set up procedures in a repo) ship in the skill, and PROC-meta-0002 run on a fresh repo leaves a valid first procedure."
+					"done_when": "The skill, packets and AGENTS.md carry the rule and point at procedures; the project-doc how-tos are PROC-docs procedures; the schema and PROC-meta-0002 (set up procedures in a repo) ship in the skill, and PROC-meta-0002 run on a fresh repo leaves a valid first procedure.",
+					"builds": [
+						"../blueprints/004-procedures.dd.json#components/c-docs-procedures",
+						"../blueprints/004-procedures.dd.json#components/c-skill-rule"
+					]
 				},
 				{
 					"id": "s08",
@@ -153,6 +175,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s01 complete (operator ruling 2026-11-24). Plan: s02 to s07 in one PR on docs/prd-005-procedures."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s02 complete: blueprint 004. Steps s03 to s07 name the components they build; req-31 moves to s05 (the check), req-30 to s06 (the meta procedures)."
 				}
 			]
 		}
