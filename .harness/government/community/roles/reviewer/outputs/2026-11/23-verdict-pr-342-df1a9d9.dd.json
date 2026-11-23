@@ -1,0 +1,60 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a206fb-b23f-7f80-8a1d-7bd887b65eb2",
+				"date": "2026-11-23",
+				"head": "df1a9d9ef6da21d019b8588b381417b0d5a97604",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/342",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:342",
+				"writer": "pij-sound-porpoise",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"R342-F001: propagate directory metadata errors instead of silently claiming an existing number.",
+				"R342-F002: keep generic folder matching to the literal kind and its plural; status must not scan statu."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- test -p pij-daemon --test claims_http review342 -- --nocapture",
+					"exit_code": 101,
+					"log": "pr342-probes.log"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --test claims_http review342_main_regression -- --nocapture (main allocation scan)",
+					"exit_code": 0,
+					"log": "pr342-main-controls.log"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --test claims_http prd_claims_past_an_uppercase_prd_folder_and_every_other_spelling -- --nocapture (case-sensitive mutant)",
+					"exit_code": 101,
+					"log": "pr342-mutant-case.log"
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --test claims_http prd_claims_past_an_uppercase_prd_folder_and_every_other_spelling -- --nocapture (first-spelling mutant)",
+					"exit_code": 101,
+					"log": "pr342-mutant-first.log"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Review of #342\n\nHead: df1a9d9ef6da21d019b8588b381417b0d5a97604\n\n**Verdict: BLOCK** for R342-F001 and R342-F002, both introduced wrong-allocation behavior. One review round: the author fixes; the prime verifies the fix commits.\n\n## Findings\n\n**R342-F001 -- directory-stat errors become successful allocations**\n\n`crates/daemon/src/http/claims.rs:829-833`: `entry.path().is_dir()` returns false on metadata errors. A readable but non-searchable `docs/project` can therefore be enumerated, but its existing `prds` directory is silently skipped. In the isolated HTTP fixture, `prds/001-demo.dd.json` exists, the parent has mode 0400, parent enumeration succeeds, and stat fails. The response is nevertheless success with floor 0 and number 001, colliding with the existing document. Main's allocation scan refuses the unreadable directory instead.\n\nPropagate metadata failures through the existing scan-refusal path; skip a matching entry only when its metadata establishes that it is not a directory. Add a regression that restores permissions before asserting and proves both the real metadata failure and that no claim was booked.\n\n**R342-F002 -- generic kinds ending in `s` scan an unrelated name**\n\n`crates/core/src/claims.rs:156-160`, with `seed_folders` at lines 129-134: unknown kinds already supply both their literal name and that name plus `s`. Applying `strip_suffix('s')` to the literal seed also admits a third name. For `status`, the scan accepts `statu`, not just `status` and `statuss`. The isolated fixture with `status/003-own` and `statu/099-other` returns 100 rather than 004.\n\nKeep generic matching to the existing `<kind>` / `<kind>s` pair, case-insensitively; do not strip the literal kind's suffix again. Retain singular/plural support for the known folder table.\n\n## Nonblocking follow-up\n\n`crates/core/src/claims.rs:192-215` and `crates/daemon/src/http/claims.rs:400-403`: the delivered-path reader still uses exact folder prefixes. This is a real normal-use bookkeeping problem, not harmless: an uppercase PRD claim remains open after its merge. The isolated HTTP fixture confirms claim 091 remains open after an uppercase-path delivery while a lowercase-path delivery releases 092. The next claim remains 092 after the first delivery, so it does not reuse 091. This was explicitly excluded from the approved fix; it does not independently block this PR.\n\nWorth proposing to Jordan under C35: align delivered-path recognition with the approved folder spellings, so merges close the claims they actually deliver; pure path matching adds no launches, polls or timers.\n\n## Correctness and cost\n\nDecorated names (`prdx`, `my-prd`, `PRDs-archive`), a nested `old/prd`, non-ASCII lookalikes and a file named `PRD` are excluded. All known folder-scanning kinds, the archive's final segment and a generic kind passed the additional isolated case tests. C29 retains canonical `workstream` store keys for both `workstream` and `roadmap`; the existing mixed-case HTTP regression passes.\n\nThis scan is a **POLICY**, not a brake: it determines the allocation floor. The maximum aggregation is monotonic for successfully read folders, but that does not excuse either reading the wrong kind or suppressing errors.\n\nCost is command-triggered, with no ongoing loop, poll, timer, hook, new process launch or per-seat tick work: one parent `read_dir` per seed, one stat per name-matching entry, and one shallow `read_dir` per directory spelling. The existing root readability read remains. Sorting is per-command O(M log M) in matching spellings; entry enumeration is uncapped but nonrecursive. No live-daemon before/after measurement applies to an unchanged idle path, and no real-project claim or bounce was run.\n\n## Security and privacy\n\nNo vulnerabilities or private account names, emails or machine paths were found in the committed diff. Directory symlinks (including parent symlinks) can leave the repository, as before; the new spellings widen that existing read scope. The scan reads immediate entry names and numeric prefixes, not file contents, and never recursively descends, so a cycle cannot cause recursive traversal. This is depth-bounded, not entry-count-bounded or repository-confined. Matching names are restricted to ASCII seed spellings; no discovered arbitrary name is interpolated into an executable repair argument.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| - | - | - | - | None found | - |\n\n## Verification\n\nAll Cargo commands ran from an owned archive of this exact head through the resolved shared target, nice19 and its four-job lock. No dependency installation or node_modules symlink was used; the detached review worktree remains clean.\n\n| Command | Result |\n|---|---|\n| `just pr-freeze 342` | FINAL at the exact head; all 5 CI checks passed |\n| `just shared-build -- test -p pij-core -p pij-daemon --lib claims -- --nocapture` | Passed: 8 core and 17 daemon tests, including all 3 daemon claim unit tests |\n| `just shared-build -- test -p pij-daemon --test claims_http -- --nocapture` | Passed: all 15 existing HTTP tests |\n| `just shared-build -- clippy -p pij-core -p pij-daemon --all-targets -- -D warnings` | Passed locally on macOS |\n| `just shared-build -- fmt --all -- --check` | Passed |\n| `just shared-build -- test -p pij-daemon --test claims_http review342 -- --nocapture` | 4 controls passed; both new allocation regressions failed on assertions, exit 101 |\n| `just shared-build -- test -p pij-daemon --test claims_http review342_main_regression -- --nocapture` with main's allocation scan | Both regressions passed, exit 0 |\n| `just shared-build -- test -p pij-daemon --test claims_http -- --nocapture --skip review342_main_regression` after byte-for-byte source restoration | Passed: all 15 existing tests and 4 additional controls |\n| `just shared-build -- test -p pij-daemon --test claims_http review342_main_regression -- --nocapture` after restoration | Both head regressions reconfirmed on their assertions, exit 101 |\n| `harness boot` | NOT-READY: dependency-free review tree, Rust-only work continued |\n| `harness checks --quick` | Exit 1: missing TS dependencies/tools and incompatible ambient Biome; native contracts, SDK and skill checks passed; heavy stages not run locally |\n\nCI receipts: [check (22)](https://github.com/AI-Substrate/pij-fleet/actions/runs/45120350059/job/137512441891), [check (24)](https://github.com/AI-Substrate/pij-fleet/actions/runs/45120350059/job/137512442027), [Rust lint](https://github.com/AI-Substrate/pij-fleet/actions/runs/45120350059/job/137512441921), [Rust tests](https://github.com/AI-Substrate/pij-fleet/actions/runs/45120350059/job/137512441705), [Delivers](https://github.com/AI-Substrate/pij-fleet/actions/runs/45120350090/job/137512441468).\n\nLocal receipts are retained as `pr342-baseline.log`, `pr342-probes.log`, `pr342-main-controls.log` and `pr342-harness-checks.log`. Machine paths and raw environment output are deliberately not included in this public document.\n\n**Independent mutation checks:** each ran `just shared-build -- test -p pij-daemon --test claims_http prd_claims_past_an_uppercase_prd_folder_and_every_other_spelling -- --nocapture` in the owned archive. The case-sensitive matcher mutant failed on `002 != 091`; the first-spelling-only mutant failed on `092 != 094`. Both compiled and ran one intended test, exited 101 on its oracle, and are killed independently. Receipts: `pr342-mutant-case.log`, `pr342-mutant-first.log`. Neither compile errors nor zero-test runs were counted as kills.\n\nRestored-run receipt: `pr342-restored.log`. The archive was removed only after its commands finished; no broad temp-directory sweep was used.\n\n## Regression oracles\n\nAppend these to the existing isolated `crates/daemon/tests/claims_http.rs` fixture. They exercise only its fake project, store and HTTP server, never the real daemon:\n\n```rust\n#[tokio::test]\nasync fn review342_main_regression_generic_kind_ending_s_does_not_scan_another_kind() {\n    let rig = rig(\"pij-review342-status\", Vec::new()).await;\n    std::fs::create_dir_all(rig.main.join(\"docs/project/status/003-own\")).unwrap();\n    std::fs::create_dir_all(rig.main.join(\"docs/project/statu/099-other\")).unwrap();\n    let result = rig\n        .call(CODER, \"/v1/claim\", &[\"claim\", \"status\", \"--for\", \"own\"])\n        .await;\n    assert_eq!(result[\"data\"][\"number\"], 4, \"{result}\");\n}\n\n#[tokio::test]\nasync fn review342_main_regression_stat_failure_refuses_without_claiming() {\n    use std::os::unix::fs::PermissionsExt;\n\n    let rig = rig(\"pij-review342-stat\", Vec::new()).await;\n    let parent = rig.main.join(\"docs/project\");\n    let permissions = std::fs::metadata(&parent).unwrap().permissions();\n    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o400)).unwrap();\n    let parent_readable = std::fs::read_dir(&parent).is_ok();\n    let stat_failed = std::fs::metadata(parent.join(\"prds\")).is_err();\n    let result = rig\n        .call(CODER, \"/v1/claim\", &[\"claim\", \"prd\", \"--for\", \"must refuse\"])\n        .await;\n    std::fs::set_permissions(&parent, permissions).unwrap();\n    assert!(parent_readable && stat_failed, \"permission control\");\n    assert_eq!(result[\"ok\"], false, \"{result}\");\n    assert_eq!(result[\"details\"][\"code\"], \"E-RS-CLAIM-SCAN\", \"{result}\");\n    assert!(rig.store.claims(\"demo\").await.unwrap().is_empty());\n}\n```\n"
+		}
+	]
+}
