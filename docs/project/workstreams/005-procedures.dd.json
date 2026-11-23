@@ -47,7 +47,8 @@
 						"../prds/005-procedures.dd.json#requirements/req-04",
 						"../prds/005-procedures.dd.json#requirements/req-05",
 						"../prds/005-procedures.dd.json#requirements/req-07",
-						"../prds/005-procedures.dd.json#requirements/req-08"
+						"../prds/005-procedures.dd.json#requirements/req-08",
+						"../prds/005-procedures.dd.json#requirements/req-31"
 					],
 					"builds": [],
 					"depends_on": ["#steps/s02"],
@@ -142,6 +143,11 @@
 					"date": "2026-11-23",
 					"by": "pij-intense-herring",
 					"change": "s07 delivers PRD 005 req-30: PROC-meta-0002, set up procedures in a repo, stored with the pij skill."
+				},
+				{
+					"date": "2026-11-23",
+					"by": "pij-intense-herring",
+					"change": "s03 delivers PRD 005 req-31 (sort the existing how-tos in the layout PR)."
 				}
 			]
 		}

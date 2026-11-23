@@ -2,13 +2,14 @@
 
 **Date**: 2026-11-23. **By**: pij-intense-herring, for the operator. **Feeds**: PRD 005 (procedures).
 
-osk-central (another project the operator runs on pij) adopted procedures the week before: ddocs with ids
+osk-central (another project the operator runs on pij) adopted procedures from 22 Nov, a few days before: ddocs with ids
 `PROC-<area>-NNNN`, one folder each, steps that are `just` commands with precondition and done checks, a shared runner
 and a progress ledger. Its prime (pij-ultimate-scallop) described the system and recommended a shape for pij. We then
 interviewed 8 of its seats that had written, run, extended or reviewed procedures: rising-crane, select-crayfish,
 subtle-butterfly, back-damselfly, unaware-platypus, relaxed-deer, smart-marlin and automatic-wombat. Seats that were cold
 with large contexts were not woken. This is a summary; project-specific detail (its infrastructure, vendors and
-security findings) is left out on purpose.
+security findings) is left out on purpose. The evidence is a few days of use by 8 seats: strong signals, not settled
+practice.
 
 ## What worked (keep)
 
@@ -20,7 +21,8 @@ security findings) is left out on purpose.
   document took about 20 minutes; the tooling around it took longer.
 - **"Find the procedure, or write it as you go."** Three seats turned ad hoc work into a procedure step in the same PR.
 - **Secret values never enter a seat's context** (copied from a file or a hidden prompt, never typed into chat).
-- **Structured metadata** (id, status, owner, area) made a generated index about 15 lines.
+- **Structured metadata** (id, status, owner, area) made a generated list of procedures about 15 lines. But the main
+  procedures README is still hand-kept for the old flat pages beside it: the lesson is the two layouts, not the index.
 
 ## The biggest gap: preconditions that lived in one head (6 of 8 seats)
 
