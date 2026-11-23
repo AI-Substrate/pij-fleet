@@ -312,7 +312,7 @@
 					"statement": "The pij skill tells every seat to find the procedure for repeatable work and follow it, or write one as it goes. Seat packets point at the procedure for their task, and reviewers flag repeatable work done without one.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "The pij skill and the worker and reviewer packets state the rule, and a reviewer verdict names a missing procedure.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (rule 0 changed fleet behaviour most)"
 				},
@@ -343,7 +343,7 @@
 					"statement": "The how-tos for writing a PRD, blueprint or workstream and folding in a ruling (`skills/pij/references/community/`) become procedures in the `docs` area, and the old pages point at them.",
 					"actor": "author",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Each old page is a pointer to a PROC-docs procedure, and the procedures validate.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
 				},
@@ -353,7 +353,7 @@
 					"statement": "A rule in AGENTS.md that is really a procedure step keeps one line there, linked to its procedure, so every seat still sees it at startup.",
 					"actor": "seat",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Each rule moved into a procedure still has a one-line entry in AGENTS.md that links to it.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23, amended"
 				},
@@ -531,6 +531,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s06: req-04, 05, 18, 23, 27 and 30 shipped. Nine procedures written (PROC-meta-0001, 0002; PROC-docs-0001 to 0004; PROC-fleet-0001, PROC-daemon-0001, PROC-release-0001). PROC-meta-0002 ran on a fresh repo and a second run changed nothing; deleting PROC-fleet-0001 left no file only it used and the checks green; ddocs links lists PROC-meta-0002 carrying out req-30. Step ids became s0001 (ddocs address segments start with a letter) and yes/no fields replaced booleans (ddocs has no boolean type). req-24 stays in progress: the three pij procedures are drafts until the operator approves them and each has run end to end (the daemon one at a quiet time)."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s07: req-22, 25 and 26 shipped. SKILL.md invariant 13 states rule 0; coder v5 and reviewer v4 templates carry it (a verdict names repeatable work done without a procedure); the community how-tos are PROC-docs-0001 to 0004 and the old pages point at them; AGENTS.md gains a procedures section and one-line pointers to PROC-daemon-0001 and PROC-release-0001."
 				}
 			]
 		}

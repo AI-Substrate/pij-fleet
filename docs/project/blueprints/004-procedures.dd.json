@@ -172,7 +172,7 @@
 					"where": "skills/pij/procedures/docs/",
 					"responsibility": "Write a PRD, a blueprint and a workstream, and fold in a ruling, as PROC-docs procedures; the old community pages point at them.",
 					"realises": ["../prds/005-procedures.dd.json#requirements/req-25"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-exemplars",
@@ -196,13 +196,13 @@
 					"id": "c-skill-rule",
 					"name": "The rule in the skill",
 					"kind": "skill",
-					"where": "skills/pij/SKILL.md, the role templates, AGENTS.md",
+					"where": "skills/pij/SKILL.md (invariant 13, the pij proc line, an alias row); templates/roles/coder/v5 and reviewer/v4 (pinned in crates/daemon/src/community/templates.rs); AGENTS.md",
 					"responsibility": "Find the procedure and follow it, or write one as you go: in the skill, the worker and reviewer packets, and AGENTS.md, which keeps one line per rule that moved into a procedure.",
 					"realises": [
 						"../prds/005-procedures.dd.json#requirements/req-22",
 						"../prds/005-procedures.dd.json#requirements/req-26"
 					],
-					"state": "planned"
+					"state": "shipped"
 				}
 			]
 		},
@@ -345,6 +345,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s06: c-meta shipped; c-exemplars in progress (drafts awaiting the operator and a full run)."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s07: c-docs-procedures and c-skill-rule shipped; c-skill-rule names the new template versions."
 				}
 			]
 		}

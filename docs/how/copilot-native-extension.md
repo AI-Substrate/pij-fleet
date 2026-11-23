@@ -276,7 +276,7 @@ A new Copilot CLI can change its SDK without a word, as 1.0.113 did (F208): ever
 seat that reloads onto it loses `pij_send` and its hooks. Check before any seat
 reloads.
 
-**Take updates with `just update-copilot`.** It runs `copilot update`, then the
+**Take updates with `just update-copilot`** (the whole job, with when seats reload, is procedure PROC-release-0001: `just proc PROC-release-0001 --key copilot-<version>`). It runs `copilot update`, then the
 [installed SDK contract](#installed-sdk-contract-d-f208-1) on the version now
 installed, and:
 

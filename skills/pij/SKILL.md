@@ -64,6 +64,8 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 
 `pij fleet-map init|generate|open` is a shim-local skill tool (`tools/fleet-map/`, node, no daemon): the project as a metro map, structure in `<government-root>/fleet-map/`, page and data copied into the main checkout's git-ignored `scratch/fleet-map/`, plus `fleet-map.standalone.html` with the data inlined for single-file viewers such as Chainglass (edits there are overwritten; change the template in the pij repo). Ops route § Fleet map.
 
+`pij proc [list|new|status|check|report|<proc> [<step>]]` is a shim-local skill tool (`tools/procedures/`, loaded in-process, no daemon): procedures (PRD 005), one folder each in `procedures/` (shipped with this skill) or a project's `docs/project/procedures/`. Set a repo up with `pij proc PROC-meta-0002`.
+
 The shim hands `directory`, `claim`, `claims`, `delivered` and `requests`, and a `send` to `role:<id>`, with `--to` or `--help`, to `pij-rs` unchanged: the same output, help and exit code ([shim forwarding](../../docs/how/pij-rs-api.md#shim-forwarding-plan-213), plan 213).
 
 `/pij prime` selects the skill route; `pij orchestration prime` invokes its CLI
@@ -116,6 +118,7 @@ output verdict --role reviewer --subject pr:211 --head abc1234 --result pass
 10. **Questions stay with their context owner**: whoever needs the answer asks the human directly; parents receive a pointer and never proxy. Doctrine for 9–10: `references/prime/protocol.md` § Human rulings.
 11. **Isolation removes edit-time serialization, not convergence-time serialization**: work confined to a verified stream worktree/branch is notify-only under a recorded descriptive fence; synchronize at converging histories or shared mutable resources. Trigger matrix: `references/prime/rituals/batons.md`.
 12. **Report at both edges of work — if you owe a card**: run `pij report now "<did>" "<next>"` at the start and finish of each unit. PMs, stream orchestrators and primes owe this cadence (Jordan, 2026-07-31; [orient-oprime](references/prime/orient-oprime.md) duty 7); a prime reports its own governance altitude, not copied stream work. Long units report meaningful boundaries, not running commentary. Supervisors own subordinate freshness: query `pij anomalies --json` **unscoped**, because `status-stale` is node-keyed and project/here filters can hide it, then follow the actual remediation until the card changes — for seats that are working or owe a card; a stale card on an idle or done seat is not a nudge trigger (protocol § Fleet messaging). A nudge is a backstop, never the trigger. A PA is a bootstrap obligation (bootstrap §5): the daemon's watchdog always serves PAs and feeds them the fleet's state; other seats opt in (§ C9).
+13. **Find the procedure, or write it as you go (PRD 005, rule 0)**: before repeatable work, look for its procedure (`pij proc`; in pij `just proc`) and follow it; with none, write one as you go (`pij proc PROC-meta-0001`). Reviewers name repeatable work done without one. A draft procedure is usable; status only records the operator's yes.
 
 ## Aliases (read-time — never a second implementation)
 
@@ -128,6 +131,7 @@ output verdict --role reviewer --subject pr:211 --head abc1234 --result pass
 | "have a peer run /X on …" / "run a skill in a peer" | `/pij skill` |
 | "stand up an o-prime" / "govern this repo" | `/pij prime` |
 | "set up a community" / "PEC" / "add a role" / "assign a seat to a role" | `/pij community` |
+| "find / run / write a procedure" / "PROC-…" | `pij proc` (CLI, not a route); write one with `pij proc PROC-meta-0001` |
 
 ## References
 

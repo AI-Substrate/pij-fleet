@@ -128,7 +128,7 @@
 				{
 					"id": "s07",
 					"title": "Update the pij skill",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/005-procedures.dd.json#requirements/req-22",
 						"../prds/005-procedures.dd.json#requirements/req-25",
@@ -210,6 +210,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s06 complete."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s07 complete."
 				}
 			]
 		}
