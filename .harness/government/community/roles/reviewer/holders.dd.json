@@ -3020,6 +3020,16 @@
 					"seat": "pij-selective-moose",
 					"to": "2026-11-22T08:01:44.696Z",
 					"why": "#341 cc-alt UDS single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-23T05:58:07.524Z",
+					"harness": "copilot",
+					"harness_session": "b80e8708-c7c2-43df-9ebf-75542d1efb76",
+					"instance_key": "342",
+					"machine": "studio",
+					"seat": "pij-sound-porpoise",
+					"why": "#342 claim-prd-case single review (amended C34; Jordan-approved)"
 				}
 			]
 		}
