@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-24",
+				"hook": "Open before writing a pij/procedure document, adding a role template version, printing a pij command in a template packet, or adding a skill tool to the pij shim",
+				"tags": [
+					"prd-005",
+					"procedures",
+					"ddocs",
+					"templates",
+					"shim",
+					"harness-checks"
+				],
+				"title": "PRD 005 procedures build: ddocs, template and gate traps"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PRD 005 (procedures) build, branch docs/prd-005-procedures, worktree ../docs-prd-005-procedures. Traps hit, in order:\n\n- ddocs address segments must start with a letter: step ids are `s0001`, not `0001` (a `requires` link to `#steps/0003` is E405). The runner accepts `0001` as shorthand.\n- ddocs has no `boolean` type: it validates, but `ddocs build --check` reports \"adapter-not-found\" and ddocs-check fails. Use an enum (`yes_no`).\n- `ddocs set` needs `--value-json` for arrays (E453); a script that ignores ddocs' JSON status hides that.\n- The role templates are compiled into the daemon (`crates/daemon/src/community/templates.rs`: SHIPPED and PINNED sha256 rows). A new template version also has to update `crates/daemon/tests/templates_http/mod.rs`, which pins coder's version list.\n- `crates/cli/tests/skill_verb_coverage.rs` checks every `pij …` command printed in a template packet against pij-rs's native verbs; shim-local verbs (fleet-map, proc) are now allowed through SHIM_LOCAL_VERBS.\n- `.omp/extensions/pij/core/message.test.ts` bans the legacy frame-head literal anywhere in skills/pij; build such a string from parts.\n- Biome can't parse a top-level `return` in a .cjs file (node accepts it): wrap the branches in functions.\n- Cargo stops at the first failing test binary: after fixing one, rerun all of `just rust-check`. Keep the full log in a file; `| cut` hid the failure once.\n- Run your own procedure for real before calling it done: a fresh-repo run found five runner bugs that the unit tests missed (skill-home detection, EPIPE on `| head`, among others).\n"
+		}
+	]
+}
