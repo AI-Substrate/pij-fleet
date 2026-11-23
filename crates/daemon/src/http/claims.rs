@@ -796,7 +796,8 @@ fn floor(repo: &Path, kind: &str) -> Result<Floor, Refusal> {
     std::fs::read_dir(repo).map_err(|error| unreadable(repo, error))?;
     let mut floor = Floor::default();
     for folder in claims::seed_folders(kind) {
-        let dirs = spellings(repo, &folder).map_err(|(path, error)| unreadable(&path, error))?;
+        let dirs =
+            spellings(repo, kind, &folder).map_err(|(path, error)| unreadable(&path, error))?;
         for dir in dirs {
             if let Some(highest) =
                 highest_in(&dir, kind).map_err(|error| unreadable(&dir, error))?
@@ -812,9 +813,15 @@ fn floor(repo: &Path, kind: &str) -> Result<Floor, Refusal> {
 /// Every directory under `repo` that spells `folder`: its parent as written,
 /// its last segment by [`claims::names_folder`] (`docs/project/prds` finds
 /// `prds`, `prd` and `PRD`). Empty when the parent is absent. One read of the
-/// parent, in-process.
+/// parent, and one `stat` per entry whose name matches, in-process.
+///
+/// An entry is skipped only when its metadata PROVES it is not a directory
+/// (or it vanished); a `stat` that fails otherwise (a parent readable but not
+/// searchable) refuses, as main's direct read did: an unread folder is not an
+/// empty one (review R342-F001).
 fn spellings(
     repo: &Path,
+    kind: &str,
     folder: &str,
 ) -> Result<Vec<std::path::PathBuf>, (std::path::PathBuf, std::io::Error)> {
     let (parent, last) = folder.rsplit_once('/').unwrap_or(("", folder));
@@ -827,9 +834,15 @@ fn spellings(
     let mut dirs = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| (parent.clone(), error))?;
-        if claims::names_folder(last, &entry.file_name().to_string_lossy()) && entry.path().is_dir()
-        {
-            dirs.push(entry.path());
+        if !claims::names_folder(kind, last, &entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        let path = entry.path();
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_dir() => dirs.push(path),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err((path, error)),
         }
     }
     dirs.sort();
@@ -869,7 +882,7 @@ fn highest_in(dir: &Path, kind: &str) -> std::io::Result<Option<u64>> {
 fn unseeded_warning(repo: &Path, kind: &str, number: u64) -> Option<String> {
     claims::warn_folders(kind)
         .into_iter()
-        .filter_map(|folder| spellings(repo, &folder).ok())
+        .filter_map(|folder| spellings(repo, kind, &folder).ok())
         .flatten()
         .filter_map(|dir| {
             let highest = highest_in(&dir, kind).ok().flatten()?;

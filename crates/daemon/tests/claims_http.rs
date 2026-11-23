@@ -603,6 +603,60 @@ async fn workstream_and_roadmap_share_one_counter_across_mixed_case_folders() {
     assert_eq!(claim("workstream").await["data"]["formatted"], "010");
 }
 
+/// Review R342-F001: a parent folder that can be listed but not searched
+/// (mode 0400) hides whether `prds` is a folder. That is an unread folder, not
+/// an absent one: the claim refuses and books nothing, as main did, rather
+/// than handing out 001 beside prds/001.
+#[tokio::test]
+async fn review_r342_a_listable_unsearchable_parent_refuses_and_books_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let rig = rig("pij-review-r342-f001", Vec::new()).await;
+    let project = rig.main.join("docs/project");
+    let permissions = std::fs::metadata(&project).unwrap().permissions();
+    std::fs::set_permissions(&project, std::fs::Permissions::from_mode(0o400)).unwrap();
+    let listable = std::fs::read_dir(&project).is_ok();
+    let unsearchable = std::fs::metadata(project.join("prds")).is_err();
+    let result = rig
+        .call(
+            CODER,
+            "/v1/claim",
+            &["claim", "prd", "--for", "must not collide"],
+        )
+        .await;
+    std::fs::set_permissions(&project, permissions).unwrap();
+    assert!(
+        listable && unsearchable,
+        "the control: docs/project lists but cannot be searched"
+    );
+    assert_eq!(
+        result["ok"], false,
+        "an unread folder is not an empty one: {result}"
+    );
+    assert_eq!(result["details"]["code"], "E-RS-CLAIM-SCAN", "{result}");
+    assert!(rig.store.claims("demo").await.unwrap().is_empty());
+}
+
+/// Review R342-F002: a kind pij does not know matches only `<kind>` and
+/// `<kind>s`, in any case. `status` must not read a folder named `statu`.
+#[tokio::test]
+async fn review_r342_an_unknown_kind_reads_only_its_own_two_names() {
+    let rig = rig("pij-review-r342-f002", Vec::new()).await;
+    std::fs::create_dir_all(rig.main.join("docs/project/Status/003-a")).unwrap();
+    std::fs::create_dir_all(rig.main.join("docs/project/statu/099-b")).unwrap();
+    let claimed = rig
+        .call(CODER, "/v1/claim", &["claim", "status", "--for", "s"])
+        .await;
+    assert_eq!(claimed["data"]["formatted"], "004", "{claimed}");
+    std::fs::create_dir_all(rig.main.join("docs/project/BENCHMARKS/006-c")).unwrap();
+    assert_eq!(
+        rig.call(CODER, "/v1/claim", &["claim", "benchmark", "--for", "b"])
+            .await["data"]["formatted"],
+        "007",
+        "docs/project/<kind>s in any case"
+    );
+}
+
 /// F171: a kind pij does not know is numbered past its project folder. With
 /// docs/project/usage/001-019 merged, `usage` claims 020, then 021 once 020
 /// exists. An empty or missing folder starts at 001. Files only in
