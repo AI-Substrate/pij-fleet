@@ -775,8 +775,13 @@ async fn edits(
 
 /// The highest number of `kind` already in the project's main checkout, read
 /// in-process (no launch), and whether any of its [`claims::seed_folders`]
-/// exists; 0 when none does. A checkout or folder that exists but cannot be
-/// read refuses: an unread folder is not an empty one (review of #131, F001).
+/// exists, under any spelling ([`spellings`]); 0 when none does. A checkout or
+/// folder that exists but cannot be read refuses: an unread folder is not an
+/// empty one (review of #131, F001).
+///
+/// A POLICY: the scan decides the number. Reading every spelling (`prds`,
+/// `prd`, `PRD`) can only raise it, to past the highest across all of them,
+/// never hand out a number a folder already holds.
 fn floor(repo: &Path, kind: &str) -> Result<Floor, Refusal> {
     let unreadable = |path: &Path, error: std::io::Error| {
         Refusal::new(
@@ -791,13 +796,57 @@ fn floor(repo: &Path, kind: &str) -> Result<Floor, Refusal> {
     std::fs::read_dir(repo).map_err(|error| unreadable(repo, error))?;
     let mut floor = Floor::default();
     for folder in claims::seed_folders(kind) {
-        let dir = repo.join(folder);
-        if let Some(highest) = highest_in(&dir, kind).map_err(|error| unreadable(&dir, error))? {
-            floor.highest = floor.highest.max(highest);
-            floor.found = true;
+        let dirs =
+            spellings(repo, kind, &folder).map_err(|(path, error)| unreadable(&path, error))?;
+        for dir in dirs {
+            if let Some(highest) =
+                highest_in(&dir, kind).map_err(|error| unreadable(&dir, error))?
+            {
+                floor.highest = floor.highest.max(highest);
+                floor.found = true;
+            }
         }
     }
     Ok(floor)
+}
+
+/// Every directory under `repo` that spells `folder`: its parent as written,
+/// its last segment by [`claims::names_folder`] (`docs/project/prds` finds
+/// `prds`, `prd` and `PRD`). Empty when the parent is absent. One read of the
+/// parent, and one `stat` per entry whose name matches, in-process.
+///
+/// An entry is skipped only when its metadata PROVES it is not a directory
+/// (or it vanished); a `stat` that fails otherwise (a parent readable but not
+/// searchable) refuses, as main's direct read did: an unread folder is not an
+/// empty one (review R342-F001).
+fn spellings(
+    repo: &Path,
+    kind: &str,
+    folder: &str,
+) -> Result<Vec<std::path::PathBuf>, (std::path::PathBuf, std::io::Error)> {
+    let (parent, last) = folder.rsplit_once('/').unwrap_or(("", folder));
+    let parent = repo.join(parent);
+    let entries = match std::fs::read_dir(&parent) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err((parent, error)),
+    };
+    let mut dirs = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| (parent.clone(), error))?;
+        if !claims::names_folder(kind, last, &entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        let path = entry.path();
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_dir() => dirs.push(path),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err((path, error)),
+        }
+    }
+    dirs.sort();
+    Ok(dirs)
 }
 
 /// What the checkout says about a kind's next number.
@@ -826,16 +875,19 @@ fn highest_in(dir: &Path, kind: &str) -> std::io::Result<Option<u64>> {
     Ok(Some(highest))
 }
 
-/// A warning when `docs/<kind>` or `docs/<kind>s` already holds `number` or
-/// above (F171). Read only when no seed folder exists, and only to warn: it
-/// never sets the number and never refuses, so a folder it cannot read warns
-/// nothing.
+/// A warning when `docs/<kind>` or `docs/<kind>s` (any spelling) already holds
+/// `number` or above (F171). Read only when no seed folder exists, and only to
+/// warn: it never sets the number and never refuses, so a folder it cannot
+/// read warns nothing.
 fn unseeded_warning(repo: &Path, kind: &str, number: u64) -> Option<String> {
     claims::warn_folders(kind)
         .into_iter()
-        .filter_map(|folder| {
-            let highest = highest_in(&repo.join(&folder), kind).ok().flatten()?;
-            (highest >= number).then_some((highest, folder))
+        .filter_map(|folder| spellings(repo, kind, &folder).ok())
+        .flatten()
+        .filter_map(|dir| {
+            let highest = highest_in(&dir, kind).ok().flatten()?;
+            let shown = dir.strip_prefix(repo).unwrap_or(&dir).display().to_string();
+            (highest >= number).then_some((highest, shown))
         })
         .max()
         .map(|(highest, folder)| claims::unseeded_warning(kind, number, &folder, highest))
@@ -982,6 +1034,34 @@ mod tests {
         let warned = unseeded_warning(&root, "adr", 12).expect("012 is taken");
         assert!(warned.starts_with("warning: docs/adrs already holds numbers up to 012"));
         assert_eq!(unseeded_warning(&root, "adr", 13), None, "past it");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// `prd` and `PRD` side by side (a case-sensitive filesystem; on default
+    /// APFS they are one folder): the highest across both, never the first
+    /// found. Either way 097 is the floor, so the next claim cannot reuse it.
+    #[test]
+    fn both_spellings_of_a_folder_count_and_the_highest_wins() {
+        let root = pij_testkit::fresh_dir("pij-claims-spellings");
+        std::fs::create_dir_all(root.join("docs/project/PRD/090-a")).unwrap();
+        std::fs::create_dir_all(root.join("docs/project/prd/097-b")).unwrap();
+        std::fs::create_dir_all(root.join("docs/project/Prds/093-c")).unwrap();
+        let names: Vec<String> = std::fs::read_dir(root.join("docs/project"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.iter().any(|name| name == "Prds"), "{names:?}");
+        assert_eq!(
+            floor(&root, "prd").unwrap(),
+            Floor {
+                highest: 97,
+                found: true
+            },
+            "spellings present: {names:?}"
+        );
+        // A file named like the folder is not the folder.
+        std::fs::write(root.join("docs/project/prdS"), "").ok();
+        assert_eq!(floor(&root, "prd").unwrap().highest, 97);
         let _ = std::fs::remove_dir_all(root);
     }
 }

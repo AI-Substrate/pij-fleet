@@ -66,7 +66,10 @@ claimed (open or released) and the highest already in the project's main
 checkout. Any other kind is read from docs/project/<kind>, then
 docs/project/<kind>s (NNN-* files and folders). When neither exists,
 docs/<kind> and docs/<kind>s are read only to warn when they already hold
-the claimed number or above; they never set it. A claim is released when its
+the claimed number or above; they never set it. A folder's name matches in
+any case, and every spelling present is read: a known kind's folder also in
+the singular (docs/project/PRD counts for prd); any other kind's only as
+<kind> or <kind>s. A claim is released when its
 seat closes, when `pij delivered` sees its number in a merged PR's files, or by
 its seat or the prime.
 
@@ -144,6 +147,21 @@ pub fn warn_folders(kind: &str) -> Vec<String> {
     } else {
         Vec::new()
     }
+}
+
+/// Whether a folder named `name` is `kind`'s seed or warn folder whose last
+/// segment is `seed`, in any ASCII case (`PRD`, `Prds`). A known kind's folder
+/// (`prds`) also matches its singular (`prd`). Any other kind already seeds
+/// both `<kind>` and `<kind>s`, so only those two names match: stripping an
+/// `s` would invent a third (`status` → `statu`, review R342-F002). Projects
+/// spell their folders their own way and pij renames none. Widening the scan
+/// can only RAISE a kind's next number, never reuse one.
+pub fn names_folder(kind: &str, seed: &str, name: &str) -> bool {
+    name.eq_ignore_ascii_case(seed)
+        || (!folders(kind).is_empty()
+            && seed
+                .strip_suffix('s')
+                .is_some_and(|singular| name.eq_ignore_ascii_case(singular)))
 }
 
 /// The warning on a claim of `kind` numbered `number` when `folder`, one of
