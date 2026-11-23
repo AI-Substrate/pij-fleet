@@ -113,11 +113,12 @@
 						"../prds/005-procedures.dd.json#requirements/req-22",
 						"../prds/005-procedures.dd.json#requirements/req-25",
 						"../prds/005-procedures.dd.json#requirements/req-26",
-						"../prds/005-procedures.dd.json#requirements/req-29"
+						"../prds/005-procedures.dd.json#requirements/req-29",
+						"../prds/005-procedures.dd.json#requirements/req-30"
 					],
 					"depends_on": ["#steps/s06"],
 					"needs": ["role:reviewer"],
-					"done_when": "The skill, packets and AGENTS.md carry the rule and point at procedures; the project-doc how-tos are PROC-docs procedures; the schema ships in the skill."
+					"done_when": "The skill, packets and AGENTS.md carry the rule and point at procedures; the project-doc how-tos are PROC-docs procedures; the schema and PROC-meta-0002 (set up procedures in a repo) ship in the skill, and PROC-meta-0002 run on a fresh repo leaves a valid first procedure."
 				},
 				{
 					"id": "s08",
@@ -136,9 +137,13 @@
 					"date": "2026-11-23",
 					"by": "pij-intense-herring",
 					"change": "First draft, in the operator's order: PRD, workshop, exemplars, skill, review with osk-central's prime."
+				},
+				{
+					"date": "2026-11-23",
+					"by": "pij-intense-herring",
+					"change": "s07 delivers PRD 005 req-30: PROC-meta-0002, set up procedures in a repo, stored with the pij skill."
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }

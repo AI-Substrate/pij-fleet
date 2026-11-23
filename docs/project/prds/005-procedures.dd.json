@@ -119,11 +119,11 @@
 				{
 					"id": "req-03",
 					"title": "One layout: a folder per procedure",
-					"statement": "Every procedure lives in its own folder, `docs/project/procedures/<area>/PROC-<area>-NNNN-<slug>/`. There is no flat, single-file form.",
+					"statement": "Every procedure lives in its own folder: `docs/project/procedures/<area>/PROC-<area>-NNNN-<slug>/` for a project's own procedures, or the same shape under `skills/pij/procedures/` for procedures that ship with the pij skill to every project. There is no flat, single-file form.",
 					"actor": "seat",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "A check fails on a procedure document outside a `PROC-*` folder, and on a folder without exactly one procedure document.",
+					"done_when": "A check fails on a procedure document outside a `PROC-*` folder in either home, and on a folder without exactly one procedure document.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (3 seats: two layouts were the worst confusion)"
 				},
 				{
@@ -385,6 +385,16 @@
 					"state": "planned",
 					"done_when": "A repo with no procedures copies the schema from the skill and validates a first procedure.",
 					"source": "operator, 2026-11-23"
+				},
+				{
+					"id": "req-30",
+					"title": "Setting up procedures is itself a procedure",
+					"statement": "PROC-meta-0002, \"set up procedures in a repo\", is stored with the pij skill, with everything it needs in its folder (the `pij/procedure` schema to copy, templates and setup scripts). Run against any repo, it adds the schema, the procedures folder, the justfile import and the drift check, and does nothing on a repo already set up.",
+					"actor": "author",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Run in a fresh repo, it leaves a first procedure that validates and a drift check that passes; run a second time, it changes nothing.",
+					"source": "operator, 2026-11-23"
 				}
 			]
 		},
@@ -448,9 +458,13 @@
 					"date": "2026-11-23",
 					"by": "pij-intense-herring",
 					"change": "First draft, from the operator's brief, pij-ultimate-scallop's recommendations and the survey of 8 osk-central seats (workshop 003)."
+				},
+				{
+					"date": "2026-11-23",
+					"by": "pij-intense-herring",
+					"change": "Operator: setting up procedures in a repo is a procedure (req-30, PROC-meta-0002), stored with the pij skill; req-03 gains the skill as a second home."
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }
