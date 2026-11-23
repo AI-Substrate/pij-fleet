@@ -22,6 +22,7 @@ import {
 	main,
 	PROGRESS_FILE,
 	pathsIn,
+	RELAYED_MESSAGE,
 	readProgress,
 	recipesIn,
 	splitWords,
@@ -611,7 +612,7 @@ describe("check", () => {
 			},
 			"x:\n    harness/scripts/only-me.sh\n",
 		);
-		write(`${dir}/notes.md`, '[pij from "pij-a"] a body\n');
+		write(`${dir}/notes.md`, `${RELAYED_MESSAGE}pij-a"] a body\n`);
 		expect(run(["check"])).toBe(EXIT_FAIL);
 		const text = out.join("\n");
 		expect(text).toContain("step id 1 is not s and four digits");

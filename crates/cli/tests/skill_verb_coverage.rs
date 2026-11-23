@@ -358,12 +358,22 @@ fn unquoted_placeholders(command: &str) -> bool {
     })
 }
 
+/// Verbs the `pij` shim runs itself as skill tools (harness/scripts/pij-cli.cjs), not pij-rs verbs: a printed
+/// command may name one; its own tests cover its flags (fleet-map.test.ts, procedures.test.ts).
+const SHIM_LOCAL_VERBS: [&str; 2] = ["fleet-map", "proc"];
+
 /// Commands that name no pij-rs verb, use a flag their leaf does not take,
 /// lack a flag their leaf requires, or leave a placeholder unquoted.
 fn command_problems(commands: &[String], native: &BTreeSet<String>) -> Vec<String> {
     let mut wrong = Vec::new();
     for command in commands {
         let words = words(command);
+        if SHIM_LOCAL_VERBS.contains(&words[1].as_str()) {
+            if unquoted_placeholders(command) {
+                wrong.push(format!("{command}: a placeholder outside single quotes"));
+            }
+            continue;
+        }
         let verb = words[1].as_str();
         if !native.contains(verb) {
             wrong.push(format!("{command}: no verb `{verb}`"));

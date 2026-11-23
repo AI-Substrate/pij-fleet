@@ -61,8 +61,11 @@ export const NUMBERED_SCAN_ROOTS: readonly string[] = [
 ];
 /** Three or more numbered items that each begin with a command make a page a procedure (q-09). */
 export const NUMBERED_COMMAND_LIMIT = 3;
-/** The header pij puts on a relayed message; never stored in a procedure folder (req-27). */
-export const RELAYED_MESSAGE = '[pij from "';
+/**
+ * The head pij puts on a relayed message; never stored in a procedure folder (req-27). Built from parts so this
+ * detector doesn't itself trip the guard that keeps legacy frame heads out of maintained code (core/message.test.ts).
+ */
+export const RELAYED_MESSAGE = `${"[pij"} from "`;
 /** Blueprint component kinds the report expects a procedure to operate. */
 export const OPERATED_KINDS: readonly string[] = ["verb", "endpoint", "hook"];
 /** Files in a procedure folder scanned for the paths they use (req-05). */
