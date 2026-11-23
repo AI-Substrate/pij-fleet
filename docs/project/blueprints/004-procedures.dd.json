@@ -113,7 +113,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-20",
 						"../prds/005-procedures.dd.json#requirements/req-14"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-status",
@@ -122,7 +122,7 @@
 					"where": "procedures.ts (`proc status`)",
 					"responsibility": "`proc status <draft|current|superseded|retired> <proc>… --approved-by <who> [--why] [--superseded-by <id>]` sets each procedure's status and adds a changelog row naming the approver, through ddocs. Status gates nothing: a draft runs like a current procedure.",
 					"realises": ["../prds/005-procedures.dd.json#requirements/req-21"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-check",
@@ -138,7 +138,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-27",
 						"../prds/005-procedures.dd.json#requirements/req-31"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-report",
@@ -150,7 +150,7 @@
 						"../prds/005-procedures.dd.json#requirements/req-06",
 						"../prds/005-procedures.dd.json#requirements/req-19"
 					],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-meta",
@@ -190,7 +190,7 @@
 					"where": "docs/how/, skills/pij/references/community/, workshop 003 input 003",
 					"responsibility": "Every page's fate (becomes a procedure, stays as reference, deleted) is listed in workshop 003 input 003; reference pages that number commands carry a `not-a-procedure` reason.",
 					"realises": ["../prds/005-procedures.dd.json#requirements/req-31"],
-					"state": "planned"
+					"state": "shipped"
 				},
 				{
 					"id": "c-skill-rule",
@@ -335,6 +335,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s04: c-runner, c-progress and c-verbs shipped."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s05: c-list, c-status, c-check, c-report and c-page-sort shipped."
 				}
 			]
 		}

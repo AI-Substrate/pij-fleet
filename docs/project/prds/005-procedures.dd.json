@@ -152,7 +152,7 @@
 					"statement": "A report, run when asked, lists scripts or files referenced by exactly one procedure but kept outside that procedure's folder, naming the folder each belongs in. It is a report, not a failing check: a file used by one procedure today may be shared tomorrow.",
 					"actor": "reviewer",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Moving a procedure's step script to `harness/scripts/` makes the report name the file and the folder it belongs in, while `harness checks` still passes.",
 					"source": "operator, 2026-11-23"
 				},
@@ -272,7 +272,7 @@
 					"statement": "A procedure links to the PRD rows it carries out, the blueprint components it operates and other procedures it uses. Each link to a PRD row carries a sentence saying what the procedure guarantees for it; on a blueprint component link the sentence is optional.",
 					"actor": "reviewer",
 					"priority": "should",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "`ddocs validate` refuses a PRD-row link without its sentence, and `ddocs links` on a PRD row lists the procedures that carry it out.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (relaxed-deer: links without a rule are paperwork)"
 				},
@@ -282,7 +282,7 @@
 					"statement": "A `harness checks` stage fails when a procedure's link doesn't resolve or a step names a `just` recipe that doesn't exist. The co-location report (req-06) and a report of blueprint components with no procedure run only when asked.",
 					"actor": "reviewer",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Renaming a recipe that a procedure step names makes `harness checks` fail and name both.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
 				},
@@ -292,7 +292,7 @@
 					"statement": "One command lists every procedure with its id, title, status, owner and kind, generated from the files. Nobody keeps an index by hand.",
 					"actor": "seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A new procedure appears in the list without any other file being edited.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
 				},
@@ -302,7 +302,7 @@
 					"statement": "A draft procedure is usable: status records approval and gates nothing. A procedure is draft until the operator approves it. One command moves one or several procedures to current, superseded or retired and records who approved it and when in each changelog. A retired procedure keeps its folder.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Approving two procedures in one command adds a changelog row naming the operator's approval to each, a draft's steps run like a current one's, and a retired one still validates.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
 				},
@@ -329,7 +329,7 @@
 				{
 					"id": "req-24",
 					"title": "First procedures",
-					"statement": "pij's first procedures are: change a live seat's reasoning effort (now `docs/how/change-seat-effort.md`), bounce the daemon after an rs merge, take a Copilot or OMP update, and diagnose a seat that receives nothing.",
+					"statement": "pij's first procedures are: change a live seat's reasoning effort (from `docs/how/change-seat-effort.md`), bounce the daemon after an rs merge, and take a Copilot or OMP update. Diagnosing a seat that receives nothing moved to req-32.",
 					"actor": "operator",
 					"priority": "should",
 					"state": "planned",
@@ -362,7 +362,7 @@
 					"statement": "No procedure tells a seat to save relayed messages or other raw input into the repo. Data locations are cited from one blueprint, not written into procedure text.",
 					"actor": "reviewer",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "The meta procedure and the drift check reject a step that writes relayed message bodies under `docs/`.",
 					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (relaxed-deer)"
 				},
@@ -372,7 +372,7 @@
 					"statement": "Procedures add no loop, poll, timer or hook, and nothing in them relies on an end-of-turn harness hook (those don't run on every seat; alt Claude seats skip them today). A run records its own state from the step command, launches only the commands its steps name, and the listing and the drift check read files without launching processes.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "The daemon's spawn counter (`pij-rs --json ping | jq .data.spawns`) does not move while procedures are listed or checked.",
 					"source": "AGENTS.md: resource cost is a correctness property"
 				},
@@ -403,9 +403,20 @@
 					"statement": "In the PR that lands the procedure layout, every page in `docs/how/` and `skills/pij/references/community/` is given a fate: it becomes a procedure, stays as reference (with no numbered steps), or is deleted. From then on a check refuses numbered steps outside a `PROC-*` folder, so pij never keeps two layouts side by side.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "The layout PR lists every page with its fate, and adding a page of numbered steps under `docs/how/` fails `harness checks`.",
-					"source": "osk-central prime's review, 2026-11-23 (osk-central's flat pages came back after the folder layout landed beside them)"
+					"source": "osk-central prime's review, 2026-11-23 (osk-central's flat pages came back after the folder layout landed beside them)",
+					"note": "Fates: docs/project/workshops/003-procedures/003-page-fates.md. On 2026-11-24 only change-seat-effort.md tripped the check."
+				},
+				{
+					"id": "req-32",
+					"title": "The remaining how-to pages become procedures",
+					"statement": "The pages whose fate is \"becomes a procedure, later\" (workshop 003 input 003: fleet/recipe.md, the curator path in agent-feedback.md, setup and key rotation in pij-federation.md) and diagnosing a seat that receives nothing are written as procedures, and their pages point at them.",
+					"actor": "seat",
+					"priority": "could",
+					"state": "planned",
+					"done_when": "Each is a procedure that passes `just procedures-check`, and its old page keeps only reference text and a link.",
+					"source": "workshop 003 input 003; split from req-24 (2026-11-24)"
 				}
 			]
 		},
@@ -509,6 +520,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s04: req-09 to req-17 shipped: idempotent steps with --again, declared inputs (secret ones never on the command line), preconditions that refuse with their fix, order inside and across procedures by live done checks, per-key progress, flags that reach the step or refuse, commands outside the steps, decision and guide steps."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s05: req-06, 19, 20, 21, 28 and 31 shipped (report, harness checks stage, generated list, status with the approver, no background cost: the daemon spawn counter did not move across list and check, and the check runs in about 0.1 s; every how-to page has a fate). req-18 and 27 in progress until the first procedures carry links and PROC-meta-0001 states the rule. req-24 narrowed; diagnosing a seat and three pages marked for later become req-32."
 				}
 			]
 		}

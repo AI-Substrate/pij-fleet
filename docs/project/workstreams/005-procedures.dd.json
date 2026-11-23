@@ -85,7 +85,7 @@
 				{
 					"id": "s05",
 					"title": "Links, drift check, generated list and status",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/005-procedures.dd.json#requirements/req-06",
 						"../prds/005-procedures.dd.json#requirements/req-18",
@@ -150,6 +150,16 @@
 					"depends_on": ["#steps/s06", "#steps/s07"],
 					"needs": [],
 					"done_when": "pij-ultimate-scallop (or osk-central's current prime) has reviewed the shipped system against its fleet's experience, and its findings are folded into PRD 005 or answered."
+				},
+				{
+					"id": "s09",
+					"title": "Convert the remaining how-to pages",
+					"state": "planned",
+					"delivers": ["../prds/005-procedures.dd.json#requirements/req-32"],
+					"depends_on": ["#steps/s06"],
+					"needs": ["role:docs-system"],
+					"done_when": "Each page marked \"becomes a procedure, later\" in workshop 003 input 003, and diagnosing a seat that receives nothing, is a procedure that passes `just procedures-check`.",
+					"note": "Not in the PRD 005 build PR; planned after it."
 				}
 			]
 		},
@@ -190,6 +200,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s04 complete."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s05 complete; s09 added (planned) for req-32."
 				}
 			]
 		}
