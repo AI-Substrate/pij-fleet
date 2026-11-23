@@ -1694,6 +1694,16 @@
 					"machine": "studio",
 					"seat": "pij-cultural-falcon",
 					"why": "Jordan-approved bug fix: cc-alt UDS session lookup (uds.rs:128)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-23T05:33:37.323Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "claim-prd-case",
+					"machine": "studio",
+					"seat": "pij-cultural-falcon",
+					"why": "Jordan-approved (11-23 14:06): pij claim prd case-insensitive folder scan"
 				}
 			]
 		}
