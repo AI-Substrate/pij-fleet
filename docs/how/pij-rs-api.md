@@ -2382,7 +2382,11 @@ folders alike), so a `usage` claim lands past `docs/project/usage/019-*` (F171).
 When neither of those exists, `docs/<kind>` and `docs/<kind>s` are read only to
 warn: if either already holds the claimed number or above, the claim still
 succeeds, with `data.warning` naming the folder and its highest number, also
-appended to `data.line`. They never set the number and never refuse. Each claim is one
+appended to `data.line`. They never set the number and never refuse. A
+folder's last segment matches in any ASCII case, singular or plural, and every
+spelling present is read: `docs/project/PRD`, `prd` and `prds` all count for
+`prd`, and the highest across them sets the floor. Folders are never renamed.
+Reading more spellings can only raise the next number, never reuse one. Each claim is one
 `BEGIN IMMEDIATE` transaction over a unique (project, kind, number) key, so
 concurrent claims get distinct consecutive numbers and projects never interact.
 `data.number`, `data.formatted` (`0033`) and `data.floor` (the checkout's highest)
