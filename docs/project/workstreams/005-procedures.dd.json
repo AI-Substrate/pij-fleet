@@ -22,10 +22,10 @@
 				{
 					"id": "s01",
 					"title": "Workshop 003: settle PRD 005's open questions with the operator",
-					"state": "in-progress",
+					"state": "complete",
 					"needs": [],
 					"done_when": "Every PRD 005 open question is answered or carries an accepted default, and the PRD is amended to match.",
-					"note": "Input 001 is the osk-central survey (docs/project/workshops/003-procedures/001-osk-survey.md)."
+					"note": "Settled by the operator's ruling of 2026-11-24: each open question's proposed answer taken as decided, no separate session. Inputs: 001 (osk-central survey), 002 (accelerated-decomposition dogfood)."
 				},
 				{
 					"id": "s02",
@@ -148,6 +148,11 @@
 					"date": "2026-11-23",
 					"by": "pij-intense-herring",
 					"change": "s03 delivers PRD 005 req-31 (sort the existing how-tos in the layout PR)."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s01 complete (operator ruling 2026-11-24). Plan: s02 to s07 in one PR on docs/prd-005-procedures."
 				}
 			]
 		}
