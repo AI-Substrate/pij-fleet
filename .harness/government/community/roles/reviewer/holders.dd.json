@@ -3028,7 +3028,10 @@
 					"harness_session": "b80e8708-c7c2-43df-9ebf-75542d1efb76",
 					"instance_key": "342",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-sound-porpoise",
+					"to": "2026-11-23T06:10:25.400Z",
 					"why": "#342 claim-prd-case single review (amended C34; Jordan-approved)"
 				}
 			]
