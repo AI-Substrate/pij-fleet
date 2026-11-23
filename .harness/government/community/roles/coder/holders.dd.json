@@ -1704,6 +1704,16 @@
 					"machine": "studio",
 					"seat": "pij-cultural-falcon",
 					"why": "Jordan-approved (11-23 14:06): pij claim prd case-insensitive folder scan"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-23T22:51:42.944Z",
+					"harness": "copilot",
+					"harness_session": "e17214f9-768d-4d13-b14b-23202e48ab14",
+					"instance_key": "prd-005",
+					"machine": "studio",
+					"seat": "pij-intense-herring",
+					"why": "Jordan-approved PRD 005 end-to-end build (spine 4753494); pm-001 runs it"
 				}
 			]
 		}
