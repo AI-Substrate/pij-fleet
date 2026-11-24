@@ -25,7 +25,7 @@
 					"name": "The ten type definitions",
 					"kind": "template",
 					"where": "templates/types/<type>/v<N>/type.dd.json, compiled into the daemon like the role templates (crates/daemon/src/community/types.rs)",
-					"responsibility": "One `pij/type` document per type (prime, pa, project-manager, coder, reviewer, worker, knowledge, steward, watcher, human-window): what the seat is for, when it is compacted or closed, what it must keep, whether it carries authority, the fields a role of that type must give, and its rules, each with an id and marked `fixed` or `default`. Versioned and immutable once shipped, like role templates. A Rust catalog loads them and answers `get`, `list` and the rule check.",
+					"responsibility": "One `pij/type` document per type (prime, pa, project-manager, coder, reviewer, worker, knowledge, steward, watcher, human-window): what the seat is for, when it is compacted or closed, what it must keep, whether it carries authority, the fields a role of that type must give, and its rules, each with an id and marked `fixed` or `default`. Versioned and immutable once shipped, like role templates. A Rust catalog loads them and answers `get`, `list` and the rule check. The read is pure (compiled-in bytes, no store, HTTP or governance read) and its signature is stable: `types::all()`, `types::get(id)`, `types::listing()` and `TypeDef::show()`; `pij directory types` and PRD 009's `pij-rs docs` both render from it.",
 					"realises": [
 						"../prds/006-seat-types.dd.json#requirements/req-02",
 						"../prds/006-seat-types.dd.json#requirements/req-05",
@@ -223,7 +223,7 @@
 					"responsibility": "Explains the terms and the factory framing, and rewrites the prime's community route around type, spawn with a role, plan-confirm-up and spot-and-suggest.",
 					"realises": [],
 					"state": "planned",
-					"note": "Realises PRD 006 req-02, req-08; PRD 007 req-08; PRD 010 req-03; the links are added in the PR that brings that PRD to main."
+					"note": "Realises PRD 006 req-02, req-08; PRD 007 req-08; PRD 010 req-03; the links are added in the PR that brings that PRD to main. The concepts page (skills/pij/references/community/concepts.md) is delivered by PRD 009 / #348, which renders the type pages from c-type-catalog's pure read (types::all, types::get, TypeDef::show)."
 				}
 			]
 		},
@@ -329,6 +329,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "First draft (workstream 006 s01): every component of PRDs 006, 007, 008 and 010; links for 006 now, the others with their PRDs."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "c-type-catalog's read is pure and stable for PRD 009; the concepts page is PRD 009's (#348)."
 				}
 			]
 		}
