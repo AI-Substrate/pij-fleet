@@ -1,0 +1,84 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 006: seat types",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pij-autonomous-parrot"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "Every role names one of pij's ten seat types, and pij shows and uses it."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Blueprint for seat types, starting a role and pods",
+					"state": "planned",
+					"delivers": [],
+					"builds": [],
+					"needs": ["role:docs-system"],
+					"done_when": "One blueprint realises every requirement of PRDs 006, 007, 008 and 010, and each later step in those workstreams names the component it builds.",
+					"note": "The blueprint is shared by workstreams 006, 007, 008 and 010. Ruled 2026-11-25: a seat has one label, its type; prime, project manager and PA carry today's authority and the other types carry none."
+				},
+				{
+					"id": "s02",
+					"title": "Type on the role, the ten definitions and their seed templates",
+					"state": "planned",
+					"delivers": [
+						"../prds/006-seat-types.dd.json#requirements/req-01",
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-03",
+						"../prds/006-seat-types.dd.json#requirements/req-06",
+						"../prds/006-seat-types.dd.json#requirements/req-08"
+					],
+					"builds": [],
+					"depends_on": ["#steps/s01"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "`pij directory add` refuses a role with no type, asks for what the type requires, and pij prints each type's definition and seed template."
+				},
+				{
+					"id": "s03",
+					"title": "pij shows and uses the type",
+					"state": "planned",
+					"delivers": [
+						"../prds/006-seat-types.dd.json#requirements/req-04",
+						"../prds/006-seat-types.dd.json#requirements/req-05"
+					],
+					"builds": [],
+					"depends_on": ["#steps/s02"],
+					"needs": ["role:coder", "role:reviewer", "role:security"],
+					"done_when": "`pij list` and `pij directory` show each seat's type, a seat holding two types is flagged, and every existing permission test passes."
+				},
+				{
+					"id": "s04",
+					"title": "Give existing roles a type",
+					"state": "planned",
+					"delivers": ["../prds/006-seat-types.dd.json#requirements/req-07"],
+					"builds": [],
+					"depends_on": ["#steps/s02"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "One command types every role in a community written before the change and lists those it could not decide."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				}
+			]
+		}
+	]
+}
