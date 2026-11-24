@@ -1,0 +1,80 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 008: pods",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pij-autonomous-parrot"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "A prime plans, starts, takes down and brings back a group of seats as one pod."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "The pod definition and where pods live",
+					"state": "planned",
+					"delivers": [
+						"../prds/008-pods.dd.json#requirements/req-02",
+						"../prds/008-pods.dd.json#requirements/req-07",
+						"../prds/008-pods.dd.json#requirements/req-12"
+					],
+					"builds": [],
+					"depends_on": ["007-role-start.dd.json#steps/s02"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A pod definition validates against its schema, pod paths under `community/` are written only by pij, and memory is filed per role instance."
+				},
+				{
+					"id": "s02",
+					"title": "Plan, up and show",
+					"state": "planned",
+					"delivers": [
+						"../prds/008-pods.dd.json#requirements/req-01",
+						"../prds/008-pods.dd.json#requirements/req-03",
+						"../prds/008-pods.dd.json#requirements/req-04",
+						"../prds/008-pods.dd.json#requirements/req-09"
+					],
+					"builds": [],
+					"depends_on": ["#steps/s01", "007-role-start.dd.json#steps/s03"],
+					"needs": ["role:coder", "role:reviewer", "role:performance"],
+					"done_when": "`plan` changes nothing, `up` starts a pod together or one seat at a time, `show` displays it, and the spawn counter moves only for new seats."
+				},
+				{
+					"id": "s03",
+					"title": "Set, down, revive and reshape",
+					"state": "planned",
+					"delivers": [
+						"../prds/008-pods.dd.json#requirements/req-05",
+						"../prds/008-pods.dd.json#requirements/req-06",
+						"../prds/008-pods.dd.json#requirements/req-08",
+						"../prds/008-pods.dd.json#requirements/req-10",
+						"../prds/008-pods.dd.json#requirements/req-11"
+					],
+					"builds": [],
+					"depends_on": ["#steps/s02", "007-role-start.dd.json#steps/s06"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A late parameter reaches only the members that need it; `down` takes every member down the same way a single close does, skips keep-open members with a warning and touches no consulted role; a closed pod comes back by name; and a seat added mid-run is logged."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				}
+			]
+		}
+	]
+}

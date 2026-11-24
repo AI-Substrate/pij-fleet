@@ -1,0 +1,229 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 008: pods",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pij-autonomous-parrot",
+				"summary": "A pod is a group of role instances stood up together with shared parameters. A prime plans, starts, takes down and brings back a recurring group of seats with a few commands instead of handling each one by hand."
+			}
+		},
+		{
+			"name": "why",
+			"value": "Some groups of seats recur. A project manager, a coder and a reviewer build a step. A note taker, a researcher and a validator sit in on a call. Today each such group is set up by hand from a prose description: one fleet's prime listed what it repeats every time as the session folder, a packet for each seat, per-subject copies of the same roles, spawn commands with model flags, and a close checklist. Another fleet has started keeping a folder per seat and a list of seats to start from, but nothing in pij reads it. pij ships role templates one role at a time and has no way to store, share or stand up a group."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-operator",
+					"name": "operator",
+					"need": "Say \"set up a pod for this\" and approve a short plan."
+				},
+				{
+					"id": "a-prime",
+					"name": "prime",
+					"need": "Stand up a known group of seats by choosing a template and filling in what differs this time."
+				},
+				{
+					"id": "a-holder",
+					"name": "role holder",
+					"need": "Start from what earlier seats in the same role learned about the same subject."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "Standing up a recurring group of seats is plan, confirm, up; taking it down is one command that really stops it."
+				},
+				{
+					"id": "g-2",
+					"goal": "What a pod's seats learn stays with their role and subject after the pod is gone."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "Replacing emergent communities. A pod is optional, and PRD 001 req-27 and req-28 still hold."
+				},
+				{
+					"id": "n-2",
+					"text": "A second way of running steps. A pod's start and close steps are procedures (PRD 005)."
+				},
+				{
+					"id": "n-3",
+					"text": "Starting, configuring or stopping seats the pod only consults, or seats in another fleet."
+				},
+				{
+					"id": "n-4",
+					"text": "Shipping, sharing and adopting templates. That is PRD 010; this PRD needs only a definition folder to read."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "A pod groups roles stood up together",
+					"statement": "A pod is a named group of role instances inside one community, with parameters set once for the group. A seat is in one pod or in none: pods are optional, and a seat that several pods rely on, such as a shared expert, belongs to none of them. A fleet may still put its experts in a pod of their own to manage them together. `pij pod show <pod>` shows a pod's members, their types, seats and states, how they feed each other and which outside roles it consults. Several pods from one template can run at the same time.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "Two pods started from one template with different parameters both appear in `pij pod show`, each with its own members; a seat already in one pod is refused by a second, naming the first; and a role both pods consult appears under each as consulted, not as a member.",
+					"source": "operator ruling 2026-11-25: the group is called a pod; operator ruling 2026-11-25: an expert shared between pods is in neither, and not everything needs to be in a pod"
+				},
+				{
+					"id": "req-02",
+					"title": "A pod is defined by a folder",
+					"statement": "A pod is defined by a folder (its template) holding its parameters, its slots, how the slots feed each other, the text each slot is told at start, and the outside roles the pod consults. Every slot is a seat the pod starts. A consulted role is not a member: the pod names it so its seats know who to ask, and the pod never starts, configures or stops it. Each slot names only the parameters it needs.",
+					"actor": "template author",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A template with two slots and one consulted role validates, and a slot that names a parameter the template does not declare is refused by name.",
+					"source": "operator, 2026-11-25: parameters change depending on the seat's requirements; operator ruling 2026-11-25: an expert shared between pods is in neither, and not everything needs to be in a pod"
+				},
+				{
+					"id": "req-03",
+					"title": "Plan shows everything and changes nothing",
+					"statement": "`pij pod plan <template> --set <name>=<value>` prints the seats it would start with their models, each seat's first turn, each role the pod consults and whether that role has a live holder, and anything missing. It writes nothing and starts nothing.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "After `plan`, the governance branch has no new commit and `pij list` is unchanged; a missing required parameter and a consulted role with no live holder are each named in the output.",
+					"source": "design conversation 2026-11-25: plan, confirm, up"
+				},
+				{
+					"id": "req-04",
+					"title": "Up stands the pod up, together or one seat at a time",
+					"statement": "`pij pod up <template> --set …` creates the pod, starts each slot's seat as `pij spawn --as role:<id>` does (PRD 007), once per slot, and reports each slot as ready or failed. `--no-start` creates the pod only, and each member is then started on its own with `pij spawn --as role:<id> --pod <pod>`.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`up` on a three-slot template reports three slots with their seats; with `--no-start` no seat is launched and each member starts individually into the same pod.",
+					"source": "operator, 2026-11-25: the prime might still like to fire them up separately"
+				},
+				{
+					"id": "req-05",
+					"title": "A pod's parameters can be set later",
+					"statement": "`pij pod set <pod> <name>=<value>` sets a parameter that is only known after the pod is up, and tells the members that need it.",
+					"actor": "prime",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "Setting a parameter that one of three members needs delivers it to that member only, and `pij pod show` displays the new value.",
+					"source": "interview with a fleet prime 2026-11-25: a value pinned only when the call starts"
+				},
+				{
+					"id": "req-06",
+					"title": "Down takes the pod down, one seat at a time, the same way as a single seat",
+					"statement": "`pij pod down <pod>` runs the template's close steps, then takes each member down exactly as `pij close <seat> --stop` does for one seat (PRD 007 req-12): memory and a ready answer first, the recorded process stopped, the prime told about any seat that did not answer, and cold seats warned about and not woken. It is the same code path, run once per member. Roles the pod only consults are not touched, and the pod reads as closing until every member is down.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "For each member, `pod down` produces the same result and the same messages as `pij close <seat> --stop` run on that seat alone; a consulted role's holder is still live and received nothing; and the pod reads as closed only when no member is running.",
+					"source": "operator rulings 2026-11-25: pod up and pod down actually take them up and down; pod down loops through and runs the same code as taking a single seat down"
+				},
+				{
+					"id": "req-07",
+					"title": "Pods live in governance",
+					"statement": "Type definitions, pod templates and each pod's folder live under `community/` on the governance branch, written only by pij. A pod's folder holds its filled parameters, the seat id that fills each slot, each seat's first turn and a log of what changed. Facts about a seat itself (its working folder, harness session and process) stay in pij's database and are looked up by seat id, not copied into the folder. Each memory note records the id of the seat that wrote it and, for a pod member, its subject.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "After `up`, the governance branch has the pod's folder with those four things and no copied seat paths; `pij pod show` displays each member's folder and state from the database; a memory note written by a member names that seat's id; and a hand edit to a pod file makes the next pod command refuse and name the path.",
+					"source": "operator, 2026-11-25: governance is HR for the team; use the database for seat facts and tie memory to the seat id"
+				},
+				{
+					"id": "req-08",
+					"title": "A pod is reshaped while it runs",
+					"statement": "A seat can be added to or released from a running pod, including a seat that was already running and is in no pod, and the change is recorded in the pod's log. The template is changed between runs, never during one.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A role added to a running pod, and an already-running seat added to it, both appear in `pij pod show` and in the pod's log, and the template the pod came from is unchanged.",
+					"source": "PRD 001 req-27 and req-28: communities grow from needs and are reshaped as the work changes"
+				},
+				{
+					"id": "req-09",
+					"title": "A pod costs one launch per new seat",
+					"statement": "`up` launches one process per slot and nothing for a role the pod only consults. `plan`, `show` and `set` launch no seat. No pod command adds a loop, poll or timer.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`pij-rs --json ping | jq .data.spawns` before and after `up` on a template with two slots and one consulted role differs by two spawns' worth; before and after `plan` it does not move.",
+					"source": "AGENTS.md: resource cost is a correctness property"
+				},
+				{
+					"id": "req-10",
+					"title": "A member can be kept open when its pod goes down",
+					"statement": "A pod member can be marked keep-open, on its role or when it joins the pod. `pij pod down` does not take a keep-open member down: it warns, naming each one, and leaves it running and out of the closed pod. Such a seat comes down only when it is closed directly, by `pij close <seat> --stop`. Members whose role is of type knowledge are keep-open unless marked otherwise.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`pod down` on a pod with one keep-open expert and two other members takes the two down, names the expert in a warning and leaves it live; `pij close <expert> --stop` then takes it down.",
+					"source": "operator ruling 2026-11-25: if an expert ends up in a pod, bringing the pod down should warn; keep it open unless forced directly"
+				},
+				{
+					"id": "req-11",
+					"title": "A closed pod can be brought back",
+					"statement": "Taking a pod or a seat down does not destroy its context: each harness still holds the seat's conversation. A closed pod keeps its folder, and `pij pod up <pod>` on a closed pod brings its members back under today's revive rules (resume, cheap start, the cold warning), one seat at a time, the same way a single seat is revived.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A pod taken down and brought up again by name has the same members in the same slots, each revived with its earlier conversation, and each cold member was shown with its price before it was revived.",
+					"source": "operator, 2026-11-25: closing does not destroy contexts, so we can revive a pod or a seat"
+				},
+				{
+					"id": "req-12",
+					"title": "Memory is kept per subject",
+					"statement": "A pod's subject (for example the customer or the workstream it is for) is one of its parameters, and a member's memory is filed under its role and that subject. Two pods from one template for different subjects never read or write each other's memory, and a later pod for the same subject starts from what the earlier one left. A role held outside any pod keeps its memory at the role, as today.",
+					"actor": "role holder",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "With two pods from one template for subjects A and B, a note written by A's member is listed for A and absent for B; a new pod for A lists it in its member's first turn.",
+					"source": "operator ruling 2026-11-25: pods for different subjects do not share role memory; each subject gets its own"
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "Can a message be addressed to a whole pod?",
+					"default": "Not in this PRD; members are addressed by role as today.",
+					"status": "open"
+				},
+				{
+					"id": "q-03",
+					"question": "Which types are keep-open by default when they are in a pod?",
+					"default": "Knowledge only; steward and human-window members are marked by hand.",
+					"status": "answered",
+					"answer": "Knowledge is the first type that is keep-open by default; any other member is keep-open only when flagged. A seat added to a pod comes down with it unless it has that protection (operator ruling 2026-11-25)."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				}
+			]
+		}
+	],
+	"references": []
+}
