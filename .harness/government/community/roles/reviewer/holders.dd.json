@@ -3041,7 +3041,10 @@
 					"harness_session": "da458922-c70d-44c4-8136-3b5166e33abc",
 					"instance_key": "343",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-sole-tyrannosaurus",
+					"to": "2026-11-24T00:30:52.545Z",
 					"why": "#343 PRD 005 single review (amended C34; Jordan-approved)"
 				}
 			]
