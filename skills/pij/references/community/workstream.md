@@ -13,25 +13,7 @@ Workstream files live in `docs/project/workstreams/` (plan 210 moved them from `
 
 ## Steps
 
-1. Claim the number (`pij claim workstream --for '<slug>'`; `roadmap` is its old name and claims the same numbers) and create `docs/project/workstreams/NNN-<slug>.dd.json` with `"dd": {"schema": "pij/workstream"}`.
-2. Fill the sections. Required ones are marked *.
-   - **meta*** `title` ("Workstream NNN: <name>"), `status`, `updated`, `owner`.
-   - **goal*** one sentence.
-   - **steps*** one row per builder plan:
-     ```json
-     {"id": "s02", "title": "...", "state": "planned",
-      "delivers": ["../prds/NNN-<slug>.dd.json#requirements/req-01"],
-      "builds": ["../blueprints/NNN-<slug>.dd.json#components/c-<name>"],
-      "depends_on": ["#steps/s01"],
-      "part_of": "NNN-<umbrella>.dd.json#steps/s04",
-      "needs": ["role:coder", "role:reviewer"],
-      "lanes": [{"branch": "coder/NNN-<slug>", "worktree": "fleet-NNN-<slug>", "stream": "<project>:<slug>"}],
-      "done_when": "...",
-      "plan": "docs/plans/NNN-<slug>"}
-     ```
-     Leave `plan` out until the plan exists. `builds` may be `[]` until the blueprint exists, but write the blueprint before the step's plan starts. `state` is planned, in-progress, complete or abandoned. Leave out `part_of`, `lanes` or `depends_on` when there are none.
-   - **changelog**.
-3. `git add -- <file>`, validate, build, format.
+Writing one is a procedure: **PROC-docs-0003** ([how-to](../../procedures/docs/PROC-docs-0003-write-a-workstream/procedure.dd.md), its steps in [writing.md](../../procedures/docs/PROC-docs-0003-write-a-workstream/writing.md)). Run it with `pij proc PROC-docs-0003 --key <slug>` (in pij: `just proc`). This page keeps what a workstream is and how to shape it.
 
 ## Shape it as the work demands
 

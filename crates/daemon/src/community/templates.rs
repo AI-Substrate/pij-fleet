@@ -57,11 +57,12 @@ macro_rules! shipped {
 
 /// Every shipped `templates/roles/<name>/v<n>/role.dd.json`. A version is
 /// never edited after it ships; a new one is a new row here.
-const SHIPPED: [(&str, u32, &[u8]); 31] = shipped![
+const SHIPPED: [(&str, u32, &[u8]); 33] = shipped![
     ("coder", 1),
     ("coder", 2),
     ("coder", 3),
     ("coder", 4),
+    ("coder", 5),
     ("designer", 1),
     ("devcontainer", 1),
     ("docs-keeper", 1),
@@ -83,6 +84,7 @@ const SHIPPED: [(&str, u32, &[u8]); 31] = shipped![
     ("reviewer", 1),
     ("reviewer", 2),
     ("reviewer", 3),
+    ("reviewer", 4),
     ("security", 1),
     ("security", 2),
     ("security", 3),
@@ -683,7 +685,7 @@ mod tests {
     #[test]
     fn a_shipped_version_is_never_edited() {
         use sha2::{Digest, Sha256};
-        const PINNED: [(&str, u32, &str); 31] = [
+        const PINNED: [(&str, u32, &str); 33] = [
             (
                 "coder",
                 1,
@@ -703,6 +705,11 @@ mod tests {
                 "coder",
                 4,
                 "314bd876f4fd7213c1f4cdaa0e01e28287db36dc8c5ca4a60623e5885a36f2fd",
+            ),
+            (
+                "coder",
+                5,
+                "b40f6e8dacee228aa070ab4027356796420cd1267f33aca921842e95b550e89c",
             ),
             (
                 "designer",
@@ -808,6 +815,11 @@ mod tests {
                 "reviewer",
                 3,
                 "84b10c2cc51c91dbe16e61ecbff6bc361bbb75dae6a667b714ebd775cc83b0be",
+            ),
+            (
+                "reviewer",
+                4,
+                "b296f48729e7358bd27e89a79c7666b02e10ecac7ec0e572ab38488c8bfac132",
             ),
             (
                 "security",

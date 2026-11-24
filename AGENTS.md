@@ -134,6 +134,15 @@ an absence — an empty result is the one output that carries no evidence of wha
 searched. (Found 2026-08-07 by `pij-massive-meadowlark` after three independent
 citation disputes, all of which resolved as neither party being wrong.)
 
+## Procedures: find it, or write it as you go (PRD 005)
+
+Repeatable work has a procedure. `just proc` lists them (`pij proc` in any repo), `just proc <id>` shows a run and
+`just proc <id> <step>` runs one step, refusing with its fix when a precondition fails. Find the procedure and follow it;
+with none, write one as you go (`just proc PROC-meta-0001`), and fix a wrong step in the same PR. Each lives in one
+folder with everything only it uses: `docs/project/procedures/<area>/`, or `skills/pij/procedures/` for those shipped
+with the skill. `just procedures-check` is a `harness checks` stage. A rule below that is a step of a procedure keeps one
+line here and links to it.
+
 ## Workflow
 
 > **Canonical interface: `just`.** All composite gates live in the
@@ -144,7 +153,8 @@ citation disputes, all of which resolved as neither party being wrong.)
    locked npm deps, build + link `pij-rs`, install OMP if absent, link the OMP
    and Copilot extensions plus curated OMP config, link the pij skill and the
    `pij` CLI shim, then `just doctor`. Re-run any time global state drifts.
-   Start or restart the daemon with `just bounce-rs`.
+   Start or restart the daemon with `just bounce-rs`; after an rs merge, follow
+   PROC-daemon-0001 (`just proc PROC-daemon-0001 --key <PR>`).
 1. Iterate on the OMP extension: run `omp` from the repo root and `/reload`.
    Type-check in another tab (`just typecheck`).
 2. Test: `just test` (vitest) and `just rust-check` (fmt, clippy, cargo test).
@@ -152,7 +162,7 @@ citation disputes, all of which resolved as neither party being wrong.)
 3. Smoke: `just smoke` before merging.
 4. **Before declaring any task done — or before ship — run `harness checks`.**
    The engineering-harness gate: it runs the full deterministic **signal
-   inventory** (local-path portability → OMP worktree config → project docs (ddocs) → workstream coverage → pij skill structure → typecheck → lockfile allowlist → lint →
+   inventory** (local-path portability → OMP worktree config → project docs (ddocs) → workstream coverage → procedures → pij skill structure → typecheck → lockfile allowlist → lint →
    test → Copilot native contracts → route inventory → Rust gate → smoke → commit-trailer
    attribution) as individual stages and reports a per-sensor verdict — and
    unlike `just self-check` it runs **all** sensors, so one invocation surfaces
@@ -250,9 +260,9 @@ citation disputes, all of which resolved as neither party being wrong.)
   `omp worktree add`'s cwd). Every worktree carries the same file, so start each
   OMP seat in its own worktree, never at main (#42; `--cwd <worktree>` there
   answers `false` too).
-- **`just update-omp`** reinstalls OMP from the governed npm registry, then
+- **`just update-omp`** (procedure: PROC-release-0001) reinstalls OMP from the governed npm registry, then
   re-applies the guarded links and runs **`just omp-doctor`**.
-- **`just update-copilot`** is the one way to take a Copilot CLI update: it runs
+- **`just update-copilot`** (procedure: PROC-release-0001) is the one way to take a Copilot CLI update: it runs
   `copilot update`, then `just copilot-sdk-contract` on the new version, and
   otherwise says **do not reload** (D-F208-2). A full pass records a local pass
   for that exact version in `~/.pij-rs/copilot-sdk-pass/` (F250): nothing to

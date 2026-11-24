@@ -9,6 +9,7 @@ session-store.db-wal
 session-state/
 
 # Local agent / tooling state
+.pij/
 .chainglass/
 .fs2/graph.pickle
 

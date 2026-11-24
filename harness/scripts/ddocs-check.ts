@@ -5,7 +5,11 @@ import { accessSync, constants, readdirSync, statSync } from "node:fs";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
 
 /** Trees whose deterministic documents the sensor checks (repo-relative). */
-export const DDOCS_ROOTS: readonly string[] = ["docs/project", "skills/pij/references/community"];
+export const DDOCS_ROOTS: readonly string[] = [
+	"docs/project",
+	"skills/pij/references/community",
+	"skills/pij/procedures",
+];
 
 const SKIPPED_DIRS = new Set(["node_modules", ".git"]);
 

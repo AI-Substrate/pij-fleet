@@ -1,0 +1,17 @@
+# PROC-docs-0004's own recipes, run by the procedure runner from the repo root.
+
+validate-all:
+    #!/bin/sh
+    set -eu
+    bad=0
+    for f in $(git ls-files 'docs/project/*.dd.json'); do
+      ddocs validate "$f" | jq -e '.data.counts.error == 0 and .data.counts.warn == 0' >/dev/null || { echo "✗ $f" >&2; bad=1; }
+      ddocs build "$f" >/dev/null
+    done
+    [ "$bad" = 0 ]
+
+all-valid:
+    #!/bin/sh
+    for f in $(git ls-files 'docs/project/*.dd.json'); do
+      ddocs validate "$f" | jq -e '.data.counts.error == 0 and .data.counts.warn == 0' >/dev/null || exit 1
+    done

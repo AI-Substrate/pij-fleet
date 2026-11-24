@@ -1,0 +1,367 @@
+{
+	"dd": {
+		"schema": "pij/blueprint"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Blueprint 004: procedures",
+				"status": "draft",
+				"updated": "2026-11-24",
+				"owner": "pij-intense-herring",
+				"summary": "How PRD 005 is built: a `pij/procedure` ddoc in one folder per procedure, a TypeScript runner in the pij skill reached through `just proc` and `pij proc`, per-checkout progress, a drift check in harness checks, and the first procedures."
+			}
+		},
+		{
+			"name": "overview",
+			"value": "A procedure is a folder: its ddoc, its rendering (the human how-to), and anything only it uses, including its own justfile. A project's procedures live in `docs/project/procedures/<area>/`; those that ship to every project live in `skills/pij/procedures/<area>/`. One runner, `skills/pij/tools/procedures/procedures.ts`, reads the documents and runs steps as `just` recipes, checking inputs, order and preconditions first and a done check after, and records progress in a git-ignored file per checkout. It also books ids through `pij claim`, lists procedures, records status changes through ddocs, and holds the drift check that harness checks runs. It adds no loop, poll, timer or hook: it runs only when a seat or the gate calls it."
+		},
+		{
+			"name": "components",
+			"value": [
+				{
+					"id": "c-schema",
+					"name": "Procedure schema",
+					"kind": "schema",
+					"where": ".dd/schemas/pij/procedure (copy in skills/pij/schemas/pij/procedure)",
+					"responsibility": "The `pij/procedure` ddoc: meta (id, title, area, kind, status, owner, superseded_by), who_when, inputs, preconditions, steps (run, decision or guide; pre, requires, done, done_when, who, changes_access, proven_in_practice), commands, done_when, known_limits, mistakes, carries_out (a PRD row link plus the sentence it guarantees, required), operates (a component link, sentence optional), uses and side_effects (paths outside the folder), comments and changelog. Step `requires` is a ddocs link to another procedure's step, so ddocs checks it resolves. The skill copy must match byte for byte (pij-skill-check).",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-01",
+						"../prds/005-procedures.dd.json#requirements/req-13",
+						"../prds/005-procedures.dd.json#requirements/req-17",
+						"../prds/005-procedures.dd.json#requirements/req-18",
+						"../prds/005-procedures.dd.json#requirements/req-21"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-layout",
+					"name": "Folder layout and homes",
+					"kind": "file",
+					"where": "docs/project/procedures/<area>/PROC-<area>-NNNN-<slug>/, skills/pij/procedures/<area>/PROC-…/",
+					"responsibility": "One folder per procedure holding `procedure.dd.json`, its rendering `procedure.dd.md` (the human how-to), and anything only it uses: its own `justfile`, step scripts, step tests, fixtures and templates. A project's procedures live in `docs/project/procedures`, or the home its `.pij-procedures.json` names; those that ship to every project live in the skill. In pij's repo an area lives in one home; elsewhere a project's procedure hides the skill's with the same id. `.pij-procedures.json` may also list legacy pages, which the check lets shrink but never grow.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-03",
+						"../prds/005-procedures.dd.json#requirements/req-04",
+						"../prds/005-procedures.dd.json#requirements/req-05"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-booking",
+					"name": "Booking and the scaffold",
+					"kind": "verb",
+					"where": "skills/pij/tools/procedures/procedures.ts (`proc new`)",
+					"responsibility": "`proc new <area> <slug> --title <t> [--kind] [--skill]` refuses on main or in the main checkout, books the next number with `pij claim procedure-<area> --for <slug>` (one ledger, a number per area, never reused), refuses if a folder already holds that number or above, writes a valid procedure document (and a justfile for a runnable one), stages them, runs ddocs validate and build from the repo root, and prints the worktree and path it wrote.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-02",
+						"../prds/005-procedures.dd.json#requirements/req-07"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-runner",
+					"name": "Step runner",
+					"kind": "module",
+					"where": "skills/pij/tools/procedures/procedures.ts",
+					"responsibility": "Runs one step: gathers its inputs (`--arg name=value`, or `PROC_IN_<NAME>` from the environment; a secret input is refused on the command line), checks order (each earlier step is recorded done, or its done check passes now), checks `requires` against the other procedure's done check (live state) before its recorded progress, runs the procedure's and the step's preconditions, skips a step whose done check already passes (unless `--again`), runs the step's recipe, then requires its done check to pass before recording it. Recipes resolve in the procedure's own justfile, else the repo's root justfile, and run as `just --justfile <file> --working-directory <repo root>` with `just` found on PATH in-process and started directly. Decision steps refuse until `--decided-by` records them; guide steps point at a procedure or a page and finish with `--done` or when the procedure they follow is done. `commands` (serve, watch) run without touching progress. Unknown flags refuse; every flag reaches the step.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-08",
+						"../prds/005-procedures.dd.json#requirements/req-09",
+						"../prds/005-procedures.dd.json#requirements/req-10",
+						"../prds/005-procedures.dd.json#requirements/req-11",
+						"../prds/005-procedures.dd.json#requirements/req-12",
+						"../prds/005-procedures.dd.json#requirements/req-13",
+						"../prds/005-procedures.dd.json#requirements/req-15",
+						"../prds/005-procedures.dd.json#requirements/req-16",
+						"../prds/005-procedures.dd.json#requirements/req-17"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-progress",
+					"name": "Run progress",
+					"kind": "store",
+					"where": "<git common dir>/pij-procedures/runs/<id>/<key>.json, one file per run, shared by every worktree of the clone (`.pij/procedures/runs/` under the root only outside git). A run key is a plain word (`^[A-Za-z0-9][A-Za-z0-9._@-]*$`, never an Object.prototype name), so it is never a path.",
+					"responsibility": "Per clone, keyed by procedure id and run key (`default` when none is given): each step's state (ran, found done, decided, marked), when and by whom. Every worktree of the clone reads and writes the same file, so a recorded decision outlives the worktree it was made in. Written with a temporary file and a rename. `--clear` empties one key. Never committed.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-14",
+						"../prds/005-procedures.dd.json#requirements/req-12"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-verbs",
+					"name": "Entry points",
+					"kind": "verb",
+					"where": "justfile `proc`; harness/scripts/pij-cli.cjs `pij proc`",
+					"responsibility": "`just proc …` in pij (through nice19.sh) and `pij proc …` anywhere pij is installed. The shim loads the runner in-process with `require`, so `pij proc` starts no second node. Both work from any directory in a checkout: the runner finds the repo root itself.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-08",
+						"../prds/005-procedures.dd.json#requirements/req-15"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-list",
+					"name": "Generated list",
+					"kind": "verb",
+					"where": "procedures.ts (`proc list`)",
+					"responsibility": "Lists every procedure in both homes with id, title, kind, status and owner, from the files; `--json` for agents. Running a procedure with no step lists its steps as done, next or to do from progress alone.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-20",
+						"../prds/005-procedures.dd.json#requirements/req-14"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-status",
+					"name": "Status changes",
+					"kind": "verb",
+					"where": "procedures.ts (`proc status`)",
+					"responsibility": "`proc status <draft|current|superseded|retired> <proc>… --approved-by <who> [--why] [--superseded-by <id>]` sets each procedure's status and adds a changelog row naming the approver, through ddocs. Status gates nothing: a draft runs like a current procedure.",
+					"realises": ["../prds/005-procedures.dd.json#requirements/req-21"],
+					"state": "shipped"
+				},
+				{
+					"id": "c-check",
+					"name": "Drift check",
+					"kind": "module",
+					"where": "procedures.ts (`proc check`); `just procedures-check`; harness checks stage `procedures`; `just self-check`",
+					"responsibility": "Fails when: a procedure document sits outside a `PROC-*` folder or a folder holds other than one; the id, area or folder disagree; an area is in both homes; a step id is not four digits; a step names a recipe that neither its justfile nor the root justfile has; a guide step's target or a `requires` step is missing; a `changes_access` step has no done check; a path the folder's files or steps use outside the folder is not in `uses` or `side_effects`; a file in a procedure folder holds a relayed pij message; or a page under docs/how, docs/project or the community references has three or more numbered items that each begin with a command and no `not-a-procedure` reason. ddocs-check validates the documents and their renderings (it gains the skill home).",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-19",
+						"../prds/005-procedures.dd.json#requirements/req-03",
+						"../prds/005-procedures.dd.json#requirements/req-05",
+						"../prds/005-procedures.dd.json#requirements/req-13",
+						"../prds/005-procedures.dd.json#requirements/req-27",
+						"../prds/005-procedures.dd.json#requirements/req-31"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-report",
+					"name": "Reports",
+					"kind": "verb",
+					"where": "procedures.ts (`proc report`)",
+					"responsibility": "Run only when asked: files outside a procedure's folder that only that procedure uses (with the folder each belongs in), and blueprint components of kind verb, endpoint or hook that no procedure operates.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-06",
+						"../prds/005-procedures.dd.json#requirements/req-19"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-meta",
+					"name": "Meta procedures",
+					"kind": "skill",
+					"where": "skills/pij/procedures/meta/",
+					"responsibility": "PROC-meta-0001 (write a procedure) and PROC-meta-0002 (set up procedures in a repo, with the schema and the setup recipes in its folder).",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-23",
+						"../prds/005-procedures.dd.json#requirements/req-30",
+						"../prds/005-procedures.dd.json#requirements/req-27"
+					],
+					"state": "shipped"
+				},
+				{
+					"id": "c-docs-procedures",
+					"name": "Project-doc procedures",
+					"kind": "skill",
+					"where": "skills/pij/procedures/docs/",
+					"responsibility": "Write a PRD, a blueprint and a workstream, and fold in a ruling, as PROC-docs procedures; the old community pages point at them.",
+					"realises": ["../prds/005-procedures.dd.json#requirements/req-25"],
+					"state": "shipped"
+				},
+				{
+					"id": "c-exemplars",
+					"name": "pij's first procedures",
+					"kind": "file",
+					"where": "docs/project/procedures/{fleet,daemon,release}/",
+					"responsibility": "Change a live seat's reasoning effort, bounce the daemon after an rs merge, and take a Copilot or OMP update.",
+					"realises": ["../prds/005-procedures.dd.json#requirements/req-24"],
+					"state": "in-progress"
+				},
+				{
+					"id": "c-page-sort",
+					"name": "Existing how-tos sorted",
+					"kind": "file",
+					"where": "docs/how/, skills/pij/references/community/, workshop 003 input 003",
+					"responsibility": "Every page's fate (becomes a procedure, stays as reference, deleted) is listed in workshop 003 input 003; reference pages that number commands carry a `not-a-procedure` reason.",
+					"realises": ["../prds/005-procedures.dd.json#requirements/req-31"],
+					"state": "shipped"
+				},
+				{
+					"id": "c-skill-rule",
+					"name": "The rule in the skill",
+					"kind": "skill",
+					"where": "skills/pij/SKILL.md (invariant 13, the pij proc line, an alias row); templates/roles/coder/v5 and reviewer/v4 (pinned in crates/daemon/src/community/templates.rs); AGENTS.md",
+					"responsibility": "Find the procedure and follow it, or write one as you go: in the skill, the worker and reviewer packets, and AGENTS.md, which keeps one line per rule that moved into a procedure.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-22",
+						"../prds/005-procedures.dd.json#requirements/req-26"
+					],
+					"state": "shipped"
+				}
+			]
+		},
+		{
+			"name": "decisions",
+			"value": [
+				{
+					"id": "d-1",
+					"decision": "The runner is one TypeScript file in the skill, run by node's type stripping, with no build and no dependencies.",
+					"why": "It then works in any repo where pij is installed, as pr-freeze does, and needs no daemon or Rust change. The shim can load it in-process.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-08",
+						"../prds/005-procedures.dd.json#requirements/req-30"
+					]
+				},
+				{
+					"id": "d-2",
+					"decision": "No import line in the root justfile: the runner runs each procedure's own justfile directly.",
+					"why": "The survey's name clashes and swallowed flags came from area modules sharing the root namespace; this removes both and keeps deleting the folder a complete removal.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-04",
+						"../prds/005-procedures.dd.json#requirements/req-07",
+						"../prds/005-procedures.dd.json#requirements/req-15"
+					]
+				},
+				{
+					"id": "d-3",
+					"decision": "Numbers are booked with the existing claim kinds `procedure-<area>`.",
+					"why": "`pij claim` already takes any lowercase kind with one ledger and never reuses a number, and #342 finds folders in any case. Per-area numbers give the ids the PRD names (PROC-meta-0001). The runner guards the one gap: a folder that already holds the number.",
+					"realises": ["../prds/005-procedures.dd.json#requirements/req-02"]
+				},
+				{
+					"id": "d-4",
+					"decision": "Preconditions and done checks are recipes: exit 0 passes. Order checks run the other step's done check first and use recorded progress only when it has none.",
+					"why": "Recipes are what seats already run, so no predicate language is needed (non-goal n-1), and live state is right when the other step ran in another checkout (osk-central's review).",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-11",
+						"../prds/005-procedures.dd.json#requirements/req-12"
+					]
+				},
+				{
+					"id": "d-5",
+					"decision": "A decision step refuses until recorded; nothing waits.",
+					"why": "Waiting needs a poll or a hook, which req-28 forbids.",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-17",
+						"../prds/005-procedures.dd.json#requirements/req-28"
+					]
+				},
+				{
+					"id": "d-6",
+					"decision": "Listing never runs a check; it reads progress.",
+					"why": "Listing is the most frequent call; it must cost nothing (req-28).",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-14",
+						"../prds/005-procedures.dd.json#requirements/req-28"
+					]
+				},
+				{
+					"id": "d-7",
+					"decision": "Co-location is a report, not a gate.",
+					"why": "The operator's ruling of 2026-11-24: a file used by one procedure today may be shared tomorrow.",
+					"realises": ["../prds/005-procedures.dd.json#requirements/req-06"]
+				},
+				{
+					"id": "d-8",
+					"decision": "In pij's repo an area lives in one home; in another project, its own procedure hides the skill's with the same id.",
+					"why": "Every project books its own numbers. In pij both homes share one tree, so a collision there is a mistake; elsewhere a project that already had PROC-meta-0001 (osk-central) must keep its ids, so its own wins (osk-central prime's review of #343).",
+					"realises": [
+						"../prds/005-procedures.dd.json#requirements/req-02",
+						"../prds/005-procedures.dd.json#requirements/req-03"
+					]
+				}
+			]
+		},
+		{
+			"name": "costs",
+			"value": [
+				{
+					"id": "k-1",
+					"what": "Running one step.",
+					"rate": "on demand only: 1 `just` per precondition, 1 done check before, 1 run, 1 done check after, plus 1 per earlier step with no recorded progress and 1 per `requires` with a done check; each `just` runs its recipe through its shell; a precondition or done check that runs past 300 s is stopped and counts as failing, so a hung check never hangs the runner",
+					"scaling": "with the steps a seat runs; none per seat or per tick; the daemon's spawn counter does not move",
+					"component": ["#components/c-runner"]
+				},
+				{
+					"id": "k-2",
+					"what": "Listing procedures or a run's progress.",
+					"rate": "0 launches (reads files)",
+					"scaling": "with the number of procedure files",
+					"component": ["#components/c-list"]
+				},
+				{
+					"id": "k-3",
+					"what": "`proc check` in harness checks.",
+					"rate": "1 `git ls-files` and 1 `just --summary` per justfile (the root and each procedure's), per run of the gate; no build, no network",
+					"scaling": "with procedures that have a justfile",
+					"component": ["#components/c-check"]
+				},
+				{
+					"id": "k-4",
+					"what": "`pij proc` through the shim.",
+					"rate": "no launch beyond the shim's own node (the runner is loaded in-process)",
+					"scaling": "per call",
+					"component": ["#components/c-verbs"]
+				},
+				{
+					"id": "k-5",
+					"what": "`proc new` and `proc status`.",
+					"rate": "on demand: one `pij claim` request (the daemon scans in-process), a few git calls, and ddocs validate, set and build per document",
+					"scaling": "per procedure written or approved",
+					"component": ["#components/c-booking", "#components/c-status"]
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "First draft (PRD 005, workstream 005 s02)."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s03: c-schema, c-layout and c-booking shipped."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s04: c-runner, c-progress and c-verbs shipped."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s05: c-list, c-status, c-check, c-report and c-page-sort shipped."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s06: c-meta shipped; c-exemplars in progress (drafts awaiting the operator and a full run)."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s07: c-docs-procedures and c-skill-rule shipped; c-skill-rule names the new template versions."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "After osk-central prime's review of #343: c-progress in the clone's git directory; c-layout with a configurable home, shadowing outside pij and legacy pages; d-8 reworded."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "After the #343 review (pij-sole-tyrannosaurus): c-progress keeps one file per run, so runs of different keys never overwrite each other, and refuses a run key that is not a plain word; k-1 bounds every check at 300 s."
+				}
+			]
+		}
+	]
+}

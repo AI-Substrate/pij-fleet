@@ -1,0 +1,27 @@
+# PROC-fleet-0001's own recipes, run by the procedure runner from the repo root.
+# Inputs: PROC_IN_SEAT, PROC_IN_EFFORT.
+
+seat-is-idle-copilot:
+    #!/bin/sh
+    set -eu
+    row=$(pij list --json | jq -c --arg s "$PROC_IN_SEAT" '.data.seats[] | select(.id == $s)')
+    [ -n "$row" ] || { echo "no seat $PROC_IN_SEAT in pij list" >&2; exit 1; }
+    [ "$(printf %s "$row" | jq -r .harness)" = copilot ] || { echo "$PROC_IN_SEAT is not a Copilot seat" >&2; exit 1; }
+    state=$(printf %s "$row" | jq -r .state)
+    [ "$state" = idle ] || { echo "$PROC_IN_SEAT is $state, not idle" >&2; exit 1; }
+
+relaunch:
+    @sh "{{justfile_directory()}}/relaunch.sh" relaunch
+
+# The seat's process runs on exactly the effort asked for (an allowlisted word, compared as a fixed string).
+effort-is:
+    @sh "{{justfile_directory()}}/relaunch.sh" effort-is
+
+show:
+    #!/bin/sh
+    pij list --json | jq --arg s "$PROC_IN_SEAT" '.data.seats[] | select(.id == $s) | {state, proc, extension_build}'
+    pane=$(pij list --json | jq -r --arg s "$PROC_IN_SEAT" '.data.seats[] | select(.id == $s) | .pane')
+    tmux capture-pane -p -t "$pane" | tail -1
+
+registered: effort-is
+    @pij list --json | jq -e --arg s "$PROC_IN_SEAT" '.data.seats[] | select(.id == $s) | .extension_build != null' >/dev/null

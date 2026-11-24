@@ -1,0 +1,136 @@
+{
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-daemon-0001",
+				"title": "Bounce the daemon after an rs merge",
+				"area": "daemon",
+				"kind": "runnable",
+				"owner": "prime",
+				"status": "draft",
+				"updated": "2026-11-24",
+				"summary": "After an rs merge: bring the main checkout up to date, rebuild and restart the daemon with `just bounce-rs`, and audit with `just doctor`."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "Whoever merged a PR that touches crates/, or the prime.",
+				"when": "After any PR that changes the daemon merges to main (the standing order). Run it with `--key <PR number>` so each merge is its own run."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": []
+		},
+		{
+			"name": "preconditions",
+			"value": [
+				{
+					"id": "p-1",
+					"check": "in-main-checkout",
+					"text": "this is the canonical main checkout on main",
+					"fix": "run it from the main checkout (`just link` and the deploy recipes refuse linked worktrees)"
+				}
+			]
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Bring the main checkout up to origin/main",
+					"kind": "run",
+					"done_when": "The canonical main checkout's HEAD is origin/main.",
+					"run": "update-main",
+					"done": "main-current"
+				},
+				{
+					"id": "s0002",
+					"title": "Rebuild, install and restart the daemon",
+					"kind": "run",
+					"done_when": "The running daemon reports the main checkout's HEAD as its commit.",
+					"run": "bounce-rs",
+					"done": "daemon-runs-head",
+					"proven_in_practice": "`just bounce-rs` is the fleet's standing order after every rs merge; this step wraps it unchanged."
+				},
+				{
+					"id": "s0003",
+					"title": "Audit the installed surfaces",
+					"kind": "run",
+					"done_when": "`just doctor` reports the daemon up and prints a fix for anything stale.",
+					"run": "doctor"
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "The daemon runs the merged code from the main checkout, and `just doctor` is clean or names its fixes."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "The restart leaves a sub-second gap; clients reconnect. A failure after the old daemon is signalled has no rollback (AGENTS.md, release-build.sh)."
+				},
+				{
+					"id": "l-2",
+					"text": "A disruptive rehearsal: run it for real only after a merge, or rehearse at a quiet time (PRD 005 req-24)."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Bouncing from a linked worktree: it would install that tree's build."
+				},
+				{
+					"id": "m-2",
+					"text": "Building with bare cargo: bounce-rs builds through shared-build at niceness 19, one build at a time."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": []
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": []
+		},
+		{
+			"name": "side_effects",
+			"value": []
+		},
+		{
+			"name": "comments",
+			"value": []
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "First draft (PRD 005 s06)."
+				}
+			]
+		}
+	],
+	"references": []
+}

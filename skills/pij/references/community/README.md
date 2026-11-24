@@ -1,13 +1,13 @@
 # Project docs: PRDs, blueprints and workstreams
 
-How to write the docs under `docs/project/`. One procedure per type, plus one for folding a ruling in:
+How to write the docs under `docs/project/`. Each type has a procedure in the skill (`skills/pij/procedures/docs/`), plus one for folding a ruling in; run one with `pij proc <id> --key <slug>`:
 
 | You want to | Read |
 |---|---|
-| say what to build and why | [prd.md](prd.md) |
-| say how it is built and what it costs | [blueprint.md](blueprint.md) |
-| order the work into steps and plans | [workstream.md](workstream.md) |
-| change the docs after a ruling | [fold-a-ruling.md](fold-a-ruling.md) |
+| say what to build and why | [PROC-docs-0001](../../procedures/docs/PROC-docs-0001-write-a-prd/procedure.dd.md) |
+| say how it is built and what it costs | [PROC-docs-0002](../../procedures/docs/PROC-docs-0002-write-a-blueprint/procedure.dd.md) |
+| order the work into steps and plans | [PROC-docs-0003](../../procedures/docs/PROC-docs-0003-write-a-workstream/procedure.dd.md) |
+| change the docs after a ruling | [PROC-docs-0004](../../procedures/docs/PROC-docs-0004-fold-a-ruling/procedure.dd.md) |
 
 Worked examples: a small linked set in [examples/](examples/) (`prds/`, `blueprints/`, `workstreams/` `001-daily-digest`; the workstream has no nesting or lanes). The full-size set is pij's own, for Pij Emergent Communities (PEC): `docs/project/prds/001-pij-community.dd.json`, `docs/project/blueprints/001-pij-community.dd.json`, `docs/project/workstreams/001-pij-community.dd.json` (workstream 001).
 

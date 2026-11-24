@@ -58,6 +58,13 @@ const SENSORS: Sensor[] = [
 			"every PRD requirement is delivered by a workstream step (or dropped), every blueprint component is built by one, and no umbrella step is complete before its children",
 	},
 	{
+		name: "procedures",
+		cmd: "just",
+		args: ["procedures-check"],
+		proves:
+			"procedures sit one per PROC folder, name recipes that exist, declare every path they use outside their folder, store no relayed messages, and no page outside a procedure folder numbers commands (PRD 005)",
+	},
+	{
 		name: "pij-skill",
 		cmd: "just",
 		args: ["pij-skill-check"],

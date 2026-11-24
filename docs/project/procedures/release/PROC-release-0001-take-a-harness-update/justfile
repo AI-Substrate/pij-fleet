@@ -1,0 +1,10 @@
+# PROC-release-0001's own recipes, run by the procedure runner from the repo root. Step 0003 runs the root doctor.
+
+update:
+    #!/bin/sh
+    set -eu
+    case "${PROC_IN_HARNESS:-}" in
+      copilot) exec just --justfile "$PROC_ROOT/justfile" --working-directory "$PROC_ROOT" update-copilot ;;
+      omp) exec just --justfile "$PROC_ROOT/justfile" --working-directory "$PROC_ROOT" update-omp ;;
+      *) echo "harness is copilot or omp, not '${PROC_IN_HARNESS:-}'" >&2; exit 2 ;;
+    esac

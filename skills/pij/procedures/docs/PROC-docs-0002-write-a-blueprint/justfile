@@ -1,0 +1,24 @@
+# PROC-docs-0002's own recipes, run by the procedure runner from the repo root (never imported by the root justfile).
+
+claim:
+    @pij claim blueprint --for "$PROC_IN_SLUG"
+
+claimed:
+    #!/bin/sh
+    ls docs/project/blueprints/*-"$PROC_IN_SLUG".dd.json >/dev/null 2>&1 && exit 0
+    pij claims --open 2>/dev/null | grep -Eq "^ *blueprint [0-9]+ .*\"$PROC_IN_SLUG\""
+
+validate:
+    #!/bin/sh
+    set -eu
+    f=$(ls docs/project/blueprints/*-"$PROC_IN_SLUG".dd.json 2>/dev/null | head -1)
+    [ -n "$f" ] || { echo "no docs/project/blueprints/NNN-$PROC_IN_SLUG.dd.json yet" >&2; exit 1; }
+    git add -- "$f"
+    ddocs validate "$f" | jq -e '.data.counts.error == 0 and .data.counts.warn == 0' >/dev/null || { ddocs validate "$f"; exit 1; }
+    ddocs build "$f" >/dev/null
+    git add -- "${f%.json}.md"
+
+valid:
+    #!/bin/sh
+    f=$(ls docs/project/blueprints/*-"$PROC_IN_SLUG".dd.json 2>/dev/null | head -1)
+    [ -n "$f" ] && [ -f "${f%.json}.md" ] && ddocs validate "$f" | jq -e '.data.counts.error == 0 and .data.counts.warn == 0' >/dev/null

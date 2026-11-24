@@ -1,0 +1,553 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 005: procedures",
+				"status": "draft",
+				"updated": "2026-11-23",
+				"owner": "pij-intense-herring",
+				"summary": "Repeatable work in pij gets written down as procedures: ddocs with stable ids, steps that are commands which check their own preconditions, and everything the procedure needs stored in its own folder. A seat finds the procedure and follows it, or writes one as it goes, so what one seat learns isn't lost when it closes."
+			}
+		},
+		{
+			"name": "why",
+			"value": "pij has PRDs (what and why), blueprints (how it is built) and workstreams (in what order), but nothing that says how a piece of repeatable work is done. That knowledge lives in `just` recipes, AGENTS.md rules, skills and seats' memory, and is rebuilt each time. On 2026-11-23 the prime changed a live seat's reasoning effort by hand; the steps existed nowhere until written up as `docs/how/change-seat-effort.md`. osk-central built a procedure system the week before (`PROC-<area>-NNNN`, after the operator's \"this is a business, not the wild west\"). A survey of 8 of its seats found what worked (steps that are commands, refusals that name the fix, writing the procedure as you go) and what hurt: preconditions that lived in one person's head (6 of 8 seats), order between procedures that nobody checked, two layouts side by side, and tooling that only worked from the repo root. This PRD takes the first and designs out the second."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-operator",
+					"name": "operator",
+					"need": "Repeatable work done the same way by any seat, rebuildable from the procedure alone, with the approval of each procedure on record."
+				},
+				{
+					"id": "a-prime",
+					"name": "prime",
+					"need": "To hand a seat the procedure for its task, and to see which work has none."
+				},
+				{
+					"id": "a-seat",
+					"name": "seat",
+					"need": "To find the procedure for a task, see where a run is, and be stopped with the fix when a step isn't ready."
+				},
+				{
+					"id": "a-author",
+					"name": "author",
+					"need": "To start a procedure in one command and write it from what actually happened."
+				},
+				{
+					"id": "a-reviewer",
+					"name": "reviewer",
+					"need": "To check what a step does, not what someone says it did, and to see drift without reading every file."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "Any seat can do a repeatable job from its procedure alone; deleting the result and rebuilding it from the procedure works."
+				},
+				{
+					"id": "g-2",
+					"goal": "A step cannot run when its preconditions aren't met, and says what to run first."
+				},
+				{
+					"id": "g-3",
+					"goal": "Everything that belongs to a procedure is stored with it, and everything it relies on elsewhere is linked."
+				},
+				{
+					"id": "g-4",
+					"goal": "Procedures stay joined to PRDs, blueprints and recipes, and drift is caught by `harness checks`."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "A formal precondition language. Preconditions are commands that pass or fail."
+				},
+				{
+					"id": "n-2",
+					"text": "Managing secrets. pij keeps no vault; a procedure that needs a secret uses the tool that holds it."
+				},
+				{
+					"id": "n-3",
+					"text": "Migrating osk-central's procedures, or enforcing procedures in other projects."
+				},
+				{
+					"id": "n-4",
+					"text": "Replacing `just`, `harness checks` or skills. Procedures call them."
+				},
+				{
+					"id": "n-5",
+					"text": "A hand-kept index of procedures."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "A procedure document type",
+					"statement": "A procedure is a ddoc with schema `pij/procedure`: id, title, area, kind, status, owning role, who runs it and when, inputs, preconditions, steps, done when, known limits, common mistakes, links, comments (the notes a run leaves for the next one, kept apart from the changelog) and a changelog. Each step can record `proven_in_practice`: where and when it last ran for real, kept apart from status, because a step can exist without ever having run on real input.",
+					"actor": "author",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`ddocs validate` passes a complete procedure and fails one missing its steps or done-when.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23; proven_in_practice from accelerated-decomposition's dogfood 02 (2026-11-23)"
+				},
+				{
+					"id": "req-02",
+					"title": "Stable ids, booked",
+					"statement": "Each procedure has an id `PROC-<area>-NNNN`, booked with `pij claim procedure --for <slug>`, from one ledger, never reused. Before `procedure` is added as a kind, `pij claim` finds a project's existing docs whatever the folder's case (`prds/` or `PRD/`).",
+					"actor": "author",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Two seats booking in the same area at once get different numbers, a released number is never handed out again, and in a repo whose PRDs live in `docs/project/PRD/` the next PRD number follows the highest one there.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
+				},
+				{
+					"id": "req-03",
+					"title": "One layout: a folder per procedure",
+					"statement": "Every procedure lives in its own folder: `<home>/<area>/PROC-<area>-NNNN-<slug>/`, where a project's home is `docs/project/procedures` unless its committed `.pij-procedures.json` names another, and procedures that ship with the pij skill live under `skills/pij/procedures/`. In pij's own repo an area lives in one home; in another project, a procedure with the same id as one of the skill's hides it, so a project's existing ids never change. There is no flat, single-file form.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A check fails on a procedure document outside a `PROC-*` folder in either home, and on a folder without exactly one procedure document.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (3 seats: two layouts were the worst confusion)"
+				},
+				{
+					"id": "req-04",
+					"title": "Everything the procedure needs is stored with it",
+					"statement": "Anything that belongs only to one procedure lives in its folder: the procedure document, its justfile module, step scripts, step tests, fixtures and templates, and the how-to for humans. Deleting the folder removes the procedure completely.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Deleting one procedure's folder leaves no file in the repo that only it used, and `harness checks` still passes.",
+					"source": "operator, 2026-11-23"
+				},
+				{
+					"id": "req-05",
+					"title": "Shared and product things stay outside, linked",
+					"statement": "What a procedure builds or operates, tests of a package's own code, shared tooling (the root justfile, `harness/scripts/`), anything that handles secrets and rules shared across procedures stay where they are. The procedure links each one by path or id, and declares every file it changes outside its folder.",
+					"actor": "author",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Every path a procedure's steps run or change outside its folder appears in its links or declared side effects.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md"
+				},
+				{
+					"id": "req-06",
+					"title": "Co-location is checked",
+					"statement": "A report, run when asked, lists scripts or files referenced by exactly one procedure but kept outside that procedure's folder, naming the folder each belongs in. It is a report, not a failing check: a file used by one procedure today may be shared tomorrow.",
+					"actor": "reviewer",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Moving a procedure's step script to `harness/scripts/` makes the report name the file and the folder it belongs in, while `harness checks` still passes.",
+					"source": "operator, 2026-11-23"
+				},
+				{
+					"id": "req-07",
+					"title": "One command starts a procedure",
+					"statement": "One command (`just proc new <area> <slug>`, or `pij proc new` outside pij) books the id and creates the folder, a valid procedure document and, for a runnable procedure, its own justfile, in the caller's own worktree. It refuses in the main checkout or on main, and prints the worktree it wrote to. The runner runs a procedure's justfile directly, so there is no import line in the root justfile and no recipe name can clash.",
+					"actor": "author",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Run from a feature worktree it creates a folder that passes `ddocs validate`; run from main it refuses and changes nothing.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (rising-crane: proc-new wrote into main)"
+				},
+				{
+					"id": "req-08",
+					"title": "Works from any directory",
+					"statement": "Every procedure command works from any directory inside the checkout, not only the repo root. Commands that need `ddocs` (validate, status) run it from the repo root for you, because `ddocs` itself finds its schemas only from there.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Running a procedure's listing from inside its own folder and from the repo root gives the same output, and `just proc check` passes from a subdirectory.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (3 seats)"
+				},
+				{
+					"id": "req-09",
+					"title": "Steps are commands, idempotent",
+					"statement": "Each runnable step names one `just` recipe. A step already done is a no-op that says so; `--again` reruns it. Step ids have one numbered form.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Running a finished step twice changes nothing the second time and prints `already done (--again to run it anyway)`.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md"
+				},
+				{
+					"id": "req-10",
+					"title": "Steps declare inputs, fallbacks and who may run them",
+					"statement": "Each step lists its inputs and named arguments, what to do when an input is missing, and the role allowed to run it. Arguments reach the step's precondition and done checks.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A step run without a required input refuses and names the input and its fallback; a precondition check receives the step's arguments.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (6 of 8 seats hit preconditions that lived in one head)"
+				},
+				{
+					"id": "req-11",
+					"title": "Preconditions are checks that refuse",
+					"statement": "Each precondition is a runnable check. A step whose precondition fails refuses, naming the reason and the step or command to run first. A precondition is never only prose: \"common mistakes\" may explain, but never holds one.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Breaking a step's precondition makes the step refuse with its reason and the fix, and change nothing.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (automatic-wombat, smart-marlin)"
+				},
+				{
+					"id": "req-12",
+					"title": "Order across procedures is checked",
+					"statement": "A step can require a result that another procedure produces, and refuses, naming that procedure and step, when it isn't there. The check reads the live state the other procedure leaves; it falls back to that procedure's recorded progress only for state that can't be observed, because the other procedure may have run in another checkout or on another machine.",
+					"actor": "seat",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "A step that needs another procedure's result refuses while the result is missing, and passes once it exists, even when the other procedure ran in a different worktree.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (automatic-wombat: each missed order cost an hour)"
+				},
+				{
+					"id": "req-13",
+					"title": "Access and secret steps prove the live state",
+					"statement": "A step that changes access, permissions or secrets ends with a done check that reads the live state, not the exit code of the command that changed it. No step prints a secret or puts one in an argument list.",
+					"actor": "reviewer",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A step whose change silently did not take effect reports not done.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (smart-marlin)"
+				},
+				{
+					"id": "req-14",
+					"title": "See where a run is",
+					"statement": "Running a procedure with no step lists its steps as done, next or to do, with `--json` for agents. Progress and recorded decisions live in the clone's shared git directory, so every worktree of the clone sees them and removing a worktree loses nothing. A procedure run without a key uses one default key; a procedure run once per environment or target gives each run its own key. A trial run's progress can be cleared.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "After step 0001 of a three-step procedure the listing shows 0001 done and 0002 next, and clearing the run's key empties it.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
+				},
+				{
+					"id": "req-15",
+					"title": "Flags are never swallowed",
+					"statement": "A flag passed to a procedure reaches its step. An unknown flag refuses instead of being ignored.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`--again` passed through the procedure's recipe reruns the step, and an unknown flag exits non-zero naming it.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (automatic-wombat: a release ran without a step because `--again` was dropped)"
+				},
+				{
+					"id": "req-16",
+					"title": "Long-running commands have a place",
+					"statement": "A procedure can carry plain commands that sit outside the step model, such as serve, watch or a tunnel, listed with it but not tracked as steps.",
+					"actor": "author",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "A procedure with a `serve` command lists it separately, and running it does not mark any step done.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (rising-crane)"
+				},
+				{
+					"id": "req-17",
+					"title": "Procedure kinds and sub-procedures",
+					"statement": "A procedure is runnable, mixed (commands plus a person's decision), guide-only or meta. A decision step refuses until its decision is recorded (a progress entry or a signed changelog row) and names who must give it; nothing waits or polls. A guide step may point at another procedure, which runs as a sub-procedure.",
+					"actor": "author",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "A mixed procedure's decision step refuses, naming who must decide, until the decision is recorded, and a guide step's link resolves to a procedure.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
+				},
+				{
+					"id": "req-18",
+					"title": "Links carry a rule",
+					"statement": "A procedure links to the PRD rows it carries out, the blueprint components it operates and other procedures it uses. Each link to a PRD row carries a sentence saying what the procedure guarantees for it; on a blueprint component link the sentence is optional.",
+					"actor": "reviewer",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "`ddocs validate` refuses a PRD-row link without its sentence, and `ddocs links` on a PRD row lists the procedures that carry it out.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (relaxed-deer: links without a rule are paperwork)"
+				},
+				{
+					"id": "req-19",
+					"title": "Drift is caught in harness checks",
+					"statement": "A `harness checks` stage fails when a procedure's link doesn't resolve or a step names a `just` recipe that doesn't exist. The co-location report (req-06) and a report of blueprint components with no procedure run only when asked.",
+					"actor": "reviewer",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Renaming a recipe that a procedure step names makes `harness checks` fail and name both.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
+				},
+				{
+					"id": "req-20",
+					"title": "A generated list of procedures",
+					"statement": "One command lists every procedure with its id, title, status, owner and kind, generated from the files. Nobody keeps an index by hand.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A new procedure appears in the list without any other file being edited.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
+				},
+				{
+					"id": "req-21",
+					"title": "Status changes record the operator's yes",
+					"statement": "A draft procedure is usable: status records approval and gates nothing. A procedure is draft until the operator approves it. One command moves one or several procedures to current, superseded or retired and records who approved it, their words (`--why`, required, so a scoped yes isn't recorded as a full one) and when in each changelog. A retired procedure keeps its folder.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Approving two procedures in one command adds a changelog row naming the operator's approval to each, a draft's steps run like a current one's, and a retired one still validates.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
+				},
+				{
+					"id": "req-22",
+					"title": "Find the procedure, or write it as you go",
+					"statement": "The pij skill tells every seat to find the procedure for repeatable work and follow it, or write one as it goes. Seat packets point at the procedure for their task, and reviewers flag repeatable work done without one.",
+					"actor": "seat",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "The pij skill and the worker and reviewer packets state the rule, and a reviewer verdict names a missing procedure.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (rule 0 changed fleet behaviour most)"
+				},
+				{
+					"id": "req-23",
+					"title": "A procedure for writing procedures",
+					"statement": "PROC-meta-0001 says how to write a procedure, including the pitfalls the survey found (no arguments to checks, ids unique across sections, root-relative links, what to do when the design changes under review), two rules (a run that finds a wrong step fixes the procedure in the same PR; a procedure past about 10 steps splits into sub-procedures) and a drafting pattern: draft from the main source, mark each gap, then send each specialist lettered questions keyed to step and gap ids and take their answers as files, not messages.",
+					"actor": "author",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A seat with no other briefing writes a procedure that passes `ddocs validate` and the drift check by following PROC-meta-0001.",
+					"source": "survey of 8 osk-central seats; drafting pattern from accelerated-decomposition's dogfood 02 (five specialists answered lettered questions in about 15 minutes)"
+				},
+				{
+					"id": "req-24",
+					"title": "First procedures",
+					"statement": "pij's first procedures are: change a live seat's reasoning effort (from `docs/how/change-seat-effort.md`), bounce the daemon after an rs merge, and take a Copilot or OMP update. Diagnosing a seat that receives nothing moved to req-32.",
+					"actor": "operator",
+					"priority": "should",
+					"state": "in-progress",
+					"done_when": "Each is a current procedure that a fresh seat has run end to end from the procedure alone. A disruptive one (bouncing the daemon) may be rehearsed at a quiet time or on a second daemon.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23; operator, 2026-11-23",
+					"note": "Drafts: PROC-fleet-0001, PROC-daemon-0001, PROC-release-0001. Each needs the operator's yes (proc status current) and one full run; the daemon bounce at a quiet time or after the next rs merge."
+				},
+				{
+					"id": "req-25",
+					"title": "Project-doc how-tos become procedures",
+					"statement": "The how-tos for writing a PRD, blueprint or workstream and folding in a ruling (`skills/pij/references/community/`) become procedures in the `docs` area, and the old pages point at them.",
+					"actor": "author",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Each old page is a pointer to a PROC-docs procedure, and the procedures validate.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23"
+				},
+				{
+					"id": "req-26",
+					"title": "AGENTS.md keeps a pointer",
+					"statement": "A rule in AGENTS.md that is really a procedure step keeps one line there, linked to its procedure, so every seat still sees it at startup.",
+					"actor": "seat",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Each rule moved into a procedure still has a one-line entry in AGENTS.md that links to it.",
+					"source": "pij-ultimate-scallop's recommendations, 2026-11-23, amended"
+				},
+				{
+					"id": "req-27",
+					"title": "No personal data in procedure folders",
+					"statement": "No procedure tells a seat to save relayed messages or other raw input into the repo. Data locations are cited from one blueprint, not written into procedure text.",
+					"actor": "reviewer",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "The meta procedure and the drift check reject a step that writes relayed message bodies under `docs/`.",
+					"source": "survey of 8 osk-central seats, workshops/003-procedures/001-osk-survey.md (relaxed-deer)"
+				},
+				{
+					"id": "req-28",
+					"title": "Procedures add no background cost",
+					"statement": "Procedures add no loop, poll, timer or hook, and nothing in them relies on an end-of-turn harness hook (those don't run on every seat; alt Claude seats skip them today). A run records its own state from the step command, launches only the commands its steps name, and the listing and the drift check read files without launching processes.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "The daemon's spawn counter (`pij-rs --json ping | jq .data.spawns`) does not move while procedures are listed or checked.",
+					"source": "AGENTS.md: resource cost is a correctness property"
+				},
+				{
+					"id": "req-29",
+					"title": "Other pij projects can use procedures",
+					"statement": "The `pij/procedure` schema and the meta procedure ship in the pij skill beside the other project-doc schemas, so any pij project can adopt them.",
+					"actor": "author",
+					"priority": "could",
+					"state": "dropped",
+					"done_when": "A repo with no procedures copies the schema from the skill and validates a first procedure.",
+					"source": "operator, 2026-11-23",
+					"note": "Merged into req-30: PROC-meta-0002's folder in the skill ships the schema (osk-central prime's review, 2026-11-23)."
+				},
+				{
+					"id": "req-30",
+					"title": "Setting up procedures is itself a procedure",
+					"statement": "PROC-meta-0002, \"set up procedures in a repo\", is stored with the pij skill, with everything it needs in its folder (the `pij/procedure` schema to copy, templates and setup scripts). Run against any repo, it adds the schema, the procedures folder, the justfile import and the drift check, and does nothing on a repo already set up.",
+					"actor": "author",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "Run in a fresh repo, it leaves a first procedure that validates and a drift check that passes; run a second time, it changes nothing.",
+					"source": "operator, 2026-11-23"
+				},
+				{
+					"id": "req-31",
+					"title": "Existing how-tos are sorted when the layout lands",
+					"statement": "In the PR that lands the procedure layout, every page in `docs/how/` and `skills/pij/references/community/` is given a fate: it becomes a procedure, stays as reference (with no numbered steps), or is deleted. From then on a check refuses numbered steps outside a `PROC-*` folder, so pij never keeps two layouts side by side. A project adopting procedures with pages from before them lists each in `.pij-procedures.json` with its count of numbered commands: those pages may shrink, never grow.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "The layout PR lists every page with its fate, and adding a page of numbered steps under `docs/how/` fails `harness checks`.",
+					"source": "osk-central prime's review, 2026-11-23 (osk-central's flat pages came back after the folder layout landed beside them)",
+					"note": "Fates: docs/project/workshops/003-procedures/003-page-fates.md. On 2026-11-24 only change-seat-effort.md tripped the check."
+				},
+				{
+					"id": "req-32",
+					"title": "The remaining how-to pages become procedures",
+					"statement": "The pages whose fate is \"becomes a procedure, later\" (workshop 003 input 003: fleet/recipe.md, the curator path in agent-feedback.md, setup and key rotation in pij-federation.md) and diagnosing a seat that receives nothing are written as procedures, and their pages point at them.",
+					"actor": "seat",
+					"priority": "could",
+					"state": "planned",
+					"done_when": "Each is a procedure that passes `just procedures-check`, and its old page keeps only reference text and a link.",
+					"source": "workshop 003 input 003; split from req-24 (2026-11-24)"
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "Which areas?",
+					"default": "daemon, fleet, build, release, docs and meta.",
+					"status": "answered",
+					"answer": "daemon, fleet, build, release, docs and meta. Another project picks its own areas; the runner accepts any lowercase area. Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+				},
+				{
+					"id": "q-02",
+					"question": "Where do procedures live?",
+					"default": "`docs/project/procedures/<area>/`, beside the other project docs.",
+					"status": "answered",
+					"answer": "`docs/project/procedures/<area>/` for a project's own procedures, and `skills/pij/procedures/<area>/` for those that ship with the skill (req-03). Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+				},
+				{
+					"id": "q-03",
+					"question": "Where is a run's progress kept?",
+					"default": "Per checkout, in a git-ignored file, keyed by procedure and run key; never committed.",
+					"status": "answered",
+					"answer": "Per checkout, in a git-ignored file (`.pij/procedures/progress.json`), keyed by procedure and run key; never committed. Order checks read live state first (req-12). Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session). Later, per req-14 and the #343 reviews: in the clone's shared git directory, one file per procedure and run key."
+				},
+				{
+					"id": "q-04",
+					"question": "Which runner?",
+					"default": "A small pij runner reached through `just`; adopt osk-central's shared runner design rather than its code.",
+					"status": "answered",
+					"answer": "A small pij runner in the skill (`skills/pij/tools/procedures/`), reached through `just proc` in pij and `pij proc` anywhere; osk-central's design, not its code. Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+				},
+				{
+					"id": "q-05",
+					"question": "Is \"who may run this step\" checked or only stated?",
+					"default": "Stated in the document, checked when the runner can resolve the caller's role (`pij whoami`).",
+					"status": "answered",
+					"answer": "Stated in the document, and the runner prints it before the step runs. It is checked once the runner can read the caller's directory roles cheaply; until then it is not enforced (owners are roles, never seats). Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+				},
+				{
+					"id": "q-06",
+					"question": "Which AGENTS.md rules move into procedures?",
+					"default": "Only rules that are steps of a repeatable job; AGENTS.md keeps one line each (req-26).",
+					"status": "answered",
+					"answer": "Only rules that are steps of a repeatable job; AGENTS.md keeps one line each (req-26). Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+				},
+				{
+					"id": "q-07",
+					"question": "How does a changelog row name its PR without a second commit?",
+					"default": "It may say \"this PR\"; `pij delivered` fills in the number after the merge.",
+					"status": "answered",
+					"answer": "A changelog row may say \"this PR\"; git history ties the row to its PR, so no second commit is needed. Having `pij delivered` fill in the number is left for later (it needs a daemon change). Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+				},
+				{
+					"id": "q-08",
+					"question": "Are preconditions `harness checks` sensors?",
+					"default": "A precondition may call a sensor; not every precondition must be one.",
+					"status": "answered",
+					"answer": "A precondition may call a sensor; not every precondition must be one. Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+				},
+				{
+					"id": "q-09",
+					"question": "How does the check in req-31 tell a procedure's numbered steps from an ordinary numbered list in a reference page?",
+					"default": "A reference page may number a list, but not a list whose items are commands to run in order; the check flags a page with three or more numbered items that each start with a command block, and a page can opt out with a reason.",
+					"status": "answered",
+					"answer": "The check flags a page with three or more numbered items that each begin with a command (inline code or a code block). A reference page opts out with a `<!-- not-a-procedure: <reason> -->` line. Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-23",
+					"by": "pij-intense-herring",
+					"change": "First draft, from the operator's brief, pij-ultimate-scallop's recommendations and the survey of 8 osk-central seats (workshop 003)."
+				},
+				{
+					"date": "2026-11-23",
+					"by": "pij-intense-herring",
+					"change": "Operator: setting up procedures in a repo is a procedure (req-30, PROC-meta-0002), stored with the pij skill; req-03 gains the skill as a second home."
+				},
+				{
+					"date": "2026-11-23",
+					"by": "pij-intense-herring",
+					"change": "Folded in osk-central prime's review: req-31 (sort docs/how and the community how-tos when the layout lands); pij claim finds PRD folders in any case (req-02); order checks read live state (req-12); decision steps refuse instead of waiting (req-17, keeps req-28); no reliance on end-of-turn hooks (req-28); comments in the schema (req-01); co-location is a report, not a gate (req-06, req-19); blueprint link sentences optional (req-18); drafts are usable and approval can be batched (req-21); meta-0001 rules (req-23); default run key (req-14); rehearsal for disruptive exemplars (req-24); req-25 to should; req-29 dropped into req-30; q-09 added."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "Workshop 003 settled by the operator's ruling of 2026-11-24: q-01 to q-09 answered with their proposed answers (q-05 and q-07 say what is left for later). Folded in accelerated-decomposition's dogfood 02 (req-01 proven_in_practice, req-23 drafting pattern). req-04, req-07 and req-08 follow the runner design: no root justfile import line; ddocs runs from the root for you."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s03: req-01, 02, 03, 07 and 08 shipped (schema pij/procedure, layout, `proc new` booking through pij claim procedure-<area>, any-directory runner); req-04 and 05 in progress until the first procedures prove them."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s04: req-09 to req-17 shipped: idempotent steps with --again, declared inputs (secret ones never on the command line), preconditions that refuse with their fix, order inside and across procedures by live done checks, per-key progress, flags that reach the step or refuse, commands outside the steps, decision and guide steps."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s05: req-06, 19, 20, 21, 28 and 31 shipped (report, harness checks stage, generated list, status with the approver, no background cost: the daemon spawn counter did not move across list and check, and the check runs in about 0.1 s; every how-to page has a fate). req-18 and 27 in progress until the first procedures carry links and PROC-meta-0001 states the rule. req-24 narrowed; diagnosing a seat and three pages marked for later become req-32."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s06: req-04, 05, 18, 23, 27 and 30 shipped. Nine procedures written (PROC-meta-0001, 0002; PROC-docs-0001 to 0004; PROC-fleet-0001, PROC-daemon-0001, PROC-release-0001). PROC-meta-0002 ran on a fresh repo and a second run changed nothing; deleting PROC-fleet-0001 left no file only it used and the checks green; ddocs links lists PROC-meta-0002 carrying out req-30. Step ids became s0001 (ddocs address segments start with a letter) and yes/no fields replaced booleans (ddocs has no boolean type). req-24 stays in progress: the three pij procedures are drafts until the operator approves them and each has run end to end (the daemon one at a quiet time)."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "s07: req-22, 25 and 26 shipped. SKILL.md invariant 13 states rule 0; coder v5 and reviewer v4 templates carry it (a verdict names repeatable work done without a procedure); the community how-tos are PROC-docs-0001 to 0004 and the old pages point at them; AGENTS.md gains a procedures section and one-line pointers to PROC-daemon-0001 and PROC-release-0001."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "Folded in osk-central prime's review of #343: progress and decisions move to the clone's shared git directory (req-14); a project's home is configurable and its own ids hide the skill's outside pij (req-03); status needs --why with the approver's words (req-21); adopting projects ratchet legacy pages (req-31); PROC-meta-0001's how-to gives step ids as sNNNN."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "After the #343 review (pij-sole-tyrannosaurus): PROC-fleet-0001 now keeps req-13 (no environment value on any command line: they pass through a 0600 file the pane reads and deletes; secret-like names are not carried; the effort is allowlisted and checked as an exact word). Run keys must be plain words, each run keeps its own progress file, and checks time out at 300 s."
+				}
+			]
+		}
+	]
+}

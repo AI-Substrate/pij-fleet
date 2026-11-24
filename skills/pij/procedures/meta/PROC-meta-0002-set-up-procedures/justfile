@@ -1,0 +1,43 @@
+# PROC-meta-0002's own recipes. They run from the target repo's root and change only the paths the procedure
+# lists under side_effects. The schema comes from the skill's copy beside this procedure's area.
+
+schema := justfile_directory() / "../../../schemas/pij/procedure/schema.json"
+
+on-a-branch:
+    #!/bin/sh
+    b=$(git symbolic-ref --short -q HEAD) || { echo "not on a branch" >&2; exit 1; }
+    case "$b" in main|master) echo "on $b: make a feature branch first" >&2; exit 1 ;; esac
+
+copy-schema:
+    @mkdir -p .dd/schemas/pij/procedure && cp "{{schema}}" .dd/schemas/pij/procedure/schema.json
+
+schema-copied:
+    @cmp -s "{{schema}}" .dd/schemas/pij/procedure/schema.json
+
+make-home:
+    @mkdir -p docs/project/procedures && cp -n "{{justfile_directory()}}/home-README.md" docs/project/procedures/README.md
+
+home-made:
+    @test -f docs/project/procedures/README.md
+
+add-recipes:
+    #!/bin/sh
+    set -eu
+    f=justfile
+    [ -f Justfile ] && f=Justfile
+    [ -f "$f" ] || : > "$f"
+    grep -Eq '^proc( |:)' "$f" || cat "{{justfile_directory()}}/recipes.just" >> "$f"
+
+recipes-added:
+    #!/bin/sh
+    names=$(just --summary)
+    for r in proc procedures-check; do printf '%s\n' $names | grep -qx "$r" || exit 1; done
+
+ignore-progress:
+    @touch .gitignore && (grep -qxF '.pij/' .gitignore || printf '.pij/\n' >> .gitignore)
+
+progress-ignored:
+    @grep -qxF '.pij/' .gitignore
+
+check:
+    @node --experimental-strip-types --disable-warning=ExperimentalWarning "$PROC_RUNNER" check
