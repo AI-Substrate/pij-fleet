@@ -1714,6 +1714,16 @@
 					"machine": "studio",
 					"seat": "pij-intense-herring",
 					"why": "Jordan-approved PRD 005 end-to-end build (spine 4753494); pm-001 runs it"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-24T23:15:23.648Z",
+					"harness": "copilot",
+					"harness_session": "cae6038f-0901-4317-81ae-b188efa18cf1",
+					"instance_key": "lane-a",
+					"machine": "studio",
+					"seat": "pij-multiple-nightingale",
+					"why": "PRDs 006/007/008/010 lane A build (Jordan 2026-11-25, spine 4761202)"
 				}
 			]
 		}
