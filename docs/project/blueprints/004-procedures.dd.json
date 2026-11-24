@@ -40,7 +40,7 @@
 					"name": "Folder layout and homes",
 					"kind": "file",
 					"where": "docs/project/procedures/<area>/PROC-<area>-NNNN-<slug>/, skills/pij/procedures/<area>/PROC-…/",
-					"responsibility": "One folder per procedure holding `procedure.dd.json`, its rendering `procedure.dd.md` (the human how-to), and anything only it uses: its own `justfile`, step scripts, step tests, fixtures and templates. A project's procedures live in `docs/project/procedures`; procedures that ship to every project live in the skill. An area lives in one home only, so the skill's areas (`meta`, `docs`) are refused in a project's own home and ids never collide across homes.",
+					"responsibility": "One folder per procedure holding `procedure.dd.json`, its rendering `procedure.dd.md` (the human how-to), and anything only it uses: its own `justfile`, step scripts, step tests, fixtures and templates. A project's procedures live in `docs/project/procedures`, or the home its `.pij-procedures.json` names; those that ship to every project live in the skill. In pij's repo an area lives in one home; elsewhere a project's procedure hides the skill's with the same id. `.pij-procedures.json` may also list legacy pages, which the check lets shrink but never grow.",
 					"realises": [
 						"../prds/005-procedures.dd.json#requirements/req-03",
 						"../prds/005-procedures.dd.json#requirements/req-04",
@@ -83,8 +83,8 @@
 					"id": "c-progress",
 					"name": "Run progress",
 					"kind": "store",
-					"where": "<repo root>/.pij/procedures/progress.json (git-ignored)",
-					"responsibility": "Per checkout, keyed by procedure id and run key (`default` when none is given): each step's state (ran, found done, decided, marked), when and by whom. Written with a temporary file and a rename. `--clear` empties one key. Never committed.",
+					"where": "<git common dir>/pij-procedures/progress.json (shared by every worktree of the clone; `.pij/procedures/progress.json` under the root only outside git)",
+					"responsibility": "Per clone, keyed by procedure id and run key (`default` when none is given): each step's state (ran, found done, decided, marked), when and by whom. Every worktree of the clone reads and writes the same file, so a recorded decision outlives the worktree it was made in. Written with a temporary file and a rename. `--clear` empties one key. Never committed.",
 					"realises": [
 						"../prds/005-procedures.dd.json#requirements/req-14",
 						"../prds/005-procedures.dd.json#requirements/req-12"
@@ -269,8 +269,8 @@
 				},
 				{
 					"id": "d-8",
-					"decision": "An area lives in one home; the skill's areas are reserved elsewhere.",
-					"why": "Every project books its own numbers, so a project's PROC-meta-0001 would collide with the skill's.",
+					"decision": "In pij's repo an area lives in one home; in another project, its own procedure hides the skill's with the same id.",
+					"why": "Every project books its own numbers. In pij both homes share one tree, so a collision there is a mistake; elsewhere a project that already had PROC-meta-0001 (osk-central) must keep its ids, so its own wins (osk-central prime's review of #343).",
 					"realises": [
 						"../prds/005-procedures.dd.json#requirements/req-02",
 						"../prds/005-procedures.dd.json#requirements/req-03"
@@ -350,6 +350,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s07: c-docs-procedures and c-skill-rule shipped; c-skill-rule names the new template versions."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "After osk-central prime's review of #343: c-progress in the clone's git directory; c-layout with a configurable home, shadowing outside pij and legacy pages; d-8 reworded."
 				}
 			]
 		}

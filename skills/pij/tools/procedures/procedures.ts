@@ -40,8 +40,14 @@ export const SKILL_HOME = "skills/pij/procedures";
 export const SKILL_AREAS: readonly string[] = ["meta", "docs"];
 export const DOC_FILE = "procedure.dd.json";
 export const SCHEMA = "pij/procedure";
-/** Per-checkout run progress (git-ignored). */
-export const PROGRESS_FILE = ".pij/procedures/progress.json";
+/**
+ * Run progress and decisions, in the clone's shared git directory, so every worktree of the clone sees them and
+ * removing a worktree loses nothing. Outside git (never in practice) it falls back to `.pij/` under the root.
+ */
+export const PROGRESS_FILE = "pij-procedures/progress.json";
+export const PROGRESS_FALLBACK = ".pij/procedures/progress.json";
+/** A repo's optional settings for procedures (committed): `{"home": "<path>", "legacy_pages": {"<page>": <count>}}`. */
+export const CONFIG_FILE = ".pij-procedures.json";
 export const DEFAULT_KEY = "default";
 export const AREA_RE = /^[a-z][a-z0-9]*$/;
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -439,10 +445,44 @@ export function isPijRepo(root: string): boolean {
 	return isFile(join(root, "skills", "pij", "SKILL.md"));
 }
 
+export interface Config {
+	/** The project's procedures home, relative to the root (default docs/project/procedures). */
+	home: string;
+	/** Pages from before procedures, with the numbered commands each held: they may shrink, never grow (req-31). */
+	legacyPages: Map<string, number>;
+}
+
+/** The repo's `.pij-procedures.json`, or the defaults. */
+export function readConfig(root: string): Config {
+	const config: Config = { home: PROJECT_HOME, legacyPages: new Map() };
+	const text = readText(join(root, CONFIG_FILE));
+	if (text === undefined) return config;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return config;
+	}
+	if (!isObj(parsed)) return config;
+	const home = str(parsed.home);
+	if (home && !home.startsWith("/") && !home.split("/").includes(".."))
+		config.home = home.replace(/\/$/, "");
+	if (isObj(parsed.legacy_pages)) {
+		for (const [page, count] of Object.entries(parsed.legacy_pages)) {
+			if (typeof count === "number") config.legacyPages.set(page, count);
+		}
+	}
+	return config;
+}
+
 /** The homes for a checkout: its own project home, and the skill's (in pij's repo, else beside this runner). */
-export function homesFor(root: string, skillHome: string): Home[] {
+export function homesFor(
+	root: string,
+	skillHome: string,
+	config: Config = readConfig(root),
+): Home[] {
 	return [
-		{ kind: "project", dir: join(root, PROJECT_HOME) },
+		{ kind: "project", dir: join(root, config.home) },
 		{ kind: "skill", dir: isPijRepo(root) ? join(root, SKILL_HOME) : skillHome },
 	];
 }
@@ -454,7 +494,11 @@ export interface Loaded {
 }
 
 /** Every procedure in `homes`, read from the files, with any layout problems found on the way. */
-export function loadProcedures(homes: Home[], root: string): Loaded {
+export function loadProcedures(
+	homes: Home[],
+	root: string,
+	legacy: ReadonlySet<string> = new Set(),
+): Loaded {
 	const procedures: Procedure[] = [];
 	const problems: string[] = [];
 	const areasByHome = new Map<HomeKind, Set<string>>();
@@ -466,7 +510,7 @@ export function loadProcedures(homes: Home[], root: string): Loaded {
 		for (const area of readdirSync(home.dir).sort()) {
 			const areaDir = join(home.dir, area);
 			if (!isDir(areaDir)) {
-				if (area !== "README.md")
+				if (area !== "README.md" && !legacy.has(where(areaDir)))
 					problems.push(`${where(areaDir)}: only area folders belong in ${where(home.dir)}`);
 				continue;
 			}
@@ -479,6 +523,7 @@ export function loadProcedures(homes: Home[], root: string): Loaded {
 				const dir = join(areaDir, name);
 				const match = FOLDER_RE.exec(name);
 				if (!match || !isDir(dir)) {
+					if (legacy.has(where(dir))) continue;
 					problems.push(`${where(dir)}: only PROC-<area>-NNNN-<slug> folders belong in an area`);
 					continue;
 				}
@@ -513,15 +558,27 @@ export function loadProcedures(homes: Home[], root: string): Loaded {
 		}
 	}
 	const project = areasByHome.get("project") ?? new Set<string>();
+	if (!isPijRepo(root)) {
+		// Another project's own procedures win: one with the same id as a skill procedure hides it (its ids never move).
+		const own = new Set(procedures.filter((p) => p.home.kind === "project").map((p) => p.id));
+		return {
+			procedures: procedures.filter((p) => p.home.kind === "project" || !own.has(p.id)),
+			problems,
+		};
+	}
+	// In pij's own repo both homes are in one tree, so an area lives in one of them.
+	const projectHome = homes.find((h) => h.kind === "project")?.dir ?? "";
 	for (const area of areasByHome.get("skill") ?? []) {
 		if (project.has(area))
 			problems.push(
-				`area ${area} is in both ${PROJECT_HOME} and the skill's home: an area lives in one`,
+				`area ${area} is in both ${where(projectHome)} and the skill's home: an area lives in one`,
 			);
 	}
 	for (const area of project) {
 		if (SKILL_AREAS.includes(area))
-			problems.push(`area ${area} belongs to the pij skill's procedures, not ${PROJECT_HOME}`);
+			problems.push(
+				`area ${area} belongs to the pij skill's procedures, not ${where(projectHome)}`,
+			);
 	}
 	return { procedures, problems };
 }
@@ -555,8 +612,25 @@ export function followPath(root: string, procedure: Procedure, follow: string): 
 // ---------------------------------------------------------------------------------------------------------------
 // Progress (c-progress)
 
+/** The git directory a checkout's worktrees share (`.git`, or a linked worktree's `commondir`), found in-process. */
+export function commonGitDir(root: string): string | undefined {
+	const dotGit = join(root, ".git");
+	if (isDir(dotGit)) return dotGit;
+	const pointer = /^gitdir:\s*(.+)$/m.exec(readText(dotGit) ?? "");
+	if (!pointer?.[1]) return undefined;
+	const gitDir = resolve(root, pointer[1].trim());
+	const common = readText(join(gitDir, "commondir"))?.trim();
+	return common ? resolve(gitDir, common) : gitDir;
+}
+
+/** Where `root`'s run progress lives (shared by every worktree of the clone). */
+export function progressFile(root: string): string {
+	const common = commonGitDir(root);
+	return common ? join(common, PROGRESS_FILE) : join(root, PROGRESS_FALLBACK);
+}
+
 export function readProgress(root: string): Progress {
-	const text = readText(join(root, PROGRESS_FILE));
+	const text = readText(progressFile(root));
 	if (text !== undefined) {
 		try {
 			const parsed: unknown = JSON.parse(text);
@@ -570,7 +644,7 @@ export function readProgress(root: string): Progress {
 }
 
 function writeProgress(root: string, progress: Progress): void {
-	const file = join(root, PROGRESS_FILE);
+	const file = progressFile(root);
 	mkdirSync(dirname(file), { recursive: true });
 	const temporary = `${file}.${process.pid}.tmp`;
 	writeFileSync(temporary, `${JSON.stringify(progress, null, "\t")}\n`);
@@ -739,6 +813,7 @@ export interface Ctx {
 	io: Io;
 	root: string;
 	homes: Home[];
+	config: Config;
 	loaded: Loaded;
 	/** How to call the runner here: `just proc` where the root justfile has it, else `pij proc`. */
 	entry: string;
@@ -777,11 +852,20 @@ function justfileFor(ctx: Ctx, procedure: Procedure, recipe: string): string | u
 export function context(io: Io, options: Options = {}): Ctx | string {
 	const root = findRoot(io.cwd);
 	if (!root) return `not inside a git checkout (${io.cwd})`;
-	const homes = homesFor(root, options.skillHome ?? DEFAULT_SKILL_HOME);
+	const config = readConfig(root);
+	const homes = homesFor(root, options.skillHome ?? DEFAULT_SKILL_HOME, config);
 	const rootFile = rootJustfile(root);
 	const entry =
 		rootFile && recipesIn(readText(rootFile) ?? "").has("proc") ? "just proc" : "pij proc";
-	return { io, root, homes, loaded: loadProcedures(homes, root), entry, recipes: new Map() };
+	return {
+		io,
+		root,
+		homes,
+		config,
+		loaded: loadProcedures(homes, root, new Set(config.legacyPages.keys())),
+		entry,
+		recipes: new Map(),
+	};
 }
 
 function rel(ctx: Ctx, path: string): string {
@@ -1476,13 +1560,10 @@ function newCmd(ctx: Ctx, flags: Flags, rest: string[]): number {
 			);
 		home = { kind: "skill", dir: repoSkill };
 	} else {
-		if (SKILL_AREAS.includes(area)) {
-			return refuse(
-				ctx,
-				`area ${area} belongs to the pij skill's procedures: pick another area${isPijRepo(ctx.root) ? ", or add --skill" : ""}`,
-			);
+		if (SKILL_AREAS.includes(area) && isPijRepo(ctx.root)) {
+			return refuse(ctx, `area ${area} belongs to the pij skill's procedures here: add --skill`);
 		}
-		home = { kind: "project", dir: join(ctx.root, PROJECT_HOME) };
+		home = { kind: "project", dir: join(ctx.root, ctx.config.home) };
 	}
 	const pij = findOnPath("pij", io.env);
 	if (!pij) return refuse(ctx, "`pij` is not on PATH: numbers are booked with `pij claim`");
@@ -1564,6 +1645,11 @@ function statusCmd(ctx: Ctx, flags: Flags, rest: string[]): number {
 	if (!status || !STATUSES.includes(status) || refs.length === 0)
 		return usage(ctx, `status <${STATUSES.join("|")}> <proc>… --approved-by <who>`);
 	if (!flags.approvedBy) return usage(ctx, "status needs --approved-by '<who said yes>'");
+	if (!flags.why)
+		return usage(
+			ctx,
+			"status needs --why '<their words, quoted>' so a scoped yes isn't recorded as a full one",
+		);
 	if (status === "superseded" && !flags.supersededBy)
 		return usage(ctx, "superseded needs --superseded-by <id>");
 	const procedures: Procedure[] = [];
@@ -1806,11 +1892,21 @@ export function checkFindings(ctx: Ctx): string[] {
 
 	// Numbered commands outside a procedure folder (req-31).
 	for (const path of [...tracked].sort()) {
-		if (!path.endsWith(".md") || path.endsWith(".dd.md") || inHome(path)) continue;
-		if (!NUMBERED_SCAN_ROOTS.some((r) => path.startsWith(`${r}/`))) continue;
+		const legacy = ctx.config.legacyPages.get(path);
+		if (!path.endsWith(".md") || path.endsWith(".dd.md")) continue;
+		if (inHome(path) && legacy === undefined) continue;
+		if (![...NUMBERED_SCAN_ROOTS, ctx.config.home].some((r) => path.startsWith(`${r}/`))) continue;
 		const text = readText(join(ctx.root, path)) ?? "";
 		if (NOT_A_PROCEDURE_RE.test(text)) continue;
 		const count = commandItems(text);
+		if (legacy !== undefined) {
+			if (count > legacy) {
+				findings.push(
+					`${path}: a legacy page in ${CONFIG_FILE} grew from ${legacy} to ${count} numbered commands; it may only shrink (move the new steps into a procedure)`,
+				);
+			}
+			continue;
+		}
 		if (count >= NUMBERED_COMMAND_LIMIT) {
 			findings.push(
 				`${path}: ${count} numbered steps begin with a command; make it a procedure, or say why it is reference with <!-- not-a-procedure: <reason> -->`,

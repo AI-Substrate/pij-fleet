@@ -20,7 +20,8 @@ stays where it is and is listed in `uses`; files it changes outside its folder a
 ## Write the steps
 
 - **A run step is one `just` recipe**, in the procedure's own justfile (or the root justfile for a shared recipe). Step
-  ids are four digits (`0001`), unique in the file and never reused.
+  ids are `s` and four digits (`s0001`; the CLI also takes `0001`), because ddocs address segments start with a
+  letter. They are unique in the file and never reused.
 - **A done check** (`done`) is a recipe that exits 0 only when the step's result is really there. With one, the step is
   idempotent: a second run says "already done". A step that changes access, permissions or secrets must have one, and it
   must read the live state, never the exit code of the command that made the change.
@@ -42,7 +43,7 @@ stays where it is and is listed in `uses`; files it changes outside its folder a
 
 - Precondition and done recipes get no arguments: everything they need comes from `PROC_IN_*`, `PROC_KEY` and the
   other `PROC_*` variables (`PROC_ROOT`, `PROC_DIR`, `PROC_ID`, `PROC_STEP`, `PROC_RUNNER`).
-- ddocs ids are unique across sections: a step `0001` and a mistake `0001` clash. Steps are `NNNN`, preconditions
+- ddocs ids are unique across sections: a step and a mistake with the same id clash. Steps are `sNNNN`, preconditions
   `p-N`, limits `l-N`, mistakes `m-N`.
 - Links are relative to the document's own folder (`../../../../../docs/project/prds/…` from a skill procedure).
 - Run `ddocs` from the repo root; the recipes do. From a subdirectory it can't find the schemas (E401).
@@ -50,6 +51,14 @@ stays where it is and is listed in `uses`; files it changes outside its folder a
 - A run that finds a wrong step fixes the procedure in the same PR.
 - Never tell a seat to save relayed messages or other raw input into the repo: personal data ends up in git history.
   The drift check refuses a procedure folder that holds a relayed pij message.
+
+## A project with procedures already
+
+A repo that already keeps procedures elsewhere sets its home in a committed `.pij-procedures.json`
+(`{"home": "docs/procedures"}`), and lists pages from before procedures under `legacy_pages` with the numbered commands
+each holds today: the drift check lets them shrink, never grow, and they move into procedure folders as they are touched.
+Outside pij's own repo, a project's procedure with the same id as one of the skill's hides the skill's, so existing ids
+never change.
 
 ## Links
 

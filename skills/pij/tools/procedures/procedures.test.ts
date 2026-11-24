@@ -20,8 +20,8 @@ import {
 	type ExecResult,
 	type Io,
 	main,
-	PROGRESS_FILE,
 	pathsIn,
+	progressFile,
 	RELAYED_MESSAGE,
 	readProgress,
 	recipesIn,
@@ -558,8 +558,12 @@ describe("new", () => {
 		expect(err.join("\n")).toContain("is the main checkout");
 		rmSync(join(root, ".git"), { recursive: true });
 		writeFileSync(join(root, ".git"), `gitdir: ${join(root, "gitdir")}\n`);
+		write("skills/pij/SKILL.md", "# pij\n");
 		expect(run(["new", "meta", "x", "--title", "t"])).toBe(EXIT_REFUSED);
-		expect(err.join("\n")).toContain("area meta belongs to the pij skill's procedures");
+		expect(err.join("\n")).toContain(
+			"area meta belongs to the pij skill's procedures here: add --skill",
+		);
+		rmSync(join(root, "skills"), { recursive: true });
 		procedure("fleet", "0005", "old", THREE_STEPS, THREE_RECIPES);
 		claimNumber = 2;
 		expect(run(["new", "fleet", "x", "--title", "t"])).toBe(EXIT_REFUSED);
@@ -574,8 +578,21 @@ describe("status", () => {
 		procedure("fleet", "0002", "b", THREE_STEPS, THREE_RECIPES);
 		expect(run(["status", "current", "PROC-fleet-0001", "b"])).toBe(EXIT_USAGE);
 		expect(run(["status", "current", "PROC-fleet-0001", "b", "--approved-by", "jordan"])).toBe(
-			EXIT_OK,
+			EXIT_USAGE,
 		);
+		expect(err.join("\n")).toContain("status needs --why");
+		expect(
+			run([
+				"status",
+				"current",
+				"PROC-fleet-0001",
+				"b",
+				"--approved-by",
+				"jordan",
+				"--why",
+				"'yes, both'",
+			]),
+		).toBe(EXIT_OK);
 		const ddocs = calls.filter((c) => c.file === "ddocs");
 		expect(
 			ddocs.filter((c) => c.args[0] === "set" && c.args[1]?.endsWith("#meta/status")),
@@ -624,7 +641,8 @@ describe("check", () => {
 		expect(text).toContain("holds a relayed pij message");
 	});
 
-	it("finds layout problems: a skill area in the project home and a folder that disagrees with its id", () => {
+	it("finds layout problems: a skill area in pij's project home and a folder that disagrees with its id", () => {
+		write("skills/pij/SKILL.md", "# pij\n");
 		procedure("meta", "0001", "x", THREE_STEPS, THREE_RECIPES);
 		const dir = procedure(
 			"fleet",
@@ -654,14 +672,84 @@ describe("check", () => {
 	});
 });
 
+describe("adopting in another project", () => {
+	it("lets a project's own procedure hide the skill's with the same id, and book skill areas", () => {
+		procedure("meta", "0001", "skill-one", THREE_STEPS, THREE_RECIPES, "skillhome");
+		procedure("meta", "0002", "skill-two", THREE_STEPS, THREE_RECIPES, "skillhome");
+		procedure("meta", "0001", "ours", THREE_STEPS, THREE_RECIPES);
+		const listing = (): string[] => {
+			out = [];
+			main(["list", "--json"], io(), { skillHome: join(root, "skillhome") });
+			return JSON.parse(out.join("\n")).procedures.map(
+				(p: { id: string; path: string }) => `${p.id} ${p.path}`,
+			);
+		};
+		expect(listing()).toEqual([
+			"PROC-meta-0001 docs/project/procedures/meta/PROC-meta-0001-ours",
+			"PROC-meta-0002 skillhome/meta/PROC-meta-0002-skill-two",
+		]);
+		claimNumber = 6;
+		expect(
+			main(["new", "meta", "mine", "--title", "t"], io(), { skillHome: join(root, "skillhome") }),
+		).toBe(EXIT_OK);
+	});
+
+	it("reads its procedures home and its legacy pages from .pij-procedures.json; a legacy page may only shrink", () => {
+		write(
+			".pij-procedures.json",
+			JSON.stringify({ home: "docs/procedures", legacy_pages: { "docs/procedures/old.md": 3 } }),
+		);
+		procedure("env", "0001", "x", THREE_STEPS, THREE_RECIPES, "docs/procedures");
+		write("docs/procedures/old.md", "1. `just a`\n2. `just b`\n3. `just c`\n");
+		expect(run(["check"])).toBe(EXIT_OK);
+		expect(out.join("\n")).toContain("1 procedure(s) clean");
+		write("docs/procedures/old.md", "1. `just a`\n2. `just b`\n3. `just c`\n4. `just d`\n");
+		out = [];
+		expect(run(["check"])).toBe(EXIT_FAIL);
+		expect(out.join("\n")).toContain(
+			"docs/procedures/old.md: a legacy page in .pij-procedures.json grew from 3 to 4",
+		);
+	});
+});
+
 describe("progress file", () => {
-	it("lives under the repo root, whatever the working directory", () => {
+	it("is shared by every worktree of the clone, so a decision survives its worktree", () => {
+		procedure("fleet", "0001", "x", {
+			steps: [
+				{ id: "s0001", title: "approve", kind: "decision", decide: "operator", done_when: "yes" },
+			],
+		});
+		const common = join(root, "gitdir");
+		const worktreeGit = join(common, "worktrees", "other");
+		mkdirSync(worktreeGit, { recursive: true });
+		writeFileSync(join(worktreeGit, "HEAD"), "ref: refs/heads/other\n");
+		writeFileSync(join(worktreeGit, "commondir"), "../..\n");
+		const other = mkdtempSync(join(tmpdir(), "pij-proc-wt-"));
+		writeFileSync(join(other, ".git"), `gitdir: ${worktreeGit}\n`);
+		const saved = root;
+		root = other;
+		procedure("fleet", "0001", "x", {
+			steps: [
+				{ id: "s0001", title: "approve", kind: "decision", decide: "operator", done_when: "yes" },
+			],
+		});
+		root = saved;
+		expect(run(["PROC-fleet-0001", "s0001", "--decided-by", "jordan", "--note", "yes"])).toBe(
+			EXIT_OK,
+		);
+		expect(progressFile(other)).toBe(progressFile(root));
+		out = [];
+		expect(run(["PROC-fleet-0001", "s0001"], { cwd: other })).toBe(EXIT_OK);
+		expect(out.join("\n")).toContain("already decided by jordan");
+		rmSync(other, { recursive: true, force: true });
+	});
+
+	it("lives in the clone's git directory, whatever the working directory", () => {
 		const dir = procedure("fleet", "0001", "x", THREE_STEPS, THREE_RECIPES);
 		expect(run(["PROC-fleet-0001", "s0002"], { cwd: join(root, dir) })).toBe(EXIT_OK);
 		expect(
-			JSON.parse(readFileSync(join(root, PROGRESS_FILE), "utf8")).runs["PROC-fleet-0001"].default[
-				"s0002"
-			].how,
+			JSON.parse(readFileSync(progressFile(root), "utf8")).runs["PROC-fleet-0001"].default["s0002"]
+				.how,
 		).toBe("ran");
 	});
 });

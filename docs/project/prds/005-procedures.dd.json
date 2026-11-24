@@ -119,7 +119,7 @@
 				{
 					"id": "req-03",
 					"title": "One layout: a folder per procedure",
-					"statement": "Every procedure lives in its own folder: `docs/project/procedures/<area>/PROC-<area>-NNNN-<slug>/` for a project's own procedures, or the same shape under `skills/pij/procedures/` for procedures that ship with the pij skill to every project. There is no flat, single-file form.",
+					"statement": "Every procedure lives in its own folder: `<home>/<area>/PROC-<area>-NNNN-<slug>/`, where a project's home is `docs/project/procedures` unless its committed `.pij-procedures.json` names another, and procedures that ship with the pij skill live under `skills/pij/procedures/`. In pij's own repo an area lives in one home; in another project, a procedure with the same id as one of the skill's hides it, so a project's existing ids never change. There is no flat, single-file form.",
 					"actor": "seat",
 					"priority": "must",
 					"state": "shipped",
@@ -229,7 +229,7 @@
 				{
 					"id": "req-14",
 					"title": "See where a run is",
-					"statement": "Running a procedure with no step lists its steps as done, next or to do, with `--json` for agents. A procedure run without a key uses one default key, so simple procedures never mention keys; a procedure run once per environment or target gives each run its own key. A trial run's progress can be cleared.",
+					"statement": "Running a procedure with no step lists its steps as done, next or to do, with `--json` for agents. Progress and recorded decisions live in the clone's shared git directory, so every worktree of the clone sees them and removing a worktree loses nothing. A procedure run without a key uses one default key; a procedure run once per environment or target gives each run its own key. A trial run's progress can be cleared.",
 					"actor": "seat",
 					"priority": "must",
 					"state": "shipped",
@@ -299,7 +299,7 @@
 				{
 					"id": "req-21",
 					"title": "Status changes record the operator's yes",
-					"statement": "A draft procedure is usable: status records approval and gates nothing. A procedure is draft until the operator approves it. One command moves one or several procedures to current, superseded or retired and records who approved it and when in each changelog. A retired procedure keeps its folder.",
+					"statement": "A draft procedure is usable: status records approval and gates nothing. A procedure is draft until the operator approves it. One command moves one or several procedures to current, superseded or retired and records who approved it, their words (`--why`, required, so a scoped yes isn't recorded as a full one) and when in each changelog. A retired procedure keeps its folder.",
 					"actor": "operator",
 					"priority": "must",
 					"state": "shipped",
@@ -401,7 +401,7 @@
 				{
 					"id": "req-31",
 					"title": "Existing how-tos are sorted when the layout lands",
-					"statement": "In the PR that lands the procedure layout, every page in `docs/how/` and `skills/pij/references/community/` is given a fate: it becomes a procedure, stays as reference (with no numbered steps), or is deleted. From then on a check refuses numbered steps outside a `PROC-*` folder, so pij never keeps two layouts side by side.",
+					"statement": "In the PR that lands the procedure layout, every page in `docs/how/` and `skills/pij/references/community/` is given a fate: it becomes a procedure, stays as reference (with no numbered steps), or is deleted. From then on a check refuses numbered steps outside a `PROC-*` folder, so pij never keeps two layouts side by side. A project adopting procedures with pages from before them lists each in `.pij-procedures.json` with its count of numbered commands: those pages may shrink, never grow.",
 					"actor": "operator",
 					"priority": "must",
 					"state": "shipped",
@@ -536,6 +536,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "s07: req-22, 25 and 26 shipped. SKILL.md invariant 13 states rule 0; coder v5 and reviewer v4 templates carry it (a verdict names repeatable work done without a procedure); the community how-tos are PROC-docs-0001 to 0004 and the old pages point at them; AGENTS.md gains a procedures section and one-line pointers to PROC-daemon-0001 and PROC-release-0001."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "Folded in osk-central prime's review of #343: progress and decisions move to the clone's shared git directory (req-14); a project's home is configurable and its own ids hide the skill's outside pij (req-03); status needs --why with the approver's words (req-21); adopting projects ratchet legacy pages (req-31); PROC-meta-0001's how-to gives step ids as sNNNN."
 				}
 			]
 		}
