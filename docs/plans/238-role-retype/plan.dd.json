@@ -1,0 +1,100 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Give existing roles a type (workstream 006 s04)",
+        "slug": "role-retype",
+        "ordinal": 238,
+        "status": "ready",
+        "summary": "`pij directory retype` proposes a type for every untyped role from its template and then its id, writes those it is sure of with `--apply` in one governance commit, and lists the rest with the line that types each.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "`pij directory retype` proposes a type for every untyped role from its template and then its id, writes those it is sure of with `--apply` in one governance commit, and lists the rest with the line that types each."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A community written before PRD 006 is typed with one command."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Guessing a type it is not sure of: undecided roles are listed, never typed."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`pij directory retype` (no flag) prints, per untyped role, the proposed type and its source (template or id), and each undecided role with its `pij directory edit <id> --type <type>` line; it writes nothing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`retype --apply --why <text>` writes every proposed type in one governance commit, restamps the open holdings (plan 237) and prints what it wrote and what it left. A role whose proposed type requires a field it lacks (knowledge: keeps) is left undecided and named.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Proposals: the template table in the type catalog first; then the id (`prime`, `pa`, `pm` or `pm-<n>` to project-manager, `coder*` to coder, `reviewer*`, `security*` and `qa*` to reviewer). Run again, it finds nothing to do.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Give existing roles a type (workstream 006 s04)",
+          "brief": "One phase on PR #344.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Same files as plan 236; the proposal is a pure function in community/types.rs over (id, template)."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A wrong proposal.",
+          "likelihood": "Low",
+          "impact": "Medium",
+          "mitigation": "Only the template table and exact id patterns propose; everything else is listed for the prime."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: on demand only: one in-process read of the role documents; `--apply` is one writer commit (the launches a governance write makes today). No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

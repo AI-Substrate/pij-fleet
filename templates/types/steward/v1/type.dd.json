@@ -1,0 +1,53 @@
+{
+	"dd": {
+		"schema": "pij/type"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "steward",
+				"title": "Steward",
+				"authority": "none",
+				"line": "The only writer of one shared thing."
+			}
+		},
+		{
+			"name": "purpose",
+			"value": "The only seat that writes one shared thing (a file, a schema, a branch). Others send it changes; it applies them."
+		},
+		{
+			"name": "lifecycle",
+			"value": "Kept while the thing it stewards changes. Compacted when large, after writing memory."
+		},
+		{
+			"name": "keeps",
+			"value": "The thing it is sole writer of, and memory notes of the changes it applied."
+		},
+		{
+			"name": "requires",
+			"value": ["sole_writer_of"]
+		},
+		{
+			"name": "rules",
+			"value": [
+				{
+					"id": "sole-writer",
+					"text": "Is the only writer of the thing its role names; others ask it.",
+					"mode": "fixed"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"why": "First version (PRD 006)."
+				}
+			]
+		}
+	],
+	"references": []
+}

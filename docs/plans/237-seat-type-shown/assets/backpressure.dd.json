@@ -1,0 +1,64 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 237 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1,AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "crates/store tests: migration applies on a populated store and is additive; directory_http: assign stamps, edit --type restamps open rows, rebuild recomputes.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-store migration && cargo test -p pij-daemon --test directory_http role_type"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test on /v1/seats: type and types for one-type, two-type, pm, pa, prime and roleless seats; every old field still present.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon seats_type"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "picture.rs unit test: two-type seat yields one action naming both roles.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon --lib two_types"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC5",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "The existing permission tests, unchanged.",
+          "state": "unchecked",
+          "probe": "just rust-check"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

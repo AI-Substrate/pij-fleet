@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/type"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "watcher",
+				"title": "Watcher",
+				"authority": "none",
+				"line": "Reacts to events and rebuilds from current state."
+			}
+		},
+		{
+			"name": "purpose",
+			"value": "Reacts to events (a CI result, a new message, a file change) and acts on them. It rebuilds what it needs from current state each time rather than remembering."
+		},
+		{
+			"name": "lifecycle",
+			"value": "May be compacted or restarted at any time, because it keeps nothing it cannot re-derive."
+		},
+		{
+			"name": "keeps",
+			"value": "Nothing it cannot re-derive from current state."
+		},
+		{
+			"name": "rules",
+			"value": [
+				{
+					"id": "rebuild-from-state",
+					"text": "Rebuilds from current state on each event, and keeps nothing it cannot re-derive.",
+					"mode": "fixed"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"why": "First version (PRD 006)."
+				}
+			]
+		}
+	],
+	"references": []
+}
