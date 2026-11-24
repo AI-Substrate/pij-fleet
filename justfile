@@ -249,6 +249,16 @@ spawn-rate *ARGS:
 cache-ttl-audit *ARGS:
     @harness/scripts/nice19.sh python3 harness/scripts/cache-ttl-audit.py {{ARGS}}
 
+# Procedures (PRD 005): run, list, write and check them. `just proc help`. The runner is a skill tool
+# (skills/pij/tools/procedures); `pij proc` is the same thing in any repo.
+proc *ARGS:
+    @harness/scripts/nice19.sh node --experimental-strip-types --disable-warning=ExperimentalWarning skills/pij/tools/procedures/procedures.ts "$@"
+
+# The procedures drift check (harness checks stage "procedures", PRD 005 req-19): layout, recipe names, links,
+# declared paths, and numbered commands outside a procedure folder. One git ls-files, one just --summary per justfile.
+procedures-check:
+    @harness/scripts/nice19.sh node --experimental-strip-types --disable-warning=ExperimentalWarning skills/pij/tools/procedures/procedures.ts check
+
 # Plan 220 (F92). Run by hand before each verdict request and before READY.
 # FINAL (exit 0) only when ls-remote and gh agree on the head, base is main,
 # CLEAN, every check's latest run passed, not draft, migrations above main's
@@ -260,16 +270,6 @@ cache-ttl-audit *ARGS:
 # (macOS lsof) inside one spares it. --prune is macOS only; elsewhere it refuses.
 # Runs on node's own TypeScript stripping, so it needs no node_modules (F109):
 # it works from any review worktree.
-# Procedures (PRD 005): run, list, write and check them. `just proc help`. The runner is a skill tool
-# (skills/pij/tools/procedures); `pij proc` is the same thing in any repo.
-proc *ARGS:
-    @harness/scripts/nice19.sh node --experimental-strip-types --disable-warning=ExperimentalWarning skills/pij/tools/procedures/procedures.ts "$@"
-
-# The procedures drift check (harness checks stage "procedures", PRD 005 req-19): layout, recipe names, links,
-# declared paths, and numbered commands outside a procedure folder. One git ls-files, one just --summary per justfile.
-procedures-check:
-    @harness/scripts/nice19.sh node --experimental-strip-types --disable-warning=ExperimentalWarning skills/pij/tools/procedures/procedures.ts check
-
 # Is a PR head final for verdicts? `just pr-freeze <pr> [--worktree]`
 pr-freeze *ARGS:
     node --experimental-strip-types --disable-warning=ExperimentalWarning harness/scripts/pr-freeze.ts "$@"

@@ -443,7 +443,7 @@
 					"question": "Where is a run's progress kept?",
 					"default": "Per checkout, in a git-ignored file, keyed by procedure and run key; never committed.",
 					"status": "answered",
-					"answer": "Per checkout, in a git-ignored file (`.pij/procedures/progress.json`), keyed by procedure and run key; never committed. Order checks read live state first (req-12). Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session)."
+					"answer": "Per checkout, in a git-ignored file (`.pij/procedures/progress.json`), keyed by procedure and run key; never committed. Order checks read live state first (req-12). Decided by the operator's ruling of 2026-11-24 (take each proposed answer; no separate workshop session). Later, per req-14 and the #343 reviews: in the clone's shared git directory, one file per procedure and run key."
 				},
 				{
 					"id": "q-04",
@@ -541,6 +541,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "Folded in osk-central prime's review of #343: progress and decisions move to the clone's shared git directory (req-14); a project's home is configurable and its own ids hide the skill's outside pij (req-03); status needs --why with the approver's words (req-21); adopting projects ratchet legacy pages (req-31); PROC-meta-0001's how-to gives step ids as sNNNN."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "After the #343 review (pij-sole-tyrannosaurus): PROC-fleet-0001 now keeps req-13 (no environment value on any command line: they pass through a 0600 file the pane reads and deletes; secret-like names are not carried; the effort is allowlisted and checked as an exact word). Run keys must be plain words, each run keeps its own progress file, and checks time out at 300 s."
 				}
 			]
 		}
