@@ -3033,6 +3033,16 @@
 					"seat": "pij-sound-porpoise",
 					"to": "2026-11-23T06:10:25.400Z",
 					"why": "#342 claim-prd-case single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-24T00:25:26.905Z",
+					"harness": "copilot",
+					"harness_session": "da458922-c70d-44c4-8136-3b5166e33abc",
+					"instance_key": "343",
+					"machine": "studio",
+					"seat": "pij-sole-tyrannosaurus",
+					"why": "#343 PRD 005 single review (amended C34; Jordan-approved)"
 				}
 			]
 		}
