@@ -20,9 +20,9 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-2 | ph-0001 | BUILD | computational | docs.rs unit tests (list, whole page, section by text and slug, nested-heading boundary, unknown page and heading with nearest name) and crates/cli/tests/docs_verbs.rs running the built pij-rs with an unreachable --addr: agents-start-here, docs list, docs get and a section exit 0 with the page; an unknown page exits 2 naming the nearest. | [ ] unchecked | — | — | cargo test -p pij-cli docs |
-| bp-0002 | AC3 | ph-0001 | BUILD | computational | docs.rs test: the table's paths equal the .md files under docs/cli/, both directions. | [ ] unchecked | — | — | cargo test -p pij-cli docs |
-| bp-0003 | AC4 | ph-0001 | BUILD | computational | shim_forward_tests, shim_forward.rs, skill_verb_coverage.rs, generation-routing.test.ts and generation-skill-coverage.test.ts pass with the two verbs; the cost row's receipt: `pij-rs --json ping \| jq .data.spawns` unchanged across ten `pij docs get` calls. | [ ] unchecked | — | — | harness checks |
+| bp-0001 | AC1-2 | ph-0001 | BUILD | computational | docs.rs unit tests (list, whole page, section by text and slug, nested-heading boundary, unknown page and heading with nearest name) and crates/cli/tests/docs_verbs.rs running the built pij-rs with an unreachable --addr: agents-start-here, docs list, docs get and a section exit 0 with the page; an unknown page exits 2 naming the nearest. | [x] checked | — | — | cargo test -p pij-cli docs |
+| bp-0002 | AC3 | ph-0001 | BUILD | computational | docs.rs test: the table's paths equal the .md files under docs/cli/, both directions. | [x] checked | — | — | cargo test -p pij-cli docs |
+| bp-0003 | AC4 | ph-0001 | BUILD | computational | shim_forward_tests, shim_forward.rs, skill_verb_coverage.rs, generation-routing.test.ts and generation-skill-coverage.test.ts pass with the two verbs; the cost row's receipt: `pij-rs --json ping \| jq .data.spawns` unchanged across ten `pij docs get` calls. | [x] checked | — | — | harness checks |
 
 <a id="sensors"></a>
 

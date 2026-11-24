@@ -76,7 +76,7 @@
 					"statement": "`pij agents-start-here` prints one page: what pij is, how a seat finds out who it is and who governs it, and the first commands to run. It needs no daemon.",
 					"actor": "new agent",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "With the daemon stopped, the command prints the page and exits zero.",
 					"source": "operator, 2026-11-25: docs list and get and agents start here"
 				},
@@ -86,7 +86,7 @@
 					"statement": "`pij docs list` shows every page with one line each. `pij docs get <page>` prints one, and `pij docs get <page>#<heading>` prints one section of it.",
 					"actor": "any seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`list` names every bundled page; `get` on a page and on one of its headings prints the whole page and only that section; an unknown page refuses and suggests the nearest name.",
 					"source": "operator, 2026-11-25"
 				},
@@ -96,7 +96,7 @@
 					"statement": "The pages are inside the installed pij, so they match its version and read the same in any repo, with no daemon and no network.",
 					"actor": "any seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "From a directory outside any repo, with the daemon stopped and the network off, `pij docs get concepts` prints the page.",
 					"source": "design conversation 2026-11-25"
 				},
@@ -136,7 +136,7 @@
 					"statement": "`agents-start-here`, `docs list` and `docs get` start no process beyond the command itself and contact no daemon.",
 					"actor": "any seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pij-rs --json ping | jq .data.spawns` does not move across ten `docs get` calls.",
 					"source": "AGENTS.md: resource cost is a correctness property"
 				}
@@ -168,6 +168,5 @@
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }

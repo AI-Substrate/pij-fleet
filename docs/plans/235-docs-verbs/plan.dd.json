@@ -37,25 +37,25 @@
         {
           "id": "ac-0001",
           "claim": "`pij agents-start-here` prints the start page (what pij is, how a seat learns who it is and who governs it, the first commands to run, pointers to existing docs) and exits 0 with no daemon. `--json` prints it in the usual envelope.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij docs list` names every bundled page with its one-line summary. `pij docs get <page>` prints the whole page; `pij docs get <page>#<heading>` prints only that section (the heading to the next heading of the same or higher level), the heading matched by its text or its slug, case-insensitive. An unknown page or heading refuses (exit 2) naming the nearest page or heading and `pij docs list`.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "The pages are compiled into the binary from `docs/cli/`; a unit test holds the table equal to the files there, so a page file not in the table (or a row with no file) fails the build's tests.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0004",
           "claim": "The verbs run before the tokio runtime and the daemon client are built: no daemon contact, no network, no child process. The pij shim forwards `docs` and `agents-start-here` to pij-rs unchanged (pij-native-verbs.json, RS_ROUTE_TABLE, the skill's verb table and pij-rs-api.md list them).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         }
       ]
@@ -67,7 +67,7 @@
           "id": "ph-0001",
           "title": "Docs verbs shipped",
           "brief": "One PR (#348, with PRD 009): docs.rs and its tests, the two verbs in main.rs, the start page, shim and skill wiring.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

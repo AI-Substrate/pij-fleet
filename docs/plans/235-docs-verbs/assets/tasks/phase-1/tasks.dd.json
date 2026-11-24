@@ -21,7 +21,7 @@
           "id": "tk-0001",
           "title": "docs.rs (table, list, get, section, nearest name) with tests; the start page in docs/cli/",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
@@ -32,7 +32,7 @@
           "id": "tk-0002",
           "title": "agents-start-here and docs verbs before the runtime; shim, route table, skill and API doc wiring",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
@@ -48,7 +48,7 @@
           {
             "id": "dw-0001",
             "assertion": "docs.rs tests pass",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0002"
           }
         ],
@@ -56,7 +56,7 @@
           {
             "id": "dw-0002",
             "assertion": "docs_verbs.rs passes with no daemon; harness checks green",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0003"
           }
         ]

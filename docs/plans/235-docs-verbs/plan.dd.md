@@ -50,10 +50,10 @@ pij refuses `pij docs` today, and a seat outside the pij repo cannot read `docs/
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij agents-start-here` prints the start page (what pij is, how a seat learns who it is and who governs it, the first commands to run, pointers to existing docs) and exits 0 with no daemon. `--json` prints it in the usual envelope. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij docs list` names every bundled page with its one-line summary. `pij docs get &lt;page&gt;` prints the whole page; `pij docs get &lt;page&gt;#&lt;heading&gt;` prints only that section (the heading to the next heading of the same or higher level), the heading matched by its text or its slug, case-insensitive. An unknown page or heading refuses (exit 2) naming the nearest page or heading and `pij docs list`. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | The pages are compiled into the binary from `docs/cli/`; a unit test holds the table equal to the files there, so a page file not in the table (or a row with no file) fails the build's tests. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | The verbs run before the tokio runtime and the daemon client are built: no daemon contact, no network, no child process. The pij shim forwards `docs` and `agents-start-here` to pij-rs unchanged (pij-native-verbs.json, RS_ROUTE_TABLE, the skill's verb table and pij-rs-api.md list them). | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij agents-start-here` prints the start page (what pij is, how a seat learns who it is and who governs it, the first commands to run, pointers to existing docs) and exits 0 with no daemon. `--json` prints it in the usual envelope. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij docs list` names every bundled page with its one-line summary. `pij docs get &lt;page&gt;` prints the whole page; `pij docs get &lt;page&gt;#&lt;heading&gt;` prints only that section (the heading to the next heading of the same or higher level), the heading matched by its text or its slug, case-insensitive. An unknown page or heading refuses (exit 2) naming the nearest page or heading and `pij docs list`. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | The pages are compiled into the binary from `docs/cli/`; a unit test holds the table equal to the files there, so a page file not in the table (or a row with no file) fails the build's tests. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | The verbs run before the tokio runtime and the daemon client are built: no daemon contact, no network, no child process. The pij shim forwards `docs` and `agents-start-here` to pij-rs unchanged (pij-native-verbs.json, RS_ROUTE_TABLE, the skill's verb table and pij-rs-api.md list them). | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -61,7 +61,7 @@ pij refuses `pij docs` today, and a seat outside the pij repo cannot read `docs/
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Docs verbs shipped | One PR (#348, with PRD 009): docs.rs and its tests, the two verbs in main.rs, the start page, shim and skill wiring. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Docs verbs shipped | One PR (#348, with PRD 009): docs.rs and its tests, the two verbs in main.rs, the start page, shim and skill wiring. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

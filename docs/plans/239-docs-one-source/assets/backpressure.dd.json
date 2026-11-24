@@ -1,0 +1,48 @@
+{
+  "dd": { "schema": "builder/backpressure" },
+  "sections": [
+    {
+      "name": "meta",
+      "value": { "title": "Plan 239 backpressure", "plan": "../plan.dd.json#meta", "certainty": "Confident" }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs.rs unit test: every listed page's `source` exists and equals its body.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-cli docs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs-bundle-check.test.ts against a fake pij-rs and a scratch page tree: equal passes; an edited page, an unbundled file, a missing source and a missing binary each fail naming it.",
+          "state": "unchecked",
+          "probe": "vitest run harness/scripts/docs-bundle-check.test.ts"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Receipt: edit docs/cli/agents-start-here.md, run `harness checks --quick`: the docs-bundle stage fails naming the page; revert and it passes.",
+          "state": "unchecked",
+          "probe": "harness checks --quick"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [{ "id": "sn-0001", "name": "done gate", "command": "harness checks", "dimension": "correctness" }]
+    }
+  ]
+}

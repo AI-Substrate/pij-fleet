@@ -22,7 +22,7 @@
 				{
 					"id": "s01",
 					"title": "Start page, list and get, bundled",
-					"state": "in-progress",
+					"state": "complete",
 					"delivers": [
 						"../prds/009-cli-docs.dd.json#requirements/req-01",
 						"../prds/009-cli-docs.dd.json#requirements/req-02",
@@ -42,7 +42,8 @@
 					"builds": [],
 					"depends_on": ["#steps/s01"],
 					"needs": ["role:coder", "role:reviewer"],
-					"done_when": "`harness checks` fails and names a bundled page that differs from its file."
+					"done_when": "`harness checks` fails and names a bundled page that differs from its file.",
+					"plan": "docs/plans/239-docs-one-source"
 				},
 				{
 					"id": "s03",
