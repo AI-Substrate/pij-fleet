@@ -12,7 +12,7 @@
 | title | Workstream 006: seat types |
 | status | draft |
 | updated | 2026-11-25 |
-| owner | pij-autonomous-parrot |
+| owner | pm-001 |
 | summary | — |
 
 <a id="goal"></a>
@@ -39,3 +39,4 @@ Every role names one of pij's ten seat types, and pij shows and uses it.
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-autonomous-parrot | First draft. |
+| 2026-11-25 | pij-multiple-nightingale | Owner moved from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010. |

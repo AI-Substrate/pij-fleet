@@ -12,7 +12,7 @@
 | title | PRD 006: seat types |
 | status | draft |
 | updated | 2026-11-25 |
-| owner | pij-autonomous-parrot |
+| owner | pm-001 |
 | summary | Every community role names one of ten types that says how its seat lives: what it is for, when it is compacted or closed, and what it must keep written down. Types are pij's fixed set; roles stay the open set each repo builds on top of them. |
 
 <a id="why"></a>
@@ -82,3 +82,4 @@ A pij community is meant to be a team of experts that learns a problem space nob
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-autonomous-parrot | First draft. |
+| 2026-11-25 | pij-multiple-nightingale | Owner moved from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010. |
