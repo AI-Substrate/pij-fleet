@@ -1724,6 +1724,16 @@
 					"machine": "studio",
 					"seat": "pij-multiple-nightingale",
 					"why": "PRDs 006/007/008/010 lane A build (Jordan 2026-11-25, spine 4761202)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-24T23:15:24.118Z",
+					"harness": "copilot",
+					"harness_session": "eeff0540-e4fb-446a-84bf-b5fa2de9568e",
+					"instance_key": "lane-b",
+					"machine": "studio",
+					"seat": "pij-yielding-hamster",
+					"why": "PRD 009 lane B build (Jordan 2026-11-25, spine 4761202)"
 				}
 			]
 		}
