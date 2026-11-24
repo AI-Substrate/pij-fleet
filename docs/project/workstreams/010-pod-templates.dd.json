@@ -1,0 +1,79 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 010: pod templates",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pij-autonomous-parrot"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "pij ships pod and seed templates, a repo owns its copies, and a prime sets them up once."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Procedures in a template",
+					"state": "planned",
+					"delivers": ["../prds/010-pod-templates.dd.json#requirements/req-01"],
+					"builds": [],
+					"depends_on": ["008-pods.dd.json#steps/s01"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A template runs a procedure of its own and one linked from the repo, and adopting it elsewhere reports the linked one as missing."
+				},
+				{
+					"id": "s02",
+					"title": "Shipped templates, adopt, diff and init",
+					"state": "planned",
+					"delivers": [
+						"../prds/010-pod-templates.dd.json#requirements/req-02",
+						"../prds/010-pod-templates.dd.json#requirements/req-03",
+						"../prds/010-pod-templates.dd.json#requirements/req-06"
+					],
+					"builds": [],
+					"depends_on": ["008-pods.dd.json#steps/s01"],
+					"needs": ["role:coder", "role:reviewer", "role:performance"],
+					"done_when": "`pij community init` and `pij pod adopt` copy shipped originals into governance with their version, the repo copy wins and is named, `template-diff` applies nothing, and none of them launches a seat."
+				},
+				{
+					"id": "s03",
+					"title": "Export a pod and save a role as a template",
+					"state": "planned",
+					"delivers": ["../prds/010-pod-templates.dd.json#requirements/req-04"],
+					"builds": [],
+					"depends_on": ["008-pods.dd.json#steps/s03"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A running pod with a seat added exports to a template that `plan` reads."
+				},
+				{
+					"id": "s04",
+					"title": "The build pod and the live-call pod",
+					"state": "planned",
+					"delivers": ["../prds/010-pod-templates.dd.json#requirements/req-05"],
+					"builds": [],
+					"depends_on": ["#steps/s01", "008-pods.dd.json#steps/s02"],
+					"needs": ["role:coder", "role:reviewer", "role:docs-system"],
+					"done_when": "`pij pod templates` lists both, and each stands up and comes down on a test project."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				}
+			]
+		}
+	]
+}
