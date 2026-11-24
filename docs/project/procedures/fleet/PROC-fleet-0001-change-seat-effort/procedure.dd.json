@@ -33,7 +33,7 @@
 				},
 				{
 					"name": "effort",
-					"description": "the effort: none, minimal, low, medium, high, xhigh or max (`copilot --help`, --reasoning-effort); which work depends on the model",
+					"description": "the effort, one of none, minimal, low, medium, high, xhigh or max (`copilot --help`, --reasoning-effort); anything else is refused. Which ones work depends on the model",
 					"required": "yes",
 					"fallback": "ask the operator which effort"
 				}
@@ -57,7 +57,7 @@
 					"id": "s0002",
 					"title": "Relaunch the seat in its pane on the new effort",
 					"kind": "run",
-					"done_when": "The seat's process runs with `--effort <effort>`, resumed on the same session, in the same pane.",
+					"done_when": "The seat's process runs with exactly `--effort <effort>`, resumed on the same session, in the same pane.",
 					"run": "relaunch",
 					"done": "effort-is",
 					"inputs": ["seat", "effort"],
@@ -67,7 +67,7 @@
 							"fix": "Wait until `pij list` shows the seat idle with an empty composer; only Copilot seats take this procedure."
 						}
 					],
-					"proven_in_practice": "By hand on pij-capable-marten, 2026-11-23, by the prime (medium to xhigh). The script itself has not yet run on a live seat."
+					"proven_in_practice": "By hand on pij-capable-marten, 2026-11-23, by the prime (medium to xhigh). The script is tested against stub tools (relaunch.test.ts) but has not yet run on a live seat."
 				},
 				{
 					"id": "s0003",
@@ -102,6 +102,14 @@
 				{
 					"id": "l-3",
 					"text": "The relaunched process runs without `pij-rs __spawn-child`, so if it exits there is no exit-status file or launch log for a post-mortem."
+				},
+				{
+					"id": "l-4",
+					"text": "The seat's flags come from `ps`, which joins arguments with spaces, so a flag value that holds a space comes back as two words."
+				},
+				{
+					"id": "l-5",
+					"text": "A PIJ_* or COPILOT_* variable whose name holds KEY, TOKEN, SECRET, PASS, CREDENTIAL or AUTH is not carried (req-13). The script names each one it leaves out; a seat that needs one must get it again another way."
 				}
 			]
 		},
@@ -123,6 +131,10 @@
 				{
 					"id": "m-4",
 					"text": "Using `/settings effortLevel` (changes the default for every new session) or `/restart` (keeps the old flag)."
+				},
+				{
+					"id": "m-5",
+					"text": "Putting the seat's environment on the respawn command line: every value is then readable through `ps` by any local user and logged by the endpoint scanner. The script passes values through a 0600 file the pane reads and deletes."
 				}
 			]
 		},

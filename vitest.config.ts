@@ -24,7 +24,12 @@ export default defineConfig({
 		},
 	],
 	test: {
-		include: [".omp/extensions/**/*.test.ts", "harness/**/*.test.ts", "skills/**/*.test.ts"],
+		include: [
+			".omp/extensions/**/*.test.ts",
+			"harness/**/*.test.ts",
+			"skills/**/*.test.ts",
+			"docs/project/procedures/**/*.test.ts",
+		],
 		exclude: ["node_modules"],
 		// 30s, not 5s (D-035). MEASURED, not guessed: at 5s the full suite on a
 		// loaded dev box failed a DIFFERENT set of tests every run — observed 4

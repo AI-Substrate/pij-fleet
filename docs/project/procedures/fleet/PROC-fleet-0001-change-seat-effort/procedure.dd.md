@@ -35,7 +35,7 @@
 | name | description | required | fallback | secret |
 | --- | --- | --- | --- | --- |
 | seat | the seat id, e.g. pij-capable-marten | yes | — | — |
-| effort | the effort: none, minimal, low, medium, high, xhigh or max (`copilot --help`, --reasoning-effort); which work depends on the model | yes | ask the operator which effort | — |
+| effort | the effort, one of none, minimal, low, medium, high, xhigh or max (`copilot --help`, --reasoning-effort); anything else is refused. Which ones work depends on the model | yes | ask the operator which effort | — |
 
 <a id="preconditions"></a>
 
@@ -50,7 +50,7 @@ _No entries._
 | id | title | kind | run | decide | follow | inputs | pre | requires | done | done_when | who | changes_access | proven_in_practice | note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | s0001 | Get the operator's yes | decision | — | operator | — | — | — | — | — | The operator agreed to relaunch this seat now. | — | — | — | — |
-| s0002 | Relaunch the seat in its pane on the new effort | run | relaunch | — | — | seat, effort | (check: seat-is-idle-copilot; fix: Wait until `pij list` shows the seat idle with an empty composer; only Copilot seats take this procedure.) | — | effort-is | The seat's process runs with `--effort &lt;effort&gt;`, resumed on the same session, in the same pane. | — | — | By hand on pij-capable-marten, 2026-11-23, by the prime (medium to xhigh). The script itself has not yet run on a live seat. | — |
+| s0002 | Relaunch the seat in its pane on the new effort | run | relaunch | — | — | seat, effort | (check: seat-is-idle-copilot; fix: Wait until `pij list` shows the seat idle with an empty composer; only Copilot seats take this procedure.) | — | effort-is | The seat's process runs with exactly `--effort &lt;effort&gt;`, resumed on the same session, in the same pane. | — | — | By hand on pij-capable-marten, 2026-11-23, by the prime (medium to xhigh). The script is tested against stub tools (relaunch.test.ts) but has not yet run on a live seat. | — |
 | s0003 | Check it re-registered with its context | run | show | — | — | seat | — | — | registered | `pij list` shows the seat on its new process with its extension build, and its footer shows the new effort with the context figure unchanged. | — | — | — | — |
 
 <a id="commands"></a>
@@ -74,6 +74,8 @@ The seat runs on the new effort, resumed with its context, and pij lists it regi
 | l-1 | pij keeps the old recorded effort, so a later `pij-rs revive` puts the seat back on it; `revive --effort` does not exist yet. |
 | l-2 | pij records the relaunched seat as plain, not proxied: the new process doesn't descend from the launch the daemon stamped (F213). Its traffic still goes through the cache proxy, because the COPILOT_PROVIDER_* environment came with it (check with `ps -Eww -p &lt;pid&gt;`). |
 | l-3 | The relaunched process runs without `pij-rs __spawn-child`, so if it exits there is no exit-status file or launch log for a post-mortem. |
+| l-4 | The seat's flags come from `ps`, which joins arguments with spaces, so a flag value that holds a space comes back as two words. |
+| l-5 | A PIJ_* or COPILOT_* variable whose name holds KEY, TOKEN, SECRET, PASS, CREDENTIAL or AUTH is not carried (req-13). The script names each one it leaves out; a seat that needs one must get it again another way. |
 
 <a id="mistakes"></a>
 
@@ -85,6 +87,7 @@ The seat runs on the new effort, resumed with its context, and pij lists it regi
 | m-2 | Carrying PIJ_SPAWN_ID: it ties the new process to a spawn that has finished. |
 | m-3 | Leaving out --resume=&lt;session&gt;: the seat starts a new conversation and loses its context. |
 | m-4 | Using `/settings effortLevel` (changes the default for every new session) or `/restart` (keeps the old flag). |
+| m-5 | Putting the seat's environment on the respawn command line: every value is then readable through `ps` by any local user and logged by the endpoint scanner. The script passes values through a 0600 file the pane reads and deletes. |
 
 <a id="carries-out"></a>
 
