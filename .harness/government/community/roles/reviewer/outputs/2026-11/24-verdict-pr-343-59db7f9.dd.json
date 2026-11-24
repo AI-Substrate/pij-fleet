@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a20af1-7a66-7d61-af34-1c5abb4efd83",
+				"date": "2026-11-24",
+				"head": "59db7f90dccfc590de2e2a79d2dd16df8996161e",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:343",
+				"writer": "pij-sole-tyrannosaurus",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"F1: relaunch.sh puts PIJ_/COPILOT_ env values in argv via an unquoted sh -c string; validate effort, allowlist env names, never values on a command line (req-13)",
+				"F2: validate --key (reject __proto__/constructor; Object.hasOwn in recordOf)"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "npx vitest run skills/pij/tools/procedures/procedures.test.ts",
+					"exit_code": 0,
+					"log": "31/31; mutants M1,M3-M6 detected, M2 survives"
+				},
+				{
+					"command": "just procedures-check",
+					"exit_code": 0,
+					"log": "9 procedure(s) clean, 0.46s"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# reviewer verdict, PR #343 at 59db7f90dccfc590de2e2a79d2dd16df8996161e: BLOCK (F1 only)\n\nOne round (C34). The block is narrow: F1 is one committed script and one recipe in PROC-fleet-0001. The runner, the\nshim route, the check stage, the Rust pins and the privacy sweep pass. Fix F1 and F2; the notes are optional.\n\n## Must fix\n\n**F1 (security, contradicts req-13, which is marked shipped).**\n`docs/project/procedures/fleet/PROC-fleet-0001-change-seat-effort/relaunch.sh` builds\n`tmux respawn-pane ... \"env $envs $launcher $flags --effort $effort --resume=$session\"`.\n- (a) `$envs` is every `PIJ_*`/`COPILOT_*` **value** read from `ps -E`. They become argv of the tmux client, the pane's\n  `sh -c` and `env`: readable by every local user through `ps` and logged by Defender's EDR. A BYOK\n  `COPILOT_PROVIDER_API_KEY` or a `COPILOT_GITHUB_TOKEN` in a seat's env would leak. req-13 says \"no step ... puts one in\n  an argument list\", and the script's own header says \"never their values\". Drafts run (req-21), so this is live today,\n  behind only the self-attested s0001 decision.\n- (b) The string is run by `sh`, and the values in it are unquoted: `PROC_IN_EFFORT` (an `--arg`), the env values and\n  the `ps` flags are split into words or executed (`--arg effort='high; <cmd>'`). Values with spaces break the relaunch.\n- (c) The `effort-is` recipe (the done check for s0002 and s0003) puts `$PROC_IN_EFFORT` into a regex:\n  `--arg effort='.*'` makes the done check pass.\n- Fix: validate the effort against the values Copilot accepts (an allowlist, in the script and in `effort-is`). Carry an\n  allowlist of known non-secret names, or skip any name matching `KEY|TOKEN|SECRET|PASS`, and pass the env through a\n  0600 file the pane command sources and then deletes, never on a command line. Quote every word you interpolate\n  (`'` becomes `'\\''`).\n\n**F2 (correctness, low).** `--key` is never validated. Reproduced with `saveRecord`/`readProgress` in a scratch root:\n`--key __proto__`, `constructor` or `toString` persists nothing (the stored run is `{}`), and with `__proto__` it sets\n`Object.prototype.s0001` in the process, so `recordOf` then reads that step as done for any key in that process. The\nkey is also printed unquoted into the suggested `next:` commands. Fix: refuse a key outside `^[A-Za-z0-9][A-Za-z0-9._@-]*$`,\nand read records with `Object.hasOwn`.\n\n## Notes (optional)\n\n- N1, a test gap. Mutant M2 survives: changing the before-run done check from `=== 0` to `!== 1` still passes 31/31.\n  The code is right, but nothing pins that a done check exiting 2, 127 or on a signal is not done. Add one test with\n  `exit 2`.\n- N2. Progress is read, modified and written back with no lock. Two runs with different keys at once (the case the\n  comment names) can lose a record, because the last rename wins. Use a lock file opened with O_EXCL, or a file per\n  key.\n- N3. Preconditions and done checks have no timeout, so a hanging check hangs the runner. It only runs on demand, so\n  this is a note.\n- N4. In the justfile, `proc` and `procedures-check` sit between pr-freeze's ten-line comment and its recipe, so that\n  comment now heads `proc`. Move them.\n- N5. The workstream's s08 is still `planned`, although the report says it was delivered at 59db7f90 (a state for pm-001\n  to set).\n- N6. A procedure's inputs, secret ones included, reach another procedure's `requires` done check through the env\n  (`envFor(other, …)`). That's env only, so req-13 holds, but it is wider than needed.\n\n## Checked and passing\n\n- **Injection.** `spawnSync` runs with no shell. The recipe word must be a recipe a justfile defines\n  (`[A-Za-z_]…`, read in-process), with `--justfile` and `--working-directory` fixed. `--arg` values and the key reach\n  recipes only through the env (`PROC_IN_*`, `PROC_KEY`). Every other procedure recipe quotes `\"$PROC_IN_*\"`. `new`\n  checks the area and slug against regexes before `pij claim`. `status` passes its values as ddocs argv and through\n  `JSON.stringify`.\n- **Secrets.** A secret `--arg` is refused (mutant M3 detected). Progress records only at, by, how and note, never\n  inputs. Refusals print an input's description, never its value. The runner emits no spine events.\n- **Paths.** `requires` resolves only to loaded procedures. The configured home refuses absolute paths and `..`.\n  `follow` is only printed. Progress is at `<common git dir>/pij-procedures/progress.json`, mode 0644, written to a\n  temp file and renamed, and holds no secrets.\n- **Shim.** `pij proc` only calls `runner.main(rest, realIo())`. `invokedDirectly()` is false under `require`, so\n  nothing runs twice. I ran it from a scratch copy: `proc list` worked, and `PROC-fleet-0001 s0002` was refused before\n  s0001.\n- **Correctness.** Order inside a procedure (M5 detected), order across procedures through the live done check (M4),\n  preconditions refusing (M6) and the after-run done check being required (M1) are all held by tests. A second run\n  with a passing done check and an existing record writes nothing. A missing recipe or a spawn error is never counted\n  as done (127 or 1). Approval with `status` needs `--approved-by` and `--why`; who approved is stated, not enforced\n  (q-05, as designed).\n- **Rust.** The `shasum -a 256` of coder v5 (b40f6e8d…) and reviewer v4 (b296f487…) equal the pinned values, and\n  `include_bytes!` reads those files. `SHIM_LOCAL_VERBS` skips only the exact `words[1]` values `fleet-map` and `proc`,\n  still checks their placeholders, and every other verb is checked as before. rust-test is green at the exact head. I\n  did not build locally (31 GB free, near the floor).\n- **Cost.** No loop, poll, timer or hook in the runner. `just procedures-check` took 0.46 s wall: one `git ls-files` and\n  one `just --summary` per procedure justfile, so it grows linearly with procedures. `report` runs one `git grep` per\n  path only one procedure uses, on demand. Recipes go through `nice19.sh`. The relaunch's wait (at most 30 × `pij list`\n  at 2 s) is bounded, once per run.\n- **`.omp/extensions/pij/cli.ts`.** One help line, no logic.\n- **Privacy.** No `/Users`, `/var/folders` or home paths, account names or emails in the added lines. osk-central\n  appears by name and through seat names only, and the survey leaves out its infrastructure, vendors and findings on\n  purpose.\n\n## Evidence\n\n- `npx vitest run skills/pij/tools/procedures/procedures.test.ts` (nice 19, scratch `git archive` copy): 31/31 pass.\n- Mutants: M1, M3, M4, M5 and M6 were detected (1 test fails each); M2 survives (N1).\n- `just procedures-check`: \"9 procedure(s) clean\", real 0.46 s.\n- CI at 59db7f90: check (22), check (24), rust-lint, rust-test and delivers all pass.\n"
+		}
+	]
+}
