@@ -12,7 +12,7 @@
 | title | Workstream 009: docs in the pij CLI |
 | status | draft |
 | updated | 2026-11-25 |
-| owner | pij-autonomous-parrot |
+| owner | pm-001 |
 | summary | — |
 
 <a id="goal"></a>
@@ -39,3 +39,4 @@ Any seat reads pij's documentation from the CLI, starting with the fleet's const
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-autonomous-parrot | First draft. |
+| 2026-11-25 | pm-001 | Ownership moved from pij-autonomous-parrot to pm-001 for the build. |

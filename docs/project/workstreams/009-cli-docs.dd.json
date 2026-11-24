@@ -9,7 +9,7 @@
 				"title": "Workstream 009: docs in the pij CLI",
 				"status": "draft",
 				"updated": "2026-11-25",
-				"owner": "pij-autonomous-parrot"
+				"owner": "pm-001"
 			}
 		},
 		{
@@ -74,6 +74,11 @@
 					"date": "2026-11-25",
 					"by": "pij-autonomous-parrot",
 					"change": "First draft."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pm-001",
+					"change": "Ownership moved from pij-autonomous-parrot to pm-001 for the build."
 				}
 			]
 		}

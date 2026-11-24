@@ -9,7 +9,7 @@
 				"title": "PRD 009: docs in the pij CLI",
 				"status": "draft",
 				"updated": "2026-11-25",
-				"owner": "pij-autonomous-parrot",
+				"owner": "pm-001",
 				"summary": "The pij CLI carries its own documentation: a start page for an agent that has just met pij, and reference pages any seat can list and read in any repo. The first pages explain the fleet's constructs: role, type, position, pod and template."
 			}
 		},
@@ -160,6 +160,11 @@
 					"date": "2026-11-25",
 					"by": "pij-autonomous-parrot",
 					"change": "First draft."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pm-001",
+					"change": "Ownership moved from pij-autonomous-parrot to pm-001 for the build."
 				}
 			]
 		}
