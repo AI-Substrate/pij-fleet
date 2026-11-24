@@ -1,0 +1,222 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 007: starting and stopping a seat in a role",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pij-autonomous-parrot",
+				"summary": "Spawning a seat with a role named on it gives a registered seat that has already been told what it needs, so nobody rewrites the same brief. Any seat can create the seat the work needs, and the prime is told."
+			}
+		},
+		{
+			"name": "why",
+			"value": "Starting a role holder takes three manual steps today: spawn, `pij directory assign`, then send the seat its packet by hand. The role records a model, but pij does not apply it, so the prime passes it again at spawn. A seat can also be spawned and never assigned, and it then runs with no role on record: on 2026-11-24 the pij fleet's own prime counted about five such seats. Primes re-create near-identical roles and briefs for each new subject because nothing fills in the parts that differ. Nothing obliges a seat that finds an area nobody owns to say so, so new experts appear only when the prime happens to notice."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-operator",
+					"name": "operator",
+					"need": "Be asked about a new long-lived seat only when the prime is unsure, and see every seat that exists."
+				},
+				{
+					"id": "a-prime",
+					"name": "prime",
+					"need": "Start a seat in a role in one step, and add what this run is about without restating the rest."
+				},
+				{
+					"id": "a-seat",
+					"name": "any seat",
+					"need": "Create the seat the work needs, or flag an area with no owner, without waiting for permission."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "A prime starts a role holder with one command and writes only what is specific to this run."
+				},
+				{
+					"id": "g-2",
+					"goal": "No seat the prime creates runs without a role on record."
+				},
+				{
+					"id": "g-3",
+					"goal": "When an expert is missing, whoever notices can create it, and the prime always knows what exists."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "Groups of seats started together. That is PRD 008 (pods)."
+				},
+				{
+					"id": "n-2",
+					"text": "Changing how job packets are sent after a seat has started. `pij send role:<id> --body-file` is unchanged."
+				},
+				{
+					"id": "n-3",
+					"text": "Approval gates on creating seats. pij records and informs; it does not police who may create what."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "A role records how to launch it and what it needs",
+					"statement": "A role document records the harness, model and effort its holder runs on, and the parameters it needs filled at start (for example a subject or a session path), each marked required or optional.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A role created with launch settings and two parameters shows them in its document, and starting it without a required parameter refuses and names it.",
+					"source": "PRD 001 community route: a role's model is recorded but not applied at spawn"
+				},
+				{
+					"id": "req-02",
+					"title": "Spawn with a role named starts a holder in one step",
+					"statement": "There is one way to create a seat: spawn. `pij spawn --as role:<id> [--set <name>=<value>]` launches a seat with the role's recorded settings, assigns it the role and delivers its first turn. Every new flag is optional, and anything given on the command line overrides the role's setting. A role with a past holder follows today's revive rules unchanged (resume, cheap start, the cold warning). A spawn that fails partway says which step failed and leaves no live seat without a role.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "After one `pij spawn --as role:<id>`, `pij list` shows a new seat holding the role on the recorded model, and its first turn contains the role's text with its parameters filled; `pij spawn` with none of the new flags behaves exactly as before.",
+					"source": "operator ruling 2026-11-25: keep them as one, just one way, and make the new parts optional; revive rules stay as they are"
+				},
+				{
+					"id": "req-03",
+					"title": "One first turn, assembled, shown and kept",
+					"statement": "A seat receives one first turn, not several messages. pij puts it together from the type's seed template, the role's own text, the filled parameters, the packet its creator wrote for this seat and the role's memory index. It is written to governance before the seat starts, with a line naming where each part came from. `pij directory show <role> --first-turn` prints it without starting anything.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A started seat receives exactly one opening message; `--first-turn` prints the same text; and the stored copy names the source of each part, including the creator's packet.",
+					"source": "operator, 2026-11-25: the creator's packet is combined with the template and injected by pij as one thing"
+				},
+				{
+					"id": "req-04",
+					"title": "The prime can focus a seat at start",
+					"statement": "Spawn takes `--focus '<text>'` for a line or two and `--packet <file>` for anything longer, added to the first turn after the role's own text.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A seat started with `--focus` shows that text in its stored first turn under its own heading, attributed to the prime.",
+					"source": "operator, 2026-11-25: the prime still gives parameters, focus and packets"
+				},
+				{
+					"id": "req-05",
+					"title": "A dynamic role needs no template",
+					"statement": "A prime creates a role nobody planned with `pij directory add <id> --type <type> --why <text>` and a few lines of its own, then starts it. The type supplies the lifecycle rules, so the prime writes only what the role covers, reads and reports to.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A role added with a type, a why and one rule, and no template, starts a seat whose first turn carries the type's definition and that rule.",
+					"source": "operator, 2026-11-25: a dynamic seat we decide is needed for this piece of work"
+				},
+				{
+					"id": "req-06",
+					"title": "Nothing runs unregistered",
+					"statement": "The prime's view lists every live seat in the project that holds no role, each with the command that assigns it one or closes it.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A seat spawned by hand and never assigned appears in `pij directory` as an action with a runnable line; after it is assigned, the action is gone.",
+					"source": "operator ruling 2026-11-25: anything the prime creates is properly registered in pij"
+				},
+				{
+					"id": "req-07",
+					"title": "Anyone can create a seat, and the prime is told",
+					"statement": "Any seat may create a role of any type and start a seat in it, with the same commands the prime uses. pij tells the project's prime each time, as a note that does not interrupt it: the role, its type, who created it and why. pij refuses nothing on the grounds of who is asking.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A worker seat adds and starts a knowledge role; the role and its holder appear in `pij directory` with the worker as creator, and the prime's next turn carries one note naming the role, type, creator and reason.",
+					"source": "operator ruling 2026-11-25: anybody can create any seat, we are not the police, just have them inform the prime"
+				},
+				{
+					"id": "req-08",
+					"title": "A seat that is unsure can suggest instead",
+					"statement": "A seat that finds an area with no owner but does not want to create the seat itself runs `pij directory suggest <area> --signal <text>`. It interrupts no one, the prime's view lists open suggestions, and each is answered yes, no or not yet with a reason. The prime's instructions say it creates what the work requires when it is sure and asks the operator when it is not.",
+					"actor": "any seat",
+					"priority": "should",
+					"state": "planned",
+					"done_when": "A suggestion made by a worker appears in the prime's view, an answered one shows its answer and reason, and the shipped prime role template states the create-when-sure, ask-when-unsure rule.",
+					"source": "operator, 2026-11-24 and 2026-11-25: seats spot and suggest; the prime creates when sure and asks when not"
+				},
+				{
+					"id": "req-09",
+					"title": "Spawning with a role costs one launch",
+					"statement": "Spawn with a role named launches one process for the seat, as a spawn does today, and adds no loop, poll or timer. `suggest` and `--first-turn` launch nothing.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`pij-rs --json ping | jq .data.spawns` read before and after one `pij spawn --as role:<id>` differs by the same amount as a spawn without a role; before and after `suggest` it does not move.",
+					"source": "AGENTS.md: resource cost is a correctness property"
+				},
+				{
+					"id": "req-10",
+					"title": "A missing seed template warns, and the seat still starts",
+					"statement": "When governance has no seed template for the seat's type, spawn uses the one shipped with pij, creates the seat, and prints a warning that names the missing template and the exact command that copies it into governance.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "On a project whose governance holds no seed templates, `pij spawn --as role:<id>` launches the seat from the shipped template and prints one warning with a runnable command; after that command is run, the next spawn prints no warning.",
+					"source": "operator ruling 2026-11-25: warn with an actionable message, but still create the seat from the baked template"
+				},
+				{
+					"id": "req-11",
+					"title": "Spawning the old way works and says how to do it now",
+					"statement": "A spawn with no role named still creates the seat as it does today. It also prints a warning that the seat has no role or type on record, with the exact command to give it one and the same spawn rewritten with a role, so seats and primes that have not adopted the new way are taught as they go.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`pij spawn` with no role launches the seat, exits zero and prints one warning containing a runnable `--as role:<id>` form of the same command; the JSON output carries the same warning as a field.",
+					"source": "operator ruling 2026-11-25: warn and give an actionable update, so existing primes are instructed as they go"
+				},
+				{
+					"id": "req-12",
+					"title": "Closing a seat can really take it down",
+					"statement": "There is one way to take a seat down: `pij close`. Today it gives a role holder a memory turn and then only marks the seat closed, leaving its process running for someone to stop by hand. With `--stop` it also asks the seat to answer ready once its memory is written, then stops the exact process pij recorded when it launched the seat, never by name or pattern. A seat that does not answer in time, or answers with no memory note, is left running and the prime is told which seat and why. A cold seat is not woken: pij warns with what waking it would cost, stops it without waking if it already has a memory note, and otherwise leaves it and tells the prime. Without `--stop`, close behaves as it does today.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`pij close <seat> --stop` on a warm holder leaves a memory note, no running process and a closed seat; on a silent seat it leaves the process running and the prime gets one message naming it; on a cold seat it sends nothing and prints the wake price; `pij close <seat>` with no flag behaves as before.",
+					"source": "operator, 2026-11-25: taking down a single seat follows the same rules as a pod; holders answer ready first, the prime is told if they don't, and cold seats are warned about"
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "By which channel does the prime put a seat suggestion to the operator?",
+					"default": "The channel the prime already uses for questions to the operator.",
+					"status": "open"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				}
+			]
+		}
+	],
+	"references": []
+}

@@ -1,0 +1,105 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 007: starting and stopping a seat in a role",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pij-autonomous-parrot"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "One command starts a registered seat that has already been told what it needs, and any seat can suggest a missing one."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Launch settings and parameters on a role",
+					"state": "planned",
+					"delivers": ["../prds/007-role-start.dd.json#requirements/req-01"],
+					"builds": [],
+					"depends_on": ["006-seat-types.dd.json#steps/s02"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A role records harness, model, effort and its parameters, and a missing required parameter is refused by name."
+				},
+				{
+					"id": "s02",
+					"title": "The assembled first turn",
+					"state": "planned",
+					"delivers": [
+						"../prds/007-role-start.dd.json#requirements/req-03",
+						"../prds/007-role-start.dd.json#requirements/req-04"
+					],
+					"builds": [],
+					"depends_on": ["#steps/s01"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "`pij directory show <role> --first-turn` prints the turn with the source of each part, including a focus or packet the prime added."
+				},
+				{
+					"id": "s03",
+					"title": "Spawn with a role named",
+					"state": "planned",
+					"delivers": [
+						"../prds/007-role-start.dd.json#requirements/req-02",
+						"../prds/007-role-start.dd.json#requirements/req-05",
+						"../prds/007-role-start.dd.json#requirements/req-09",
+						"../prds/007-role-start.dd.json#requirements/req-10",
+						"../prds/007-role-start.dd.json#requirements/req-11"
+					],
+					"builds": [],
+					"depends_on": ["#steps/s02"],
+					"needs": ["role:coder", "role:reviewer", "role:performance"],
+					"done_when": "One spawn with `--as role:<id>` launches, assigns and briefs a seat for a templated or a dynamic role; a spawn without it works as before and prints how to do it now; the spawn counter moves by one spawn."
+				},
+				{
+					"id": "s04",
+					"title": "Seats with no role in the view",
+					"state": "planned",
+					"delivers": ["../prds/007-role-start.dd.json#requirements/req-06"],
+					"builds": [],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A live seat holding no role appears in `pij directory` with the line that fixes it."
+				},
+				{
+					"id": "s05",
+					"title": "Anyone creates a seat and the prime is told; suggest when unsure",
+					"state": "planned",
+					"delivers": [
+						"../prds/007-role-start.dd.json#requirements/req-07",
+						"../prds/007-role-start.dd.json#requirements/req-08"
+					],
+					"builds": [],
+					"depends_on": ["006-seat-types.dd.json#steps/s02"],
+					"needs": ["role:coder", "role:reviewer", "role:docs-system"],
+					"done_when": "A seat created by a non-prime is recorded with its creator and the prime gets one note; `pij directory suggest` records a suggestion the prime's view lists and answers."
+				},
+				{
+					"id": "s06",
+					"title": "Close that stops the seat",
+					"state": "planned",
+					"delivers": ["../prds/007-role-start.dd.json#requirements/req-12"],
+					"builds": [],
+					"needs": ["role:coder", "role:reviewer", "role:security"],
+					"done_when": "`pij close <seat> --stop` takes a ready holder down by its recorded process, leaves a silent or memoryless one running and tells the prime, and never wakes a cold one."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				}
+			]
+		}
+	]
+}
