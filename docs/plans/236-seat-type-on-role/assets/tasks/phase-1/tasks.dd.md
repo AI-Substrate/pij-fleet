@@ -35,10 +35,10 @@ _Empty._
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | Type catalog, schema, definitions and seeds | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0001](#tk-0001) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | Role fields, add/edit checks, template table, retired flags | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0002](#tk-0002) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | Seed edit verb | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0003](#tk-0003) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | CLI help and skill docs | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0004](#tk-0004) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | Type catalog, schema, definitions and seeds | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0001](#tk-0001) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | Role fields, add/edit checks, template table, retired flags | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0002](#tk-0002) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria), [ac-0005](../../../plan.dd.md#acceptance-criteria), [ac-0006](../../../plan.dd.md#acceptance-criteria), [ac-0008](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | Seed edit verb | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0003](#tk-0003) | — | — | [ac-0007](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | CLI help and skill docs | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0004](#tk-0004) | — | — | [ac-0009](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -48,22 +48,22 @@ _Empty._
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | Type catalog, schema, definitions and seeds | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0001 | Type catalog, schema, definitions and seeds | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | Role fields, add/edit checks, template table, retired flags | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0002 | Role fields, add/edit checks, template table, retired flags | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | Seed edit verb | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | Seed edit verb | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0004 | CLI help and skill docs | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0004 | CLI help and skill docs | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |

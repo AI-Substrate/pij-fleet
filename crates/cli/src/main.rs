@@ -2126,6 +2126,26 @@ async fn run(cli: Cli) -> ExitCode {
                     }
                     ExitCode::SUCCESS
                 }
+                // `directory types [<type> [--seed]]` (PRD 006).
+                Some(data) if data.get("types").is_some_and(Value::is_array) => {
+                    println!("{}", render_types(&data["types"]));
+                    ExitCode::SUCCESS
+                }
+                Some(data) if data["type"].get("rules").is_some_and(Value::is_array) => {
+                    println!("{}", render_type(&data["type"]));
+                    ExitCode::SUCCESS
+                }
+                Some(data) if data["seed"].get("text").is_some_and(Value::is_string) => {
+                    let seed = &data["seed"];
+                    println!(
+                        "# seed for {} ({}: {})\n\n{}",
+                        seed["type"].as_str().unwrap_or("-"),
+                        seed["source"].as_str().unwrap_or("-"),
+                        seed["path"].as_str().unwrap_or("-"),
+                        seed["text"].as_str().unwrap_or_default().trim_end(),
+                    );
+                    ExitCode::SUCCESS
+                }
                 Some(data) if data.get("templates").is_some_and(Value::is_array) => {
                     println!("{}", render_templates(&data["templates"]));
                     ExitCode::SUCCESS
@@ -3706,7 +3726,15 @@ fn render_directory_at(
         let head = format!(
             "\n  {} ({}, {}): ",
             shown(&role["id"], render::name),
-            shown(&role["kind"], render::word),
+            // PRD 006: the type, or a legacy role's kind until it is retyped.
+            shown(
+                if role["type"].is_string() {
+                    &role["type"]
+                } else {
+                    &role["kind"]
+                },
+                render::word
+            ),
             shown(&role["holders"], render::word)
         );
         out.push_str(&head);
@@ -4023,6 +4051,76 @@ fn render_edit(data: &Value) -> String {
 }
 
 /// `pij directory templates` for a human.
+/// `pij directory types` for a human: the ten, one line each.
+fn render_types(types: &Value) -> String {
+    let rows = types.as_array().map(Vec::as_slice).unwrap_or_default();
+    let mut out = format!(
+        "{} seat types; a role names one (pij directory types <type> for its rules)",
+        rows.len()
+    );
+    for row in rows {
+        let _ = write!(
+            out,
+            "\n  {:<15} {}{}",
+            row["id"].as_str().unwrap_or("-"),
+            row["line"].as_str().unwrap_or("-"),
+            if row["authority"] == true {
+                " (carries authority)"
+            } else {
+                ""
+            },
+        );
+    }
+    out
+}
+
+/// `pij directory types <type>` for a human: the whole definition.
+fn render_type(def: &Value) -> String {
+    let text = |key: &str| def[key].as_str().unwrap_or("-").to_string();
+    let mut out = format!(
+        "{} ({}){}\n\n{}\n\nLifecycle: {}\nKeeps: {}",
+        text("id"),
+        text("title"),
+        if def["authority"] == true {
+            ", carries authority"
+        } else {
+            ""
+        },
+        text("purpose"),
+        text("lifecycle"),
+        text("keeps"),
+    );
+    let requires: Vec<&str> = def["requires"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    if !requires.is_empty() {
+        let _ = write!(
+            out,
+            "\nA role of this type must give: {}",
+            requires.join(", ")
+        );
+    }
+    out.push_str("\nRules:");
+    for rule in def["rules"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let _ = write!(
+            out,
+            "\n  {} [{}]: {}",
+            rule["id"].as_str().unwrap_or("-"),
+            rule["mode"].as_str().unwrap_or("-"),
+            rule["text"].as_str().unwrap_or("-"),
+        );
+    }
+    out
+}
+
 fn render_templates(templates: &Value) -> String {
     let rows = templates.as_array().map(Vec::as_slice).unwrap_or_default();
     let mut out = format!(

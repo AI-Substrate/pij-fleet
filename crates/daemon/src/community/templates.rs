@@ -218,6 +218,15 @@ impl Catalog {
             ));
         };
         meta.insert("id".into(), json!(id));
+        // PRD 006: kind and lifecycle are retired, and the type comes from the
+        // template itself or the catalog's table (blueprint d-7).
+        meta.remove("kind");
+        meta.remove("lifecycle");
+        if !meta.contains_key("type")
+            && let Some(kind) = super::types::template_type(name)
+        {
+            meta.insert("type".into(), json!(kind));
+        }
         meta.insert("template".into(), json!(name));
         meta.insert(
             "template_version".into(),
@@ -242,6 +251,7 @@ impl Catalog {
                     "latest": latest.version,
                     "title": meta["title"],
                     "kind": meta["kind"],
+                    "type": meta["type"].as_str().or_else(|| super::types::template_type(name)),
                     "summary": meta["summary"],
                     "core": CORE.contains(&name),
                 })
@@ -578,7 +588,13 @@ mod tests {
                 .all(|section| section["name"] != "changelog"),
             "the template's changelog is not the role's"
         );
-        assert!(Catalog::shipped().role_from("pm", None, "pm-001").is_ok());
+        let pm = Catalog::shipped().role_from("pm", None, "pm-001").unwrap();
+        assert_eq!(meta_of(&pm)["type"], "project-manager");
+        assert!(meta_of(&pm).get("kind").is_none(), "kind is retired");
+        let infra = Catalog::shipped()
+            .role_from("infra", None, "infra")
+            .unwrap();
+        assert!(meta_of(&infra).get("type").is_none(), "infra names no type");
     }
 
     /// Plan 204 (F23): --show gives the exact embedded body and its path, and

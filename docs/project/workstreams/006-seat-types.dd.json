@@ -32,7 +32,7 @@
 				{
 					"id": "s02",
 					"title": "Type on the role, the ten definitions and their seed templates",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/006-seat-types.dd.json#requirements/req-01",
 						"../prds/006-seat-types.dd.json#requirements/req-02",
@@ -103,6 +103,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s01 complete: blueprint 005. s02 to s04 name the components they build and their plans (236, 237, 238)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s02 complete (plan 236)."
 				}
 			]
 		}

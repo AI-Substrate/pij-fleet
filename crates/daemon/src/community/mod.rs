@@ -20,6 +20,7 @@ pub mod role;
 pub mod root;
 pub mod routes;
 pub mod templates;
+pub mod types;
 pub mod writer;
 
 use serde::Serialize;

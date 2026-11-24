@@ -80,7 +80,7 @@
 					"statement": "A role names exactly one type from pij's set: `prime`, `pa`, `project-manager`, `coder`, `reviewer`, `worker`, `knowledge`, `steward`, `watcher` or `human-window`. `pij directory add` and `edit` take `--type`, and `add` refuses a role with no type, listing the ten with one line each.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pij directory add x --why y` with no type or template refuses and prints the ten types; the same call with `--type knowledge` writes a role whose document shows that type.",
 					"source": "operator rulings, design conversation 2026-11-24 and 2026-11-25"
 				},
@@ -90,7 +90,7 @@
 					"statement": "pij ships one short definition per type: what the seat is for, when it is compacted or closed, and what it must keep. A coder builds one step and is compacted after every job. A reviewer judges one piece of work at its exact version, independently of its author, and is compacted after every job unless its role keeps standing context, as security may. A worker does one other piece of work and is closed. A knowledge seat is the expert who owns one area and keeps what it learns written down. A steward is the only writer of one shared thing. A project manager runs a workstream and holds its history. A watcher reacts to events and rebuilds from current state. A human-window is one person's seat into the fleet. Prime and PA keep the duties they have today.",
 					"actor": "role holder",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "For each of the ten types, pij prints its definition on request, and a seat started in a role of that type receives it.",
 					"source": "operator rulings 2026-11-25; interviews with five primes 2026-11-24"
 				},
@@ -100,7 +100,7 @@
 					"statement": "Creating a role asks for what its type requires. A knowledge role names the artefact it keeps current (a graph or a file path). A steward role names the one thing it is sole writer of. `add` refuses when the required field is missing and names it.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pij directory add x --type knowledge --why y` with no artefact refuses and names the missing field; with one, the role document records it.",
 					"source": "operator ruling 2026-11-25: knowledge seats project what they know into static forms"
 				},
@@ -130,7 +130,7 @@
 					"statement": "A role inherits its type's rules and may add its own. A type marks each of its rules as fixed or as a default a role may change with a reason: a coder is always compacted after every job, while a reviewer role may keep standing context instead. A repo cannot add a type. When no type fits, the creator picks the nearest, puts the difference in the role's rules and records a type suggestion that the pij project can read.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A coder role edited to remove the compact-after-each-job rule is refused; a reviewer role created to keep standing context is accepted and its document records the reason; a recorded type suggestion appears in the view.",
 					"source": "operator, 2026-11-25: dynamic roles come off one of our base types; security is a reviewer whose compaction is optional"
 				},
@@ -150,7 +150,7 @@
 					"statement": "pij ships a seed template for each of the ten types: the text a seat of that type is told at start. The prime and project-manager seeds carry firm guidance on how to govern. The coder, reviewer, security and other seeds are working examples that a repo is encouraged to replace or extend for its own work. A repo edits its own copy of any of them, and a prime may change its own.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "pij prints a seed for each of the ten types; a repo's edited copy of the coder seed is what a new coder there receives; and a prime's edit to the prime seed is accepted and recorded with its reason.",
 					"source": "operator, 2026-11-25: seed templates for all of these; primes are encouraged to change them and can change their own"
 				}
@@ -187,6 +187,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Owner moved from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s02 (plan 236): req-01, req-03 and req-06 shipped; req-02 and req-08 in progress (their print and edit halves ship here; a seat receiving its type's definition and seed is PRD 007 s02's first turn)."
 				}
 			]
 		}

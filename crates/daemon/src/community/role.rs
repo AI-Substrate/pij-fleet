@@ -13,10 +13,17 @@ use super::{E_BRIEF_MISSING, Refusal};
 pub struct RoleFields {
     /// `meta.title`.
     pub title: Option<String>,
-    /// `meta.kind`: specialist or general.
-    pub kind: Option<String>,
-    /// `meta.lifecycle`: long-lived or per-task.
-    pub lifecycle: Option<String>,
+    /// `meta.type`: one of pij's ten seat types (PRD 006). `kind` and
+    /// `lifecycle` are retired: read from old documents, never written.
+    pub role_type: Option<String>,
+    /// `meta.keeps`: the artefact a knowledge role keeps current.
+    pub keeps: Option<String>,
+    /// `meta.sole_writer_of`: what a steward role is the only writer of.
+    pub sole_writer_of: Option<String>,
+    /// `meta.type_suggestion`: the type the creator wished existed.
+    pub type_suggestion: Option<String>,
+    /// `--type-change <rule>=<why>`: `type_changes`, merged by rule.
+    pub type_changes: Vec<(String, String)>,
     /// `meta.holders`: one or many.
     pub holders: Option<String>,
     /// `meta.instance_key`.
@@ -156,8 +163,10 @@ pub fn from_fields(id: &str, fields: &RoleFields) -> Result<Value, Refusal> {
     meta.insert("id".into(), json!(id));
     for (key, value) in [
         ("title", &fields.title),
-        ("kind", &fields.kind),
-        ("lifecycle", &fields.lifecycle),
+        ("type", &fields.role_type),
+        ("keeps", &fields.keeps),
+        ("sole_writer_of", &fields.sole_writer_of),
+        ("type_suggestion", &fields.type_suggestion),
         ("holders", &fields.holders),
         ("instance_key", &fields.instance_key),
         ("default_limit", &fields.default_limit),
@@ -177,6 +186,11 @@ pub fn from_fields(id: &str, fields: &RoleFields) -> Result<Value, Refusal> {
             scope.insert("rules".into(), json!(fields.rules));
         }
         sections.push(json!({"name": "scope", "value": scope}));
+    }
+    if !fields.type_changes.is_empty() {
+        sections.push(
+            json!({"name": "type_changes", "value": type_changes(&[], &fields.type_changes)}),
+        );
     }
     for (name, values) in [
         ("out_of_scope", &fields.out_of_scope),
@@ -241,6 +255,11 @@ pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, R
             meta[key] = value.clone();
         }
     }
+    if !fields.type_changes.is_empty() {
+        let slot = slot(sections, "type_changes", json!([]));
+        let current = slot.as_array().cloned().unwrap_or_default();
+        *slot = type_changes(&current, &fields.type_changes);
+    }
     if !fields.rules.is_empty() {
         slot(sections, "scope", json!({}))["rules"] = json!(fields.rules);
     }
@@ -271,6 +290,20 @@ pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, R
     }
     apply_list_ops(&mut document, &fields.list_ops)?;
     Ok(document)
+}
+
+/// `current` type changes with each `(rule, why)` replacing the row for its
+/// rule or appended after them.
+fn type_changes(current: &[Value], given: &[(String, String)]) -> Value {
+    let mut rows = current.to_vec();
+    for (rule, why) in given {
+        let row = json!({"rule": rule, "why": why});
+        match rows.iter_mut().find(|row| row["rule"] == rule.as_str()) {
+            Some(existing) => *existing = row,
+            None => rows.push(row),
+        }
+    }
+    json!(rows)
 }
 
 /// Apply `--add-<list>` and `--remove-<list>` (F152), in a stated order:
@@ -665,8 +698,8 @@ mod tests {
     fn fields() -> RoleFields {
         RoleFields {
             title: Some("Security".into()),
-            kind: Some("specialist".into()),
-            lifecycle: Some("long-lived".into()),
+            role_type: Some("reviewer".into()),
+            type_changes: vec![("compact-after-job".into(), "carries open findings".into())],
             holders: Some("one".into()),
             default_limit: Some("45m".into()),
             rules: vec!["A verdict on every PR at its exact head.".into()],
@@ -683,6 +716,31 @@ mod tests {
         let document = from_fields("security", &fields()).unwrap();
         assert_eq!(id_of(&document), Some("security"));
         assert_eq!(section(&document, "meta").unwrap()["default_limit"], "45m");
+        assert_eq!(section(&document, "meta").unwrap()["type"], "reviewer");
+        assert!(section(&document, "meta").unwrap().get("kind").is_none());
+        assert_eq!(
+            section(&document, "type_changes").unwrap(),
+            &json!([{"rule": "compact-after-job", "why": "carries open findings"}])
+        );
+        let changed = apply_fields(
+            document.clone(),
+            &RoleFields {
+                type_changes: vec![
+                    ("compact-after-job".into(), "standing context".into()),
+                    ("independent".into(), "x".into()),
+                ],
+                ..RoleFields::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            section(&changed, "type_changes").unwrap(),
+            &json!([
+                {"rule": "compact-after-job", "why": "standing context"},
+                {"rule": "independent", "why": "x"}
+            ]),
+            "a change to the same rule replaces its row"
+        );
         assert_eq!(
             section(&document, "scope").unwrap(),
             &json!({"paths": [], "rules": ["A verdict on every PR at its exact head."]})

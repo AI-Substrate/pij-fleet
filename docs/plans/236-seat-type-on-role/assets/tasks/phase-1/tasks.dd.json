@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "Type catalog, schema, definitions and seeds",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003",
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
@@ -34,7 +34,7 @@
           "id": "tk-0002",
           "title": "Role fields, add/edit checks, template table, retired flags",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
@@ -49,7 +49,7 @@
           "id": "tk-0003",
           "title": "Seed edit verb",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0007"
           ],
@@ -59,7 +59,7 @@
           "id": "tk-0004",
           "title": "CLI help and skill docs",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0009"
           ],
@@ -74,7 +74,7 @@
           {
             "id": "dw-0001",
             "assertion": "Type catalog, schema, definitions and seeds",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -82,7 +82,7 @@
           {
             "id": "dw-0002",
             "assertion": "Role fields, add/edit checks, template table, retired flags",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -90,7 +90,7 @@
           {
             "id": "dw-0003",
             "assertion": "Seed edit verb",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -98,7 +98,7 @@
           {
             "id": "dw-0004",
             "assertion": "CLI help and skill docs",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ]

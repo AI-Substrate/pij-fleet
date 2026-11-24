@@ -7,6 +7,7 @@
 			"name": "meta",
 			"value": {
 				"id": "reviewer",
+				"type": "reviewer",
 				"title": "Reviewer",
 				"kind": "general",
 				"lifecycle": "per-task",

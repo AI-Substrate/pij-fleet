@@ -50,15 +50,15 @@ Every role names one of pij's ten seat types. pij ships a definition and a seed 
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij directory add &lt;id&gt; --why &lt;w&gt;` with no `--type` and no template that supplies one refuses `E-RS-TYPE-MISSING` and lists the ten types, one line each; with `--type knowledge --keeps &lt;artefact&gt;` it writes a role whose `meta.type` is `knowledge`. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | A type's required fields are asked for: `--type knowledge` without `--keeps` and `--type steward` without `--sole-writer-of` refuse `E-RS-TYPE-FIELD`, naming the flag. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | `pij directory types` lists the ten (id, title, authority, line); `types &lt;type&gt;` prints its purpose, lifecycle, what it keeps, its required fields and its rules, each fixed or default; `types &lt;type&gt; --seed` prints the seed pij would use and names its source (the governance copy `community/seeds/&lt;type&gt;.md`, else the shipped `templates/types/&lt;type&gt;/v1/seed.md`). None of them launches anything. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | `--type-change &lt;rule&gt;=&lt;why&gt;` records a change to a default rule in the role's `type_changes`; a fixed rule refuses `E-RS-TYPE-RULE` naming it as fixed, and an unknown rule refuses listing the type's rules. `edit` applies the same checks, and changing `--type` re-checks every recorded change against the new type. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | `--type-suggestion &lt;text&gt;` records the type the creator wished existed; the role row in `pij directory --json` carries it as `type_suggestion`. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0006 | `add --from template:&lt;name&gt;` takes the template's type from the catalog's template table (or its own `meta.type`); a template with none needs `--type`. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0007 | `pij directory seed &lt;type&gt; --from &lt;file&gt; --why &lt;text&gt;` writes `community/seeds/&lt;type&gt;.md` through the single writer, committed with its reason; afterwards `types &lt;type&gt; --seed` names the governance copy. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
-| ac-0008 | `--kind` and `--lifecycle` are retired: no longer required or written; given, they are ignored with a warning naming `--type`. A role document written before still reads and validates. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0009 | The shipped definitions validate against `pij/type`; the role schema carries `meta.type`, `keeps`, `sole_writer_of`, `type_suggestion` and `type_changes`; `pij directory add --help` and the skill's community references describe types. | [ ] unchecked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij directory add &lt;id&gt; --why &lt;w&gt;` with no `--type` and no template that supplies one refuses `E-RS-TYPE-MISSING` and lists the ten types, one line each; with `--type knowledge --keeps &lt;artefact&gt;` it writes a role whose `meta.type` is `knowledge`. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | A type's required fields are asked for: `--type knowledge` without `--keeps` and `--type steward` without `--sole-writer-of` refuse `E-RS-TYPE-FIELD`, naming the flag. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | `pij directory types` lists the ten (id, title, authority, line); `types &lt;type&gt;` prints its purpose, lifecycle, what it keeps, its required fields and its rules, each fixed or default; `types &lt;type&gt; --seed` prints the seed pij would use and names its source (the governance copy `community/seeds/&lt;type&gt;.md`, else the shipped `templates/types/&lt;type&gt;/v1/seed.md`). None of them launches anything. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | `--type-change &lt;rule&gt;=&lt;why&gt;` records a change to a default rule in the role's `type_changes`; a fixed rule refuses `E-RS-TYPE-RULE` naming it as fixed, and an unknown rule refuses listing the type's rules. `edit` applies the same checks, and changing `--type` re-checks every recorded change against the new type. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | `--type-suggestion &lt;text&gt;` records the type the creator wished existed; the role row in `pij directory --json` carries it as `type_suggestion`. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0006 | `add --from template:&lt;name&gt;` takes the template's type from the catalog's template table (or its own `meta.type`); a template with none needs `--type`. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0007 | `pij directory seed &lt;type&gt; --from &lt;file&gt; --why &lt;text&gt;` writes `community/seeds/&lt;type&gt;.md` through the single writer, committed with its reason; afterwards `types &lt;type&gt; --seed` names the governance copy. | [x] checked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0008 | `--kind` and `--lifecycle` are retired: no longer required or written; given, they are ignored with a warning naming `--type`. A role document written before still reads and validates. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0009 | The shipped definitions validate against `pij/type`; the role schema carries `meta.type`, `keeps`, `sole_writer_of`, `type_suggestion` and `type_changes`; `pij directory add --help` and the skill's community references describe types. | [x] checked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -66,7 +66,7 @@ Every role names one of pij's ten seat types. pij ships a definition and a seed 
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Type on the role, the ten definitions and their seed templates (workstream 006 s02) | One phase on PR #344. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Type on the role, the ten definitions and their seed templates (workstream 006 s02) | One phase on PR #344. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

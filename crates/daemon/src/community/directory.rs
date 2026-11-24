@@ -601,6 +601,8 @@ impl DirectoryService {
                 "id": id,
                 "title": meta["title"],
                 "kind": meta["kind"],
+                "type": meta["type"],
+                "type_suggestion": meta["type_suggestion"],
                 "holders": meta["holders"],
                 "template": self.templates.drift(&meta),
                 "state": standings[index].state,
@@ -1336,6 +1338,13 @@ impl DirectoryService {
                         &current,
                     ),
                 };
+                // A role written before types may stay untyped until retype;
+                // a typed one keeps a type and its rules (PRD 006 req-06).
+                super::types::check_role(
+                    &id,
+                    &edited,
+                    super::types::of_role(&current).is_some(),
+                )?;
                 if role::standing(&edited) != standing {
                     return Err(Refusal::new(
                         "E-RS-ARG",

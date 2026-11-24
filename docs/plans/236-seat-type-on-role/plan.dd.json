@@ -39,55 +39,55 @@
         {
           "id": "ac-0001",
           "claim": "`pij directory add <id> --why <w>` with no `--type` and no template that supplies one refuses `E-RS-TYPE-MISSING` and lists the ten types, one line each; with `--type knowledge --keeps <artefact>` it writes a role whose `meta.type` is `knowledge`.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "A type's required fields are asked for: `--type knowledge` without `--keeps` and `--type steward` without `--sole-writer-of` refuse `E-RS-TYPE-FIELD`, naming the flag.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "`pij directory types` lists the ten (id, title, authority, line); `types <type>` prints its purpose, lifecycle, what it keeps, its required fields and its rules, each fixed or default; `types <type> --seed` prints the seed pij would use and names its source (the governance copy `community/seeds/<type>.md`, else the shipped `templates/types/<type>/v1/seed.md`). None of them launches anything.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0004",
           "claim": "`--type-change <rule>=<why>` records a change to a default rule in the role's `type_changes`; a fixed rule refuses `E-RS-TYPE-RULE` naming it as fixed, and an unknown rule refuses listing the type's rules. `edit` applies the same checks, and changing `--type` re-checks every recorded change against the new type.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0005",
           "claim": "`--type-suggestion <text>` records the type the creator wished existed; the role row in `pij directory --json` carries it as `type_suggestion`.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0006",
           "claim": "`add --from template:<name>` takes the template's type from the catalog's template table (or its own `meta.type`); a template with none needs `--type`.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0007",
           "claim": "`pij directory seed <type> --from <file> --why <text>` writes `community/seeds/<type>.md` through the single writer, committed with its reason; afterwards `types <type> --seed` names the governance copy.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0008",
           "claim": "`--kind` and `--lifecycle` are retired: no longer required or written; given, they are ignored with a warning naming `--type`. A role document written before still reads and validates.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0009",
           "claim": "The shipped definitions validate against `pij/type`; the role schema carries `meta.type`, `keeps`, `sole_writer_of`, `type_suggestion` and `type_changes`; `pij directory add --help` and the skill's community references describe types.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         }
       ]
@@ -99,7 +99,7 @@
           "id": "ph-0001",
           "title": "Type on the role, the ten definitions and their seed templates (workstream 006 s02)",
           "brief": "One phase on PR #344.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

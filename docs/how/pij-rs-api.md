@@ -1493,8 +1493,9 @@ Writes are serialised per governance worktree. The branch also carries copies of
 pij's `pij/*` schemas under `.dd/schemas/pij/`, so ddocs validates there; a write
 refreshes them in the same commit when they differ from pij's.
 
-Flags: `--title`, `--kind specialist|general`, `--lifecycle long-lived|per-task`,
-`--holders one|many`, `--instance-key`, `--default-limit` (like `45m`),
+Flags: `--title`, `--type <type>` (required; one of the ten seat types, PRD 006),
+`--keeps` (knowledge), `--sole-writer-of` (steward), `--type-change <rule>=<why>`
+(repeatable), `--type-suggestion`, `--holders one|many`, `--instance-key`, `--default-limit` (like `45m`),
 `--summary`, `--template`, `--template-version`, `--harness`, `--model`,
 `--effort`, and the standing packet as `--packet <text>` or `--brief <path>` (a
 repo-relative link to an existing file). ddocs has no union type, so the writer
@@ -1773,10 +1774,44 @@ Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
 
+### Seat types (PRD 006, plan 236)
+
+Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
+`project-manager`, `coder`, `reviewer`, `worker`, `knowledge`, `steward`,
+`watcher`, `human-window`. pij ships each as a `pij/type` definition and a seed
+(`templates/types/<type>/v<n>/`), compiled into the daemon.
+
+- `add` refuses a role with no type (`E-RS-TYPE-MISSING`, listing the ten), an
+  unknown type (`E-RS-TYPE-UNKNOWN`), and a role missing what its type requires
+  (`E-RS-TYPE-FIELD`: `--keeps` for knowledge, `--sole-writer-of` for steward).
+  This holds for flags, `--file` and `--batch` alike. `add --from template:`
+  takes the template's type (its own `meta.type`, else the catalog's table);
+  a template with none needs `--type`.
+- `type_changes` rows (`--type-change <rule>=<why>`, merged by rule) change a
+  type's `default` rule with a reason; a `fixed` rule, an unknown rule or a
+  change with no reason refuses `E-RS-TYPE-RULE`. `edit` re-checks a typed role
+  on every write, so changing `--type` re-checks its changes and required
+  fields. A role written before types may be edited untyped.
+- `--kind` and `--lifecycle` (and `--set kind=`/`lifecycle=`) are retired: they
+  are ignored and the answer's `warnings` names `--type`. Old documents still
+  read and validate.
+- `directory types` lists the ten; `types <type>` returns the definition
+  (`purpose`, `lifecycle`, `keeps`, `requires`, `rules` with their `mode`);
+  `types <type> --seed` returns the seed and its `source`: `governance`
+  (`community/seeds/<type>.md`) or `shipped`. `directory seed <type> --file
+  <path> --why <text>` writes the governance copy through the writer.
+- The view's role rows carry `type` and `type_suggestion`. Types are checked
+  when a role is written, never enforced on a running seat, and authority is
+  unchanged: it still comes from the seat role and the prime designation.
+
+Cost: `types` reads compiled-in bytes and at most one governance file; add,
+edit and seed are the writer's usual commit. No loop, poll or timer.
+
 ### Reshaping roles (plan 206)
 
 `pij directory edit <id> --why <text>` changes a role that exists (F20). Give
-`--set <field>=<value>` (repeatable; `title`, `kind`, `lifecycle`, `holders`,
+`--set <field>=<value>` (repeatable; `title`, `type`, `keeps`, `sole_writer_of`,
+`type_suggestion`, `holders`,
 `instance_key`, `default_limit`, `summary`, `template`, `template_version`,
 `harness`, `model`, `effort`, `packet` or `brief`) and any of the role flags
 `add` takes, or `--file <json>` for the whole document. The writer reads the

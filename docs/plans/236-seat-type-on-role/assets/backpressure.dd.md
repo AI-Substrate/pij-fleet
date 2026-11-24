@@ -20,11 +20,11 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2,AC6,AC8 | ph-0001 | BUILD | computational | crates/daemon/tests/directory_http.rs: add with no type refuses listing ten; knowledge without --keeps and steward without --sole-writer-of refuse naming the flag; template table supplies a type; --kind ignored with warning; an untyped legacy document reads. | [ ] unchecked | — | — | cargo test -p pij-daemon --test directory_http type |
-| bp-0002 | AC3 | ph-0001 | BUILD | computational | Unit tests in community/types.rs: ten definitions parse and validate; list, show and seed source (shipped vs governance). | [ ] unchecked | — | — | cargo test -p pij-daemon --lib types |
-| bp-0003 | AC4,AC5 | ph-0001 | BUILD | computational | directory_http: a fixed rule change refuses, a default one records with why, edit --type re-checks; type_suggestion appears in the view JSON. | [ ] unchecked | — | — | cargo test -p pij-daemon --test directory_http type |
-| bp-0004 | AC7 | ph-0001 | BUILD | computational | directory_http: seed edit commits with its reason and types --seed then names the governance copy. | [ ] unchecked | — | — | cargo test -p pij-daemon --test directory_http seed |
-| bp-0005 | AC9 | ph-0001 | ABSENT | human-judgement | Reviewer reads the schema, help and skill text; ddocs validates every shipped definition. | [ ] unchecked | — | — | ddocs validate templates/types/*/v1/type.dd.json |
+| bp-0001 | AC1,AC2,AC6,AC8 | ph-0001 | BUILD | computational | crates/daemon/tests/directory_http.rs: add with no type refuses listing ten; knowledge without --keeps and steward without --sole-writer-of refuse naming the flag; template table supplies a type; --kind ignored with warning; an untyped legacy document reads. | [x] checked | — | — | cargo test -p pij-daemon --test directory_http type |
+| bp-0002 | AC3 | ph-0001 | BUILD | computational | Unit tests in community/types.rs: ten definitions parse and validate; list, show and seed source (shipped vs governance). | [x] checked | — | — | cargo test -p pij-daemon --lib types |
+| bp-0003 | AC4,AC5 | ph-0001 | BUILD | computational | directory_http: a fixed rule change refuses, a default one records with why, edit --type re-checks; type_suggestion appears in the view JSON. | [x] checked | — | — | cargo test -p pij-daemon --test directory_http type |
+| bp-0004 | AC7 | ph-0001 | BUILD | computational | directory_http: seed edit commits with its reason and types --seed then names the governance copy. | [x] checked | — | — | cargo test -p pij-daemon --test directory_http seed |
+| bp-0005 | AC9 | ph-0001 | ABSENT | human-judgement | Reviewer reads the schema, help and skill text; ddocs validates every shipped definition. | [x] checked | — | — | ddocs validate templates/types/*/v1/type.dd.json |
 
 <a id="sensors"></a>
 

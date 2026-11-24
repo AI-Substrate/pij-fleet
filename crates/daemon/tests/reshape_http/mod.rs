@@ -53,6 +53,8 @@ async fn edit_changes_a_role_with_one_changelog_row_and_bad_edits_commit_nothing
         &repo,
         &[
             "add",
+            "--type",
+            "worker",
             "qa",
             "--title",
             "QA",
@@ -92,7 +94,11 @@ async fn edit_changes_a_role_with_one_changelog_row_and_bad_edits_commit_nothing
     assert_eq!(edited["data"]["commit"], head(&repo));
     let document = committed(&repo, "qa");
     assert_eq!(section(&document, "meta")["title"], "Quality");
-    assert_eq!(section(&document, "meta")["kind"], "specialist", "kept");
+    assert_eq!(section(&document, "meta")["type"], "worker", "kept");
+    assert!(
+        section(&document, "meta").get("kind").is_none(),
+        "kind is retired"
+    );
     assert_eq!(section(&document, "scope")["rules"], json!(["r2"]));
     let changelog = section(&document, "changelog");
     assert_eq!(changelog.as_array().unwrap().len(), 2, "{changelog}");
@@ -183,7 +189,9 @@ async fn edit_changes_a_role_with_one_changelog_row_and_bad_edits_commit_nothing
             "E-RS-ARG",
         ),
         (
-            vec!["add", "qb", "--set", "title=x", "--rule", "r", "--why", "w"],
+            vec![
+                "add", "qb", "--type", "worker", "--set", "title=x", "--rule", "r", "--why", "w",
+            ],
             "E-RS-ARG",
         ),
     ] {
@@ -208,6 +216,8 @@ async fn template_diff_names_a_missing_version_and_the_edit_that_records_one() {
         &repo,
         &[
             "add",
+            "--type",
+            "worker",
             "half",
             "--template",
             "reviewer",
@@ -279,7 +289,9 @@ async fn retire_and_merge_reshape_roles_and_keep_their_history() {
         let added = directory(
             addr,
             &repo,
-            &["add", id, "--rule", "r", "--packet", "p", "--why", "start"],
+            &[
+                "add", id, "--type", "worker", "--rule", "r", "--packet", "p", "--why", "start",
+            ],
         )
         .await;
         assert_eq!(added["ok"], true, "{id}: {added}");
@@ -423,7 +435,7 @@ async fn the_writer_holds_merged_into_to_retired_roles_and_edit_keeps_state() {
         addr,
         &repo,
         &[
-            "add", "sec", "--rule", "r", "--packet", "p", "--why", "start",
+            "add", "sec", "--type", "worker", "--rule", "r", "--packet", "p", "--why", "start",
         ],
     )
     .await;
@@ -519,7 +531,9 @@ async fn retire_waits_for_queued_requests_and_retired_roles_refuse_sends() {
         let added = directory(
             addr,
             &repo,
-            &["add", id, "--rule", "r", "--packet", "p", "--why", "start"],
+            &[
+                "add", id, "--type", "worker", "--rule", "r", "--packet", "p", "--why", "start",
+            ],
         )
         .await;
         assert_eq!(added["ok"], true, "{id}: {added}");
@@ -708,7 +722,9 @@ async fn sends_and_retirement_share_one_admission_gate() {
         let added = directory(
             addr,
             &repo,
-            &["add", id, "--rule", "r", "--packet", "p", "--why", "start"],
+            &[
+                "add", id, "--type", "worker", "--rule", "r", "--packet", "p", "--why", "start",
+            ],
         )
         .await;
         assert_eq!(added["ok"], true, "{id}: {added}");
@@ -796,7 +812,7 @@ async fn an_unfinished_withdrawal_is_finished_by_the_same_command() {
         addr,
         &repo,
         &[
-            "add", "qa", "--rule", "r", "--packet", "p", "--why", "start",
+            "add", "qa", "--type", "worker", "--rule", "r", "--packet", "p", "--why", "start",
         ],
     )
     .await;
@@ -933,6 +949,8 @@ async fn printed_repair_commands_keep_the_project_and_instance() {
             &[
                 "directory",
                 "add",
+                "--type",
+                "worker",
                 "qa",
                 "--title",
                 "qa",
@@ -960,6 +978,8 @@ async fn printed_repair_commands_keep_the_project_and_instance() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "half",
             "--title",
             "half",
@@ -1114,6 +1134,8 @@ async fn many_holders(addr: SocketAddr, repo: &Repo, id: &str) {
         repo,
         &[
             "add",
+            "--type",
+            "worker",
             id,
             "--title",
             id,
@@ -1892,6 +1914,8 @@ async fn every_list_flag_has_an_add_and_remove_pair() {
             &repo,
             &[
                 "add",
+                "--type",
+                "worker",
                 "lists",
                 "--title",
                 "Lists",
@@ -2010,6 +2034,8 @@ async fn combined_list_edits_apply_replace_then_remove_then_add() {
         &repo,
         &[
             "add",
+            "--type",
+            "worker",
             "lists",
             "--title",
             "Lists",
@@ -2101,6 +2127,8 @@ async fn combined_list_edits_apply_replace_then_remove_then_add() {
         &repo,
         &[
             "add",
+            "--type",
+            "worker",
             "other",
             "--title",
             "O",
@@ -2131,3 +2159,7 @@ async fn combined_list_edits_apply_replace_then_remove_then_add() {
     );
     server.abort();
 }
+
+/// PRD 006 s02 (plan 236): the type on a role, its definitions and seeds.
+#[path = "types.rs"]
+mod types;

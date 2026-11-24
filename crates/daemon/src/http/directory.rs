@@ -29,7 +29,7 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 30] = [
+const SINGLE: [&str; 34] = [
     "why",
     "into",
     "from",
@@ -44,6 +44,10 @@ const SINGLE: [&str; 30] = [
     "title",
     "kind",
     "lifecycle",
+    "type",
+    "keeps",
+    "sole-writer-of",
+    "type-suggestion",
     "holders",
     "instance-key",
     "default-limit",
@@ -61,8 +65,9 @@ const SINGLE: [&str; 30] = [
     "note",
     "slug",
 ];
-const REPEATED: [&str; 20] = [
+const REPEATED: [&str; 21] = [
     "set",
+    "type-change",
     "scope-path",
     "rule",
     "out-of-scope",
@@ -118,6 +123,8 @@ struct Arguments {
     /// `--suggest` on the view: every role suggestion, not only those a need
     /// or signal points at (F39).
     suggest: bool,
+    /// `--seed` on `types <type>`: print the seed pij would use (PRD 006).
+    seed: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -146,6 +153,8 @@ impl Arguments {
                             | "templates"
                             | "template-diff"
                             | "memory"
+                            | "types"
+                            | "seed"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -179,6 +188,16 @@ impl Arguments {
             }
             if flag == "drop-queued" {
                 call.drop_queued = true;
+                continue;
+            }
+            if flag == "seed" {
+                if call.leaf != "types" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--seed belongs to `types`: pij directory types <type> --seed",
+                    ));
+                }
+                call.seed = true;
                 continue;
             }
             if flag == "suggest" {
@@ -283,6 +302,34 @@ impl Arguments {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 "usage: pij directory templates [--show <name>[@vN]] | pij directory template-diff <id> [--project <slug>]",
+            ));
+        }
+        if call.leaf == "types"
+            && (call.positions.len() > 1
+                || (call.seed && call.positions.is_empty())
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "project" | "actor"))
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory types [<type> [--seed]] [--project <slug>]",
+            ));
+        }
+        if call.leaf == "seed"
+            && (call.positions.len() != 1
+                || call.get("file").is_none()
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "project" | "actor" | "file" | "why"))
+                || !call.repeated.is_empty())
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory seed <type> --file <path> --why <text> [--project <slug>]",
             ));
         }
         if call.leaf != "templates" && call.single.contains_key("show") {
@@ -485,8 +532,18 @@ impl Arguments {
     fn fields(&self) -> RoleFields {
         RoleFields {
             title: self.get("title"),
-            kind: self.get("kind"),
-            lifecycle: self.get("lifecycle"),
+            role_type: self.get("type"),
+            keeps: self.get("keeps"),
+            sole_writer_of: self.get("sole-writer-of"),
+            type_suggestion: self.get("type-suggestion"),
+            type_changes: self
+                .all("type-change")
+                .into_iter()
+                .map(|change| match change.split_once('=') {
+                    Some((rule, why)) => (rule.trim().to_string(), why.trim().to_string()),
+                    None => (change.trim().to_string(), String::new()),
+                })
+                .collect(),
             holders: self.get("holders"),
             instance_key: self.get("instance-key"),
             default_limit: self.get("default-limit"),
@@ -520,6 +577,35 @@ impl Arguments {
                 })
                 .collect(),
         }
+    }
+
+    /// The retired flags given (`--kind`, `--lifecycle`, or either through
+    /// `--set`), as warnings naming `--type` (PRD 006 req-07). They are
+    /// accepted and ignored, so an older prime's script still runs.
+    fn retired(&self) -> Vec<String> {
+        let mut given: Vec<&str> = ["kind", "lifecycle"]
+            .into_iter()
+            .filter(|flag| self.single.contains_key(*flag))
+            .collect();
+        for set in self.all("set") {
+            let key = set
+                .split_once('=')
+                .map_or(set.as_str(), |(key, _)| key)
+                .trim();
+            if let Some(flag) = ["kind", "lifecycle"].into_iter().find(|flag| *flag == key)
+                && !given.contains(&flag)
+            {
+                given.push(flag);
+            }
+        }
+        given
+            .into_iter()
+            .map(|flag| {
+                format!(
+                    "--{flag} is retired and was ignored: a role names one of pij's ten seat types with --type <type> (pij directory types)"
+                )
+            })
+            .collect()
     }
 
     /// Whether any `--add-<list>` or `--remove-<list>` flag is given (F152).
@@ -622,6 +708,8 @@ pub(crate) async fn handle(
             }
         }
         "memory" => memory(&state, &actor, &request.caller, &call).await,
+        "types" => types(&state, &request.caller, &call).await,
+        "seed" => seed(&state, &actor, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
@@ -848,6 +936,7 @@ async fn add(
                 format!("the batch names role {id:?} twice"),
             ));
         }
+        crate::community::types::check_role(&id, &document, true)?;
         let document = role::stamp(document, &id, actor, &why, &date)?;
         let dir = paths
             .document
@@ -907,15 +996,13 @@ async fn add(
         "roles": roles,
         "routes": routes,
     });
-    if !regenerated.table.overlaps.is_empty() {
-        data["warnings"] = json!(
-            regenerated
-                .table
-                .overlaps
-                .iter()
-                .map(Overlap::warning)
-                .collect::<Vec<_>>()
-        );
+    let warnings: Vec<String> = call
+        .retired()
+        .into_iter()
+        .chain(regenerated.table.overlaps.iter().map(Overlap::warning))
+        .collect();
+    if !warnings.is_empty() {
+        data["warnings"] = json!(warnings);
     }
     if let [only] = roles.as_slice() {
         data["id"] = only["id"].clone();
@@ -1055,10 +1142,12 @@ impl Source {
 }
 
 /// The meta, default-seat and packet fields `--set <field>=<value>` may change.
-const SETTABLE: [&str; 14] = [
+const SETTABLE: [&str; 16] = [
     "title",
-    "kind",
-    "lifecycle",
+    "type",
+    "keeps",
+    "sole_writer_of",
+    "type_suggestion",
     "holders",
     "instance_key",
     "default_limit",
@@ -1082,8 +1171,12 @@ fn edit_fields(call: &Arguments) -> Result<RoleFields, Refusal> {
         let key = key.trim().replace('-', "_");
         let slot = match key.as_str() {
             "title" => &mut fields.title,
-            "kind" => &mut fields.kind,
-            "lifecycle" => &mut fields.lifecycle,
+            "type" => &mut fields.role_type,
+            "keeps" => &mut fields.keeps,
+            "sole_writer_of" => &mut fields.sole_writer_of,
+            "type_suggestion" => &mut fields.type_suggestion,
+            // Retired (PRD 006): ignored, and warned about by `retired`.
+            "kind" | "lifecycle" => continue,
             "holders" => &mut fields.holders,
             "instance_key" => &mut fields.instance_key,
             "default_limit" => &mut fields.default_limit,
@@ -1149,7 +1242,7 @@ async fn edit(
         .await?;
     record_pointers(state, &project, &written).await?;
     let routes = routes_receipt(state, &project, &written, &regenerated).await;
-    Ok(json!({
+    let mut data = json!({
         "project": project,
         "id": id,
         "path": paths.document.display().to_string(),
@@ -1157,6 +1250,99 @@ async fn edit(
         "paths": written.paths,
         "routes": routes,
         "lists": lists,
+    });
+    let retired = call.retired();
+    if !retired.is_empty() {
+        data["warnings"] = json!(retired);
+    }
+    Ok(data)
+}
+
+/// `directory types [<type> [--seed]]` (PRD 006 req-02, req-08): the ten
+/// types, one definition, or the seed pij would use and where it came from.
+/// Reads compiled-in bytes and at most one governance file.
+async fn types(
+    state: &AppState,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    use crate::community::types;
+    let Some(type_id) = call.positions.first() else {
+        return Ok(json!({"types": types::listing()}));
+    };
+    if !call.seed {
+        return Ok(json!({"type": types::get(type_id)?.show()}));
+    }
+    // A caller with no project or governance worktree still has the shipped seed.
+    let worktree = match project_and_repo(state, caller, call.get("project")).await {
+        Ok((_, repo)) => crate::community::root::find(&repo)
+            .ok()
+            .map(|root| root.worktree),
+        Err(_) => None,
+    };
+    Ok(json!({"seed": types::seed(worktree.as_deref(), type_id)?}))
+}
+
+/// `directory seed <type> --file <path> --why <text>` (PRD 006 req-08): the
+/// repo's own seed for a type, written to governance by the single writer
+/// with its reason. Anyone may edit any seed: pij does not police it.
+async fn seed(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    use crate::community::types;
+    let type_id = &call.positions[0];
+    types::get(type_id)?;
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                "--why <text> is required: it goes in the commit",
+            )
+        })?;
+    let file = call.get("file").unwrap_or_default();
+    let bytes = std::fs::read(caller_path(caller, &file)?).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("--file {file:?} is not readable: {error}"),
+        )
+    })?;
+    if String::from_utf8_lossy(&bytes).trim().is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("--file {file:?} is empty"),
+        ));
+    }
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let path = types::seed_path(type_id);
+    let message = format!(
+        "community: seed for type {type_id}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+    );
+    let (written, _) = state
+        .services
+        .directory
+        .write(
+            &project,
+            repo,
+            vec![NewFile {
+                path: path.clone(),
+                bytes,
+                document: false,
+                existing: Existing::Replace,
+            }],
+            message,
+        )
+        .await?;
+    Ok(json!({
+        "project": project,
+        "type": type_id,
+        "path": path.display().to_string(),
+        "commit": written.commit,
+        "paths": written.paths,
     }))
 }
 

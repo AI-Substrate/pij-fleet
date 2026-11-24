@@ -7,6 +7,7 @@
 			"name": "meta",
 			"value": {
 				"id": "pa",
+				"type": "pa",
 				"title": "Pa",
 				"kind": "general",
 				"lifecycle": "long-lived",

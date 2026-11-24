@@ -90,7 +90,11 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
         let added = directory(
             addr,
             &repo,
-            &["add", &id, "--from", &template, "--why", "from a template"],
+            &[
+                &["add", &id, "--from", &template, "--why", "from a template"][..],
+                &type_flags(name),
+            ]
+            .concat(),
         )
         .await;
         assert_eq!(added["ok"], true, "{name}: {added}");
@@ -130,7 +134,8 @@ async fn add_from_each_template_records_it_and_unknown_ones_refuse_by_name() {
     assert_eq!(meta["title"], "PM for roadmap 001");
     assert_eq!(meta["instance_key"], "001");
     assert_eq!(meta["template"], "pm");
-    assert_eq!(meta["kind"], "general", "kept from the template");
+    assert_eq!(meta["type"], "project-manager", "from the template's type");
+    assert!(meta.get("kind").is_none(), "kind is retired");
     assert_eq!(
         section(&document, "scope")["rules"],
         json!(["Runs roadmap 001."])
@@ -233,7 +238,7 @@ async fn from_file_is_the_brief_spelling() {
         ("qa-a", ["--from", "file:briefs/qa.md"]),
         ("qa-b", ["--brief", "briefs/qa.md"]),
     ] {
-        let mut argv = vec!["add", id];
+        let mut argv = vec!["add", id, "--type", "reviewer"];
         argv.extend(how);
         argv.extend(flags);
         let added = directory(addr, &repo, &argv).await;
@@ -295,7 +300,9 @@ async fn drift_shows_the_upstream_change_and_never_applies_it() {
     for argv in [
         &["add", "qa-old", "--from", "template:qa@v1", "--why", "w"][..],
         &["add", "qa-new", "--from", "template:qa", "--why", "w"][..],
-        &["add", "own", "--rule", "r", "--packet", "p", "--why", "w"][..],
+        &[
+            "add", "own", "--type", "worker", "--rule", "r", "--packet", "p", "--why", "w",
+        ][..],
     ] {
         let added = directory(rig.addr, &repo, argv).await;
         assert_eq!(added["ok"], true, "{argv:?}: {added}");
@@ -566,7 +573,11 @@ async fn real_ddocs_validates_a_role_from_every_shipped_template() {
         let added = directory(
             rig.addr,
             &repo,
-            &["add", name, "--from", &template, "--why", "real ddocs"],
+            &[
+                &["add", name, "--from", &template, "--why", "real ddocs"][..],
+                &type_flags(name),
+            ]
+            .concat(),
         )
         .await;
         assert_eq!(added["ok"], true, "{name}: {added}");
@@ -577,4 +588,14 @@ async fn real_ddocs_validates_a_role_from_every_shipped_template() {
         );
     }
     rig.server.abort();
+}
+
+/// PRD 006: the flags a role from shipped template `name` still needs: a type
+/// when the template supplies none, and the artefact a knowledge role keeps.
+fn type_flags(name: &str) -> Vec<&'static str> {
+    match pij_daemon::community::types::template_type(name) {
+        None => vec!["--type", "worker"],
+        Some("knowledge") => vec!["--keeps", "docs/area.md"],
+        Some(_) => Vec::new(),
+    }
 }
