@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-24",
+				"hook": "When reviewing procedure scripts, tmux respawn-pane commands, or progress stores keyed by user input",
+				"tags": [
+					"review",
+					"procedures",
+					"secrets",
+					"argv",
+					"prototype"
+				],
+				"title": "PR 343 procedures runner: block on relaunch argv secrets"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR 343 @59db7f9 block (adb0b79e). Runner itself clean: spawnSync with no shell, inputs only through env, recipe names read from the justfile. The risk sat in a procedure script: relaunch.sh built tmux respawn-pane 'env $envs ...' from ps -E values, putting env values in argv (ps, EDR) and inside an unquoted sh -c string, against req-13. Grep procedure scripts for respawn-pane, sh -c and value interpolation, not just the runner. Second lesson: a JSON object keyed by user input (--key __proto__) loses the record and pollutes the prototype; check for Object.hasOwn or a key regex. Mutation recipe that worked: git archive HEAD | tar -x into mktemp, symlink the main checkout's node_modules, git init, perl -0pi each guard, run vitest at nice 19, restore from a saved copy. The before-run done check (=== 0 to !== 1) mutant survived: say so when a test gap exists even though the code is right."
+		}
+	]
+}

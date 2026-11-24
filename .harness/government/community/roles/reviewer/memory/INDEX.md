@@ -196,4 +196,5 @@
 - [2026-11-22 Timed-out buffered bytes are not delivered bytes](2026-11-22-timed-out-buffered-bytes-are-not.dd.md): When reviewing buffered read timeouts or resuming PR327 R2 after R326 (review, logging, timeout, eof, handover, f273)
 - [2026-11-22 Tmux batch transport and persistent failure progress](2026-11-22-tmux-batch-transport-and-persistent.dd.md): Before batching tmux commands or judging shutdown cancellation, ownership and cost proof (review, tmux, batching, recovery, cost, f267)
 - [2026-11-23 Claim scan: literal kinds and metadata errors](2026-11-23-claim-scan-literal-kinds-and-metadata.dd.md): task-end (claims, scan, c34)
+- [2026-11-24 PR 343 procedures runner: block on relaunch argv secrets](2026-11-24-pr-343-procedures-runner-block-on.dd.md): When reviewing procedure scripts, tmux respawn-pane commands, or progress stores keyed by user input (review, procedures, secrets, argv, prototype)
 <!-- /pij:generated -->
