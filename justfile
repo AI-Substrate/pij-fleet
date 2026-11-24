@@ -290,6 +290,12 @@ omp-config-check:
 ddocs-check *ARGS:
     node_modules/.bin/tsx harness/scripts/ddocs-check.ts {{ARGS}}
 
+# PRD 009 req-04 (plan 239): each page the built pij-rs bundles equals its file.
+# Reads the checkout's debug pij-rs (or PIJ_RS_BIN) and never builds it, so an
+# edited page fails until pij-rs is rebuilt. No daemon contact.
+docs-bundle-check:
+    node_modules/.bin/tsx harness/scripts/docs-bundle-check.ts
+
 # Workstream coverage (plan 210, req-31): every PRD requirement is delivered by
 # a workstream step (or dropped), every blueprint component is built by one,
 # and an umbrella step is complete only when its children are. Known gaps live,
@@ -375,6 +381,7 @@ self-check:
     just copilot-sdk-contract
     just route-inventory-check
     just rust-check
+    just docs-bundle-check
     just smoke
     just pij-commit-trailers
 

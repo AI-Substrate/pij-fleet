@@ -163,7 +163,7 @@ line here and links to it.
 4. **Before declaring any task done — or before ship — run `harness checks`.**
    The engineering-harness gate: it runs the full deterministic **signal
    inventory** (local-path portability → OMP worktree config → project docs (ddocs) → workstream coverage → procedures → pij skill structure → typecheck → lockfile allowlist → lint →
-   test → Copilot native contracts → route inventory → Rust gate → smoke → commit-trailer
+   test → Copilot native contracts → route inventory → Rust gate → bundled docs → smoke → commit-trailer
    attribution) as individual stages and reports a per-sensor verdict — and
    unlike `just self-check` it runs **all** sensors, so one invocation surfaces
    every failure (`--quick` skips the heavy route-inventory, Rust and smoke stages). **New

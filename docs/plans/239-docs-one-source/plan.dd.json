@@ -9,7 +9,7 @@
         "title": "Docs in the pij CLI: one source, checked",
         "slug": "docs-one-source",
         "ordinal": 239,
-        "status": "draft",
+        "status": "ready",
         "summary": "PRD 009 workstream step s02 (req-04). A `harness checks` stage, `just docs-bundle-check`, asks the checkout's built pij-rs for every page it bundles and compares each with its file; a page that differs, a page file not bundled, or a bundled page with no file fails the stage by name.",
         "backpressure": "assets/backpressure.dd.json#rows"
       }
@@ -38,19 +38,19 @@
         {
           "id": "ac-0001",
           "claim": "`pij docs list --json` gives each page's `source`, its path from the repository root.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`just docs-bundle-check` runs the checkout's built pij-rs (`<cargo target>/debug/pij-rs` from `harness/scripts/cargo-target.sh`, or `PIJ_RS_BIN`), lists its pages, gets each with `--json` and compares `text` with its source file byte for byte. It fails, naming each, on a page that differs, a `docs/cli/**/*.md` file that is not bundled, and a bundled page whose source is missing. With no built binary it exits non-zero with the build command, never a silent pass.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "The stage is in `.harness/extensions/checks/` after the Rust gate and in `just self-check` after `just rust-check`, so a full run checks the binary it just built.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         }
       ]
@@ -62,7 +62,7 @@
           "id": "ph-0001",
           "title": "Bundled pages checked",
           "brief": "One PR (#348): the source field, the check script and its test, the stage.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

@@ -1,9 +1,15 @@
 {
-  "dd": { "schema": "builder/backpressure" },
+  "dd": {
+    "schema": "builder/backpressure"
+  },
   "sections": [
     {
       "name": "meta",
-      "value": { "title": "Plan 239 backpressure", "plan": "../plan.dd.json#meta", "certainty": "Confident" }
+      "value": {
+        "title": "Plan 239 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
     },
     {
       "name": "rows",
@@ -15,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "docs.rs unit test: every listed page's `source` exists and equals its body.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-cli docs"
         },
         {
@@ -25,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "docs-bundle-check.test.ts against a fake pij-rs and a scratch page tree: equal passes; an edited page, an unbundled file, a missing source and a missing binary each fail naming it.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "vitest run harness/scripts/docs-bundle-check.test.ts"
         },
         {
@@ -34,15 +40,22 @@
           "phase": "ph-0001",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "Receipt: edit docs/cli/agents-start-here.md, run `harness checks --quick`: the docs-bundle stage fails naming the page; revert and it passes.",
-          "state": "unchecked",
+          "proof": "Receipt (2026-11-25): with a line appended to docs/cli/agents-start-here.md and no rebuild, `harness checks --quick` failed the docs-bundle stage with `agents-start-here: the bundled page differs from docs/cli/agents-start-here.md; rebuild pij-rs`; reverted, `just docs-bundle-check` passes (1 page).",
+          "state": "checked",
           "probe": "harness checks --quick"
         }
       ]
     },
     {
       "name": "sensors",
-      "value": [{ "id": "sn-0001", "name": "done gate", "command": "harness checks", "dimension": "correctness" }]
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        }
+      ]
     }
   ]
 }

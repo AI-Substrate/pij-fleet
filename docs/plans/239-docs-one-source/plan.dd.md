@@ -12,7 +12,7 @@
 | title | Docs in the pij CLI: one source, checked |
 | slug | docs-one-source |
 | ordinal | 239 |
-| status | draft |
+| status | ready |
 | complexity | — |
 | summary | PRD 009 workstream step s02 (req-04). A `harness checks` stage, `just docs-bundle-check`, asks the checkout's built pij-rs for every page it bundles and compares each with its file; a page that differs, a page file not bundled, or a bundled page with no file fails the stage by name. |
 | backpressure | [rows](assets/backpressure.dd.md#rows) |
@@ -49,9 +49,9 @@ Plan 235 compiles each page in with `include_str!`, so a page is its file at bui
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij docs list --json` gives each page's `source`, its path from the repository root. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `just docs-bundle-check` runs the checkout's built pij-rs (`&lt;cargo target&gt;/debug/pij-rs` from `harness/scripts/cargo-target.sh`, or `PIJ_RS_BIN`), lists its pages, gets each with `--json` and compares `text` with its source file byte for byte. It fails, naming each, on a page that differs, a `docs/cli/**/*.md` file that is not bundled, and a bundled page whose source is missing. With no built binary it exits non-zero with the build command, never a silent pass. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | The stage is in `.harness/extensions/checks/` after the Rust gate and in `just self-check` after `just rust-check`, so a full run checks the binary it just built. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij docs list --json` gives each page's `source`, its path from the repository root. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `just docs-bundle-check` runs the checkout's built pij-rs (`&lt;cargo target&gt;/debug/pij-rs` from `harness/scripts/cargo-target.sh`, or `PIJ_RS_BIN`), lists its pages, gets each with `--json` and compares `text` with its source file byte for byte. It fails, naming each, on a page that differs, a `docs/cli/**/*.md` file that is not bundled, and a bundled page whose source is missing. With no built binary it exits non-zero with the build command, never a silent pass. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | The stage is in `.harness/extensions/checks/` after the Rust gate and in `just self-check` after `just rust-check`, so a full run checks the binary it just built. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -59,7 +59,7 @@ Plan 235 compiles each page in with `include_str!`, so a page is its file at bui
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Bundled pages checked | One PR (#348): the source field, the check script and its test, the stage. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Bundled pages checked | One PR (#348): the source field, the check script and its test, the stage. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

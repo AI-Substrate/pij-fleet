@@ -156,7 +156,7 @@ just self-check
 ```
 
 It runs, in order: **`local-path-check` → `omp-config-check` → `lockfile-allowlist` → `typecheck` →
-`lint` → `test` → `copilot-native-test` → `rust-check` → `smoke` →
+`lint` → `test` → `copilot-native-test` → `rust-check` → `docs-bundle-check` → `smoke` →
 `pij-commit-trailers`**. The portability sensor rejects user-specific absolute
 home paths in operational source/config before they reach another machine; the
 OMP worktree sensor keeps new worktrees plain checkouts (F219); the

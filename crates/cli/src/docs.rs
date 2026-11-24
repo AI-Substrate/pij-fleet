@@ -15,18 +15,28 @@ use serde_json::{Value, json};
 pub struct Page {
     /// The path under `docs/cli/` without `.md`.
     pub id: &'static str,
+    /// The page's file, from the repository root.
+    pub source: &'static str,
     /// The page's markdown, as built.
     pub body: &'static str,
+}
+
+/// A page whose file is `docs/cli/<id>.md`.
+macro_rules! cli_page {
+    ($id:literal) => {
+        Page {
+            id: $id,
+            source: concat!("docs/cli/", $id, ".md"),
+            body: include_str!(concat!("../../../docs/cli/", $id, ".md")),
+        }
+    };
 }
 
 /// The start page `pij agents-start-here` prints.
 pub const START_PAGE: &str = "agents-start-here";
 
 /// Every bundled page. A test holds this equal to the files in `docs/cli/`.
-pub const PAGES: &[Page] = &[Page {
-    id: "agents-start-here",
-    body: include_str!("../../../docs/cli/agents-start-here.md"),
-}];
+pub const PAGES: &[Page] = &[cli_page!("agents-start-here")];
 
 /// `pij docs --help`, which needs nothing.
 pub const HELP: &str = "\
@@ -239,7 +249,14 @@ fn list(json: bool) -> Outcome {
     text.push_str("\nRun `pij docs get <page>` or `pij docs get <page>#<heading>` to print one.\n");
     let pages: Vec<Value> = PAGES
         .iter()
-        .map(|page| json!({ "page": page.id, "title": title(page.body), "summary": summary(page.body) }))
+        .map(|page| {
+            json!({
+                "page": page.id,
+                "title": title(page.body),
+                "summary": summary(page.body),
+                "source": page.source,
+            })
+        })
         .collect();
     printed("pij docs list", text, json!({ "pages": pages }), json)
 }
@@ -318,9 +335,10 @@ mod tests {
             table, files,
             "PAGES in docs.rs must list every docs/cli/*.md"
         );
+        let repo = root.join("../..");
         for page in PAGES {
-            let file = std::fs::read_to_string(root.join(format!("{}.md", page.id))).unwrap();
-            assert_eq!(page.body, file, "{} differs from its file", page.id);
+            let file = std::fs::read_to_string(repo.join(page.source)).unwrap();
+            assert_eq!(page.body, file, "{} differs from {}", page.id, page.source);
             assert!(
                 !title(page.body).is_empty(),
                 "{} has no `# ` title",
@@ -391,6 +409,7 @@ mod tests {
         let json: Value =
             serde_json::from_str(&run_words("docs", &["list", "--json"]).stdout).unwrap();
         assert_eq!(json["data"]["pages"].as_array().unwrap().len(), PAGES.len());
+        assert_eq!(json["data"]["pages"][0]["source"], PAGES[0].source);
     }
 
     #[test]

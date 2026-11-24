@@ -106,7 +106,7 @@
 					"statement": "A bundled page and its file in the pij repo are the same source. A check fails when a page that is bundled differs from its file.",
 					"actor": "maintainer",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Editing a page's file without rebuilding makes `harness checks` fail and name the page.",
 					"source": "AGENTS.md: encode, don't document"
 				},

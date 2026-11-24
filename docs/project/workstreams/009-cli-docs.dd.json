@@ -37,7 +37,7 @@
 				{
 					"id": "s02",
 					"title": "One source, checked",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/009-cli-docs.dd.json#requirements/req-04"],
 					"builds": [],
 					"depends_on": ["#steps/s01"],

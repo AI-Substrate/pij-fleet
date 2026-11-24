@@ -20,9 +20,9 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1 | ph-0001 | BUILD | computational | docs.rs unit test: every listed page's `source` exists and equals its body. | [ ] unchecked | — | — | cargo test -p pij-cli docs |
-| bp-0002 | AC2 | ph-0001 | BUILD | computational | docs-bundle-check.test.ts against a fake pij-rs and a scratch page tree: equal passes; an edited page, an unbundled file, a missing source and a missing binary each fail naming it. | [ ] unchecked | — | — | vitest run harness/scripts/docs-bundle-check.test.ts |
-| bp-0003 | AC3 | ph-0001 | BUILD | computational | Receipt: edit docs/cli/agents-start-here.md, run `harness checks --quick`: the docs-bundle stage fails naming the page; revert and it passes. | [ ] unchecked | — | — | harness checks --quick |
+| bp-0001 | AC1 | ph-0001 | BUILD | computational | docs.rs unit test: every listed page's `source` exists and equals its body. | [x] checked | — | — | cargo test -p pij-cli docs |
+| bp-0002 | AC2 | ph-0001 | BUILD | computational | docs-bundle-check.test.ts against a fake pij-rs and a scratch page tree: equal passes; an edited page, an unbundled file, a missing source and a missing binary each fail naming it. | [x] checked | — | — | vitest run harness/scripts/docs-bundle-check.test.ts |
+| bp-0003 | AC3 | ph-0001 | BUILD | computational | Receipt (2026-11-25): with a line appended to docs/cli/agents-start-here.md and no rebuild, `harness checks --quick` failed the docs-bundle stage with `agents-start-here: the bundled page differs from docs/cli/agents-start-here.md; rebuild pij-rs`; reverted, `just docs-bundle-check` passes (1 page). | [x] checked | — | — | harness checks --quick |
 
 <a id="sensors"></a>
 
