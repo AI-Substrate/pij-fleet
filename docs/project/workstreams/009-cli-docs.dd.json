@@ -22,7 +22,7 @@
 				{
 					"id": "s01",
 					"title": "Start page, list and get, bundled",
-					"state": "planned",
+					"state": "in-progress",
 					"delivers": [
 						"../prds/009-cli-docs.dd.json#requirements/req-01",
 						"../prds/009-cli-docs.dd.json#requirements/req-02",
@@ -31,7 +31,8 @@
 					],
 					"builds": [],
 					"needs": ["role:coder", "role:reviewer"],
-					"done_when": "With the daemon stopped, `pij agents-start-here`, `pij docs list` and `pij docs get <page>#<heading>` print from the installed binary and launch nothing."
+					"done_when": "With the daemon stopped, `pij agents-start-here`, `pij docs list` and `pij docs get <page>#<heading>` print from the installed binary and launch nothing.",
+					"plan": "docs/plans/235-docs-verbs"
 				},
 				{
 					"id": "s02",
