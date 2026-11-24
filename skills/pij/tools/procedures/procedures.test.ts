@@ -12,19 +12,25 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	CHECK_TIMEOUT_MS,
 	commandItems,
 	EXIT_FAIL,
 	EXIT_OK,
 	EXIT_REFUSED,
+	EXIT_TIMED_OUT,
 	EXIT_USAGE,
 	type ExecResult,
 	type Io,
 	main,
 	pathsIn,
-	progressFile,
+	progressDir,
 	RELAYED_MESSAGE,
 	readProgress,
+	realIo,
 	recipesIn,
+	recordOf,
+	runFile,
+	saveRecord,
 	splitWords,
 } from "./procedures.ts";
 
@@ -32,6 +38,7 @@ interface Call {
 	file: string;
 	args: string[];
 	env: Record<string, string | undefined>;
+	timeoutMs?: number;
 }
 
 /** A recipe's behaviour in the fake `just`: its exit status, from the env it was given. */
@@ -66,8 +73,10 @@ function fakeExec(
 	args: string[],
 	_cwd: string,
 	env: Record<string, string | undefined>,
+	_inherit: boolean,
+	timeoutMs?: number,
 ): ExecResult {
-	calls.push({ file: basename(file), args, env });
+	calls.push({ file: basename(file), args, env, timeoutMs });
 	const tool = basename(file);
 	if (tool === "git" && args[0] === "ls-files")
 		return { status: 0, stdout: `${listFiles(root).join("\0")}\0`, stderr: "" };
@@ -308,6 +317,57 @@ describe("running steps", () => {
 		expect(readProgress(root).runs["PROC-fleet-0001"]?.staging).toBeUndefined();
 	});
 
+	it("counts a done check that exits 2, 127 or times out as not done", () => {
+		for (const status of [2, 127, EXIT_TIMED_OUT]) {
+			calls = [];
+			recipes["one-done"] = () => status;
+			expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_FAIL);
+			expect(runsOf("one")).toHaveLength(1);
+			expect(run(["PROC-fleet-0001", "s0002"])).toBe(EXIT_REFUSED);
+		}
+		expect(readProgress(root).runs["PROC-fleet-0001"]).toBeUndefined();
+	});
+
+	it("bounds every check with a timeout but never the step's own recipe", () => {
+		recipes["one-done"] = () => 1;
+		recipes.one = () => {
+			recipes["one-done"] = () => 0;
+			return 0;
+		};
+		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_OK);
+		expect(runsOf("one-done").map((c) => c.timeoutMs)).toEqual([
+			CHECK_TIMEOUT_MS,
+			CHECK_TIMEOUT_MS,
+		]);
+		expect(runsOf("one")[0]?.timeoutMs).toBeUndefined();
+	});
+
+	it("refuses a key that isn't a plain word, and never touches Object.prototype", () => {
+		for (const key of ["__proto__", "constructor", "toString", "../x", "a/b", "-x", ""]) {
+			expect(run(["PROC-fleet-0001", "s0002", "--key", key])).toBe(EXIT_USAGE);
+		}
+		expect(err.join("\n")).toContain(
+			'--key takes letters, digits and . _ @ - (starting with a letter or digit), not "__proto__"',
+		);
+		expect(runsOf("two")).toHaveLength(0);
+		expect(Object.hasOwn(Object.prototype, "s0002")).toBe(false);
+		const progress = { version: 1 as const, runs: { "PROC-fleet-0001": { default: {} } } };
+		expect(recordOf(progress, "PROC-fleet-0001", "default", "toString")).toBeUndefined();
+		expect(recordOf(progress, "PROC-fleet-0001", "constructor", "name")).toBeUndefined();
+		expect(run(["PROC-fleet-0001", "s0002", "--key", "pij-a.b@c_1"])).toBe(EXIT_OK);
+	});
+
+	it("keeps each run in its own file, so a run of one key never rewrites another's", () => {
+		saveRecord(root, "PROC-fleet-0001", "a", "s0001", { at: "t", by: "x", how: "ran" });
+		const before = readFileSync(runFile(root, "PROC-fleet-0001", "a"), "utf8");
+		expect(run(["PROC-fleet-0001", "s0002", "--key", "b"])).toBe(EXIT_OK);
+		expect(readFileSync(runFile(root, "PROC-fleet-0001", "a"), "utf8")).toBe(before);
+		expect(Object.keys(readProgress(root).runs["PROC-fleet-0001"] ?? {}).sort()).toEqual([
+			"a",
+			"b",
+		]);
+	});
+
 	it("refuses unknown flags and flags that don't apply, passing --again through", () => {
 		expect(run(["PROC-fleet-0001", "s0001", "--agian"])).toBe(EXIT_USAGE);
 		expect(err.join("\n")).toContain("unknown flag --agian");
@@ -434,6 +494,50 @@ describe("inputs, preconditions and order across procedures", () => {
 		recipes.bounced = () => 0;
 		expect(run(["PROC-fleet-0001", "s0001"])).toBe(EXIT_OK);
 		expect(runsOf("one")).toHaveLength(1);
+	});
+
+	it("gives another procedure's done check this run's inputs, but not a secret one", () => {
+		procedure(
+			"daemon",
+			"0001",
+			"bounce",
+			{
+				steps: [
+					{ id: "s0001", title: "b", kind: "run", run: "bounce", done: "bounced", done_when: "up" },
+				],
+			},
+			"bounce:\n    true\nbounced:\n    true\n",
+		);
+		procedure(
+			"fleet",
+			"0001",
+			"x",
+			{
+				inputs: [
+					{ name: "seat", description: "the seat", required: "yes" },
+					{ name: "token", description: "a secret", required: "yes", secret: "yes" },
+				],
+				steps: [
+					{
+						id: "s0001",
+						title: "first",
+						kind: "run",
+						run: "one",
+						inputs: ["seat", "token"],
+						requires: ["../../daemon/PROC-daemon-0001-bounce/procedure.dd.json#steps/s0001"],
+						done_when: "x",
+					},
+				],
+			},
+			"one:\n    true\n",
+		);
+		expect(
+			run(["PROC-fleet-0001", "s0001", "--arg", "seat=pij-a"], { env: { PROC_IN_TOKEN: "t" } }),
+		).toBe(EXIT_OK);
+		const other = runsOf("bounced")[0]?.env;
+		expect(other?.PROC_IN_SEAT).toBe("pij-a");
+		expect(other && "PROC_IN_TOKEN" in other).toBe(false);
+		expect(runsOf("one")[0]?.env.PROC_IN_TOKEN).toBe("t");
 	});
 });
 
@@ -737,7 +841,7 @@ describe("progress file", () => {
 		expect(run(["PROC-fleet-0001", "s0001", "--decided-by", "jordan", "--note", "yes"])).toBe(
 			EXIT_OK,
 		);
-		expect(progressFile(other)).toBe(progressFile(root));
+		expect(progressDir(other)).toBe(progressDir(root));
 		out = [];
 		expect(run(["PROC-fleet-0001", "s0001"], { cwd: other })).toBe(EXIT_OK);
 		expect(out.join("\n")).toContain("already decided by jordan");
@@ -748,8 +852,19 @@ describe("progress file", () => {
 		const dir = procedure("fleet", "0001", "x", THREE_STEPS, THREE_RECIPES);
 		expect(run(["PROC-fleet-0001", "s0002"], { cwd: join(root, dir) })).toBe(EXIT_OK);
 		expect(
-			JSON.parse(readFileSync(progressFile(root), "utf8")).runs["PROC-fleet-0001"].default["s0002"]
+			JSON.parse(readFileSync(runFile(root, "PROC-fleet-0001", "default"), "utf8")).steps["s0002"]
 				.how,
 		).toBe("ran");
+		expect(runFile(root, "PROC-fleet-0001", "default")).toBe(
+			join(root, "gitdir", "pij-procedures", "runs", "PROC-fleet-0001", "default.json"),
+		);
+	});
+});
+
+describe("real io", () => {
+	it("stops a check that outlives its timeout and reports it as timed out", () => {
+		const result = realIo().exec("/bin/sleep", ["5"], root, {}, false, 100);
+		expect(result.status).toBe(EXIT_TIMED_OUT);
+		expect(result.stderr).toContain("timed out");
 	});
 });

@@ -83,7 +83,7 @@
 					"id": "c-progress",
 					"name": "Run progress",
 					"kind": "store",
-					"where": "<git common dir>/pij-procedures/progress.json (shared by every worktree of the clone; `.pij/procedures/progress.json` under the root only outside git)",
+					"where": "<git common dir>/pij-procedures/runs/<id>/<key>.json, one file per run, shared by every worktree of the clone (`.pij/procedures/runs/` under the root only outside git). A run key is a plain word (`^[A-Za-z0-9][A-Za-z0-9._@-]*$`, never an Object.prototype name), so it is never a path.",
 					"responsibility": "Per clone, keyed by procedure id and run key (`default` when none is given): each step's state (ran, found done, decided, marked), when and by whom. Every worktree of the clone reads and writes the same file, so a recorded decision outlives the worktree it was made in. Written with a temporary file and a rename. `--clear` empties one key. Never committed.",
 					"realises": [
 						"../prds/005-procedures.dd.json#requirements/req-14",
@@ -284,7 +284,7 @@
 				{
 					"id": "k-1",
 					"what": "Running one step.",
-					"rate": "on demand only: 1 `just` per precondition, 1 done check before, 1 run, 1 done check after, plus 1 per earlier step with no recorded progress and 1 per `requires` with a done check; each `just` runs its recipe through its shell",
+					"rate": "on demand only: 1 `just` per precondition, 1 done check before, 1 run, 1 done check after, plus 1 per earlier step with no recorded progress and 1 per `requires` with a done check; each `just` runs its recipe through its shell; a precondition or done check that runs past 300 s is stopped and counts as failing, so a hung check never hangs the runner",
 					"scaling": "with the steps a seat runs; none per seat or per tick; the daemon's spawn counter does not move",
 					"component": ["#components/c-runner"]
 				},
@@ -355,6 +355,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "After osk-central prime's review of #343: c-progress in the clone's git directory; c-layout with a configurable home, shadowing outside pij and legacy pages; d-8 reworded."
+				},
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "After the #343 review (pij-sole-tyrannosaurus): c-progress keeps one file per run, so runs of different keys never overwrite each other, and refuses a run key that is not a plain word; k-1 bounds every check at 300 s."
 				}
 			]
 		}

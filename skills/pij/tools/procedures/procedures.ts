@@ -23,6 +23,7 @@ import {
 	readFileSync,
 	realpathSync,
 	renameSync,
+	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
@@ -43,9 +44,16 @@ export const SCHEMA = "pij/procedure";
 /**
  * Run progress and decisions, in the clone's shared git directory, so every worktree of the clone sees them and
  * removing a worktree loses nothing. Outside git (never in practice) it falls back to `.pij/` under the root.
+ * One file per run, `<dir>/<id>/<key>.json`, so runs of different keys at once never overwrite each other.
  */
-export const PROGRESS_FILE = "pij-procedures/progress.json";
-export const PROGRESS_FALLBACK = ".pij/procedures/progress.json";
+export const PROGRESS_DIR = "pij-procedures/runs";
+export const PROGRESS_FALLBACK = ".pij/procedures/runs";
+/** A run key names a file, so it is a plain word and never a path. `--key` also refuses `Object.prototype` names. */
+export const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]*$/;
+/** A precondition or done check that runs longer than this counts as failing (a hung check never hangs the run). */
+export const CHECK_TIMEOUT_MS = 300_000;
+/** The status a timed-out check reports, as `timeout(1)` does. */
+export const EXIT_TIMED_OUT = 124;
 /** A repo's optional settings for procedures (committed): `{"home": "<path>", "legacy_pages": {"<page>": <count>}}`. */
 export const CONFIG_FILE = ".pij-procedures.json";
 export const DEFAULT_KEY = "default";
@@ -182,6 +190,8 @@ export interface Io {
 		cwd: string,
 		env: Record<string, string | undefined>,
 		inherit: boolean,
+		/** Stop the child after this long; it then reports EXIT_TIMED_OUT. */
+		timeoutMs?: number,
 	) => ExecResult;
 	now: () => Date;
 }
@@ -623,32 +633,49 @@ export function commonGitDir(root: string): string | undefined {
 	return common ? resolve(gitDir, common) : gitDir;
 }
 
-/** Where `root`'s run progress lives (shared by every worktree of the clone). */
-export function progressFile(root: string): string {
+/** The folder holding `root`'s run progress (shared by every worktree of the clone). */
+export function progressDir(root: string): string {
 	const common = commonGitDir(root);
-	return common ? join(common, PROGRESS_FILE) : join(root, PROGRESS_FALLBACK);
+	return common ? join(common, PROGRESS_DIR) : join(root, PROGRESS_FALLBACK);
+}
+
+/** One run's file. Ids and keys are checked before they get here (ID_RE, KEY_RE), so neither is a path. */
+export function runFile(root: string, id: string, key: string): string {
+	return join(progressDir(root), id, `${key}.json`);
+}
+
+function readRun(file: string): Record<string, StepRecord> | undefined {
+	const text = readText(file);
+	if (text === undefined) return undefined;
+	try {
+		const parsed: unknown = JSON.parse(text);
+		if (isObj(parsed) && isObj(parsed.steps)) return parsed.steps as Record<string, StepRecord>;
+	} catch {
+		// a corrupt file reads as empty; the next write replaces it
+	}
+	return undefined;
 }
 
 export function readProgress(root: string): Progress {
-	const text = readText(progressFile(root));
-	if (text !== undefined) {
-		try {
-			const parsed: unknown = JSON.parse(text);
-			if (isObj(parsed) && isObj(parsed.runs))
-				return { version: 1, runs: parsed.runs as Progress["runs"] };
-		} catch {
-			// a corrupt file reads as empty; the next write replaces it
+	const progress: Progress = { version: 1, runs: {} };
+	const dir = progressDir(root);
+	if (!isDir(dir)) return progress;
+	for (const id of readdirSync(dir)) {
+		if (!ID_RE.test(id) || !isDir(join(dir, id))) continue;
+		for (const name of readdirSync(join(dir, id))) {
+			const key = name.endsWith(".json") ? name.slice(0, -".json".length) : "";
+			if (!KEY_RE.test(key)) continue;
+			const steps = readRun(join(dir, id, name));
+			if (!steps) continue;
+			progress.runs[id] ??= {};
+			progress.runs[id][key] = steps;
 		}
 	}
-	return { version: 1, runs: {} };
+	return progress;
 }
 
-function writeProgress(root: string, progress: Progress): void {
-	const file = progressFile(root);
-	mkdirSync(dirname(file), { recursive: true });
-	const temporary = `${file}.${process.pid}.tmp`;
-	writeFileSync(temporary, `${JSON.stringify(progress, null, "\t")}\n`);
-	renameSync(temporary, file);
+function own<T>(record: Record<string, T> | undefined, name: string): T | undefined {
+	return record && Object.hasOwn(record, name) ? record[name] : undefined;
 }
 
 export function recordOf(
@@ -657,10 +684,10 @@ export function recordOf(
 	key: string,
 	step: string,
 ): StepRecord | undefined {
-	return progress.runs[id]?.[key]?.[step];
+	return own(own(own(progress.runs, id), key), step);
 }
 
-/** Record one step, re-reading the file first so parallel runs of other keys survive. */
+/** Record one step in its run's own file (written whole, then renamed into place). */
 export function saveRecord(
 	root: string,
 	id: string,
@@ -668,21 +695,19 @@ export function saveRecord(
 	step: string,
 	record: StepRecord,
 ): void {
-	const progress = readProgress(root);
-	const runs = progress.runs[id] ?? {};
-	const steps = runs[key] ?? {};
+	const file = runFile(root, id, key);
+	const steps = readRun(file) ?? {};
 	steps[step] = record;
-	runs[key] = steps;
-	progress.runs[id] = runs;
-	writeProgress(root, progress);
+	mkdirSync(dirname(file), { recursive: true });
+	const temporary = `${file}.${process.pid}.tmp`;
+	writeFileSync(temporary, `${JSON.stringify({ version: 1, steps }, null, "\t")}\n`);
+	renameSync(temporary, file);
 }
 
 export function clearRun(root: string, id: string, key: string): boolean {
-	const progress = readProgress(root);
-	const runs = progress.runs[id];
-	if (!runs || !(key in runs)) return false;
-	delete runs[key];
-	writeProgress(root, progress);
+	const file = runFile(root, id, key);
+	if (!existsSync(file)) return false;
+	rmSync(file);
 	return true;
 }
 
@@ -781,8 +806,14 @@ export function parseFlags(
 			const split = value.indexOf("=");
 			if (split <= 0) return { ok: false, error: `--arg takes name=value, not ${value}` };
 			flags.args.set(value.slice(0, split), value.slice(split + 1));
-		} else if (name === "--key") flags.key = value;
-		else if (name === "--decided-by") flags.decidedBy = value;
+		} else if (name === "--key") {
+			if (!KEY_RE.test(value) || value in Object.prototype)
+				return {
+					ok: false,
+					error: `--key takes letters, digits and . _ @ - (starting with a letter or digit), not ${JSON.stringify(value)}`,
+				};
+			flags.key = value;
+		} else if (name === "--decided-by") flags.decidedBy = value;
 		else if (name === "--note") flags.note = value;
 		else if (name === "--title") flags.title = value;
 		else if (name === "--kind") flags.kind = value;
@@ -904,12 +935,14 @@ function runRecipe(
 	}
 	const just = findOnPath("just", ctx.io.env);
 	if (!just) return { status: 127, stdout: "", stderr: "", missing: "`just` is not on PATH" };
+	// A check (captured, not inherited) is bounded; a step's own recipe may take as long as it takes.
 	return ctx.io.exec(
 		just,
 		["--justfile", file, "--working-directory", ctx.root, recipe, ...args],
 		ctx.root,
 		env,
 		inherit,
+		inherit ? undefined : CHECK_TIMEOUT_MS,
 	);
 }
 
@@ -1229,6 +1262,21 @@ function stepCmd(ctx: Ctx, flags: Flags, procedure: Procedure, step: Step): numb
 		}
 	}
 	const envFor = (p: Procedure, s: Step) => stepEnv(ctx, p, s.id, key, inputs);
+	// Another procedure's done check gets this run's inputs, but not a secret one it doesn't declare itself (req-13).
+	const envForOther = (p: Procedure, s: Step) => {
+		const secret = procedure.inputs.filter(
+			(i) => i.secret && !p.inputs.some((theirs) => theirs.name === i.name),
+		);
+		const env = stepEnv(
+			ctx,
+			p,
+			s.id,
+			key,
+			new Map([...inputs].filter(([name]) => !secret.some((i) => i.name === name))),
+		);
+		for (const input of secret) delete env[inputVar(input.name)];
+		return env;
+	};
 	const now = () => io.now().toISOString();
 	if (step.who) io.out(`who: ${step.who}`);
 
@@ -1265,7 +1313,7 @@ function stepCmd(ctx: Ctx, flags: Flags, procedure: Procedure, step: Step): numb
 			);
 		const { procedure: other, step: otherStep } = required;
 		if (otherStep.kind === "run" && otherStep.done) {
-			const check = runRecipe(ctx, other, otherStep.done, envFor(other, otherStep), false);
+			const check = runRecipe(ctx, other, otherStep.done, envForOther(other, otherStep), false);
 			if (check.missing) return fail(ctx, check.missing);
 			if (check.status === 0) continue;
 		} else if (
@@ -2015,13 +2063,20 @@ export function realIo(): Io {
 		env: process.env,
 		out: (line) => process.stdout.write(`${line}\n`),
 		err: (line) => process.stderr.write(`${line}\n`),
-		exec: (file, args, cwd, env, inherit) => {
+		exec: (file, args, cwd, env, inherit, timeoutMs) => {
 			const result = spawnSync(file, args, {
 				cwd,
 				env,
 				encoding: "utf8",
 				stdio: inherit ? "inherit" : "pipe",
+				timeout: timeoutMs,
 			});
+			if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT")
+				return {
+					status: EXIT_TIMED_OUT,
+					stdout: typeof result.stdout === "string" ? result.stdout : "",
+					stderr: `timed out after ${Math.round((timeoutMs ?? 0) / 1000)} s`,
+				};
 			return {
 				status: result.status ?? (result.error ? 127 : 1),
 				stdout: typeof result.stdout === "string" ? result.stdout : "",
