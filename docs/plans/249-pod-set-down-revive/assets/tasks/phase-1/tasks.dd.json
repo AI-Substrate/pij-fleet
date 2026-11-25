@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "set",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
@@ -33,7 +33,7 @@
           "id": "tk-0002",
           "title": "down through close --stop",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -43,7 +43,7 @@
           "id": "tk-0003",
           "title": "freeze record",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
@@ -53,7 +53,7 @@
           "id": "tk-0004",
           "title": "revive and reshape",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
           ],
@@ -63,7 +63,7 @@
           "id": "tk-0005",
           "title": "cost receipt",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
           ],
@@ -78,7 +78,7 @@
           {
             "id": "dw-0001",
             "assertion": "set",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -86,7 +86,7 @@
           {
             "id": "dw-0002",
             "assertion": "down through close --stop",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -94,7 +94,7 @@
           {
             "id": "dw-0003",
             "assertion": "freeze record",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -102,7 +102,7 @@
           {
             "id": "dw-0004",
             "assertion": "revive and reshape",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -110,7 +110,7 @@
           {
             "id": "dw-0005",
             "assertion": "cost receipt",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ]

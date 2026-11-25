@@ -20,11 +20,11 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: set reaches one member of three. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_set |
-| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: down gives each member the same result as close --stop alone, spares a keep-open member with a warning, leaves a consulted holder untouched. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_down |
-| bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test on a scratch repo: the head is recorded; uncommitted work warns and down proceeds. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_freeze |
-| bp-0004 | AC4 | ph-0001 | BUILD | computational | HTTP tests: a closed pod comes back with the same members; add and release are logged. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_revive |
-| bp-0005 | AC5 | ph-0001 | BUILD | computational | The spawn counter across down: git reads counted. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_down_cost |
+| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: set reaches one member of three. | [x] checked | — | — | cargo test -p pij-daemon pod_set |
+| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: down gives each member the same result as close --stop alone, spares a keep-open member with a warning, leaves a consulted holder untouched. | [x] checked | — | — | cargo test -p pij-daemon pod_down |
+| bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test on a scratch repo: the head is recorded; uncommitted work warns and down proceeds. | [x] checked | — | — | cargo test -p pij-daemon pod_freeze |
+| bp-0004 | AC4 | ph-0001 | BUILD | computational | HTTP tests: a closed pod comes back with the same members; add and release are logged. | [x] checked | — | — | cargo test -p pij-daemon pod_revive |
+| bp-0005 | AC5 | ph-0001 | BUILD | computational | The spawn counter across down: git reads counted. | [x] checked | — | — | cargo test -p pij-daemon pod_down_cost |
 
 <a id="sensors"></a>
 

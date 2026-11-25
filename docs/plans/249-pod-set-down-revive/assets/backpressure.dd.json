@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: set reaches one member of three.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_set"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: down gives each member the same result as close --stop alone, spares a keep-open member with a warning, leaves a consulted holder untouched.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_down"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test on a scratch repo: the head is recorded; uncommitted work warns and down proceeds.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_freeze"
         },
         {
@@ -51,7 +51,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP tests: a closed pod comes back with the same members; add and release are logged.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_revive"
         },
         {
@@ -61,7 +61,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "The spawn counter across down: git reads counted.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_down_cost"
         }
       ]

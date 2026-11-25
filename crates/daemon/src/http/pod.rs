@@ -146,6 +146,10 @@ pub(crate) async fn handle(
         "up" => up(&state, &call, &request.caller, &actor).await,
         "show" => show(&state, &call, &request.caller).await,
         "confirm" => confirm(&state, &call, &actor).await,
+        "set" => set(&state, &call, &request.caller, &actor).await,
+        "down" => down(&state, &call, &request.caller, &actor).await,
+        "add" => add(&state, &call, &request.caller, &actor).await,
+        "release" => release(&state, &call, &request.caller, &actor).await,
         verb => Err(Refusal::new(
             "E-RS-UNPORTED",
             format!("pod {verb}: unknown command; pij pod --help"),
@@ -444,6 +448,18 @@ async fn up(
     caller: &CallerContext,
     actor: &SeatId,
 ) -> Result<Value, Refusal> {
+    if let Some(name) = call.positions.first()
+        && PodPaths::new(name).is_ok()
+        && let Ok(opened) = open(state, caller, name).await
+    {
+        if pod::meta(&opened.document)["state"] == "up" {
+            return Err(Refusal::new(
+                E_POD_EXISTS,
+                format!("pod {name} is up; see it with pij pod show {name}"),
+            ));
+        }
+        return revive(state, call, caller, actor, opened).await;
+    }
     let planned = plan(state, call, caller, actor).await?;
     if planned.worktree.join(&planned.paths.document).exists() {
         return Err(Refusal::new(
@@ -691,11 +707,7 @@ async fn start_slot(
         "pij pod up",
     )
     .await;
-    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
-        .await
-        .map_err(|error| format!("its answer could not be read: {error}"))?;
-    let answer: Value = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("its answer was not JSON: {error}"))?;
+    let answer = answer_of(response).await?;
     if answer["ok"] != true {
         return Err(answer["meta"]
             .as_str()
@@ -862,6 +874,541 @@ async fn settle(
     }
 }
 
+/// A pod's record, read for a verb that changes it.
+struct Opened {
+    record: Record,
+    document: Value,
+}
+
+async fn open(state: &AppState, caller: &CallerContext, pod_name: &str) -> Result<Opened, Refusal> {
+    let (project, repo) = project_and_repo(state, caller, None).await?;
+    let worktree = root::find(&repo)?.worktree;
+    let document = recorded(&worktree, &project, pod_name)?;
+    Ok(Opened {
+        record: Record {
+            pod: pod_name.to_string(),
+            paths: PodPaths::new(pod_name)?,
+            project,
+            repo,
+            worktree,
+        },
+        document,
+    })
+}
+
+async fn save(
+    state: &AppState,
+    record: &Record,
+    document: &Value,
+    what: &str,
+) -> Result<String, Refusal> {
+    commit(
+        state,
+        &record.project,
+        &record.repo,
+        pod_file(document, &record.paths, Existing::Replace),
+        format!("pij pod {} {what}", record.pod),
+    )
+    .await
+}
+
+fn position<'a>(call: &'a Call, index: usize, usage: &str) -> Result<&'a str, Refusal> {
+    call.positions
+        .get(index)
+        .map(String::as_str)
+        .ok_or_else(|| Refusal::new("E-RS-ARG", usage.to_string()))
+}
+
+/// `pij pod set <pod> <name>=<value>` (req-05): record the value, then send
+/// it to each member whose slot uses it and only them. A degraded member is
+/// not sent it (the dispatch brake) and is named.
+async fn set(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
+    const USAGE: &str = "pij pod set <pod> <name>=<value>";
+    let pod_name = position(call, 0, USAGE)?;
+    let (name, value) = position(call, 1, USAGE)?
+        .split_once('=')
+        .ok_or_else(|| Refusal::new("E-RS-ARG", USAGE))?;
+    let opened = open(state, caller, pod_name).await?;
+    let template = template_of(&opened.record.repo, &opened.document)?;
+    pod::fill(
+        &Template {
+            parameters: template
+                .parameters
+                .iter()
+                .map(|(known, _)| (known.clone(), false))
+                .collect(),
+            ..template.clone()
+        },
+        &[(name.to_string(), value.to_string())],
+    )?;
+    let at = holders::now();
+    let document = pod::logged(
+        pod::with_parameter(opened.document, name, value),
+        &at,
+        actor.as_str(),
+        &format!("set {name}={value}"),
+    );
+    let committed = save(
+        state,
+        &opened.record,
+        &document,
+        &format!("set {name} (by {actor})"),
+    )
+    .await?;
+    let mut sent = Vec::new();
+    let mut warnings = Vec::new();
+    for member in pod::records(&document, "members") {
+        let seat = member["seat"].as_str().unwrap_or_default();
+        let uses = template.slots.iter().any(|slot| {
+            member["slot"] == slot.id.as_str() && slot.parameters.iter().any(|used| used == name)
+        });
+        if !uses {
+            continue;
+        }
+        if !pod::may_dispatch(member) {
+            warnings.push(format!(
+                "{seat} is degraded, so pij did not send it {name}; send it yourself once it has its tools: pij send {seat} ..."
+            ));
+            continue;
+        }
+        match state
+            .services
+            .delivery
+            .send(
+                actor.clone(),
+                SeatId::from(seat),
+                format!("pij pod {pod_name}: the parameter {name} is now {value}"),
+            )
+            .await
+        {
+            Ok(_) => sent.push(seat.to_string()),
+            Err(error) => warnings.push(format!("{seat} could not be sent {name}: {error}")),
+        }
+    }
+    Ok(
+        json!({"pod": pod_name, "set": {name: value}, "sent": sent, "warnings": warnings, "commit": committed}),
+    )
+}
+
+/// `pij pod down <pod>` (req-06, req-10, req-14): the freeze record, then
+/// each member that is not keep-open through the same handler `pij close
+/// <seat> --stop` reaches, once per member. A consulted role is never
+/// touched. The pod reads as closing until every such member is down.
+async fn down(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
+    let pod_name = position(call, 0, "pij pod down <pod>")?;
+    let opened = open(state, caller, pod_name).await?;
+    let at = holders::now();
+    let mut document = pod::with_state(opened.document, "closing");
+    let mut warnings = Vec::new();
+    let freeze = pod::meta(&document)["work_folder"]
+        .as_str()
+        .filter(|folder| Path::new(folder).is_absolute())
+        .map(|folder| match pod::freeze(Path::new(folder)) {
+            Ok(freeze) => {
+                if freeze.uncommitted > 0 {
+                    warnings.push(format!(
+                        "the run is unfrozen: {folder} has {} uncommitted path(s); commit them to freeze it",
+                        freeze.uncommitted
+                    ));
+                }
+                freeze.line(folder)
+            }
+            Err(why) => {
+                warnings.push(format!("pij could not read {folder} with git, so no freeze is recorded: {why}"));
+                format!("freeze: not recorded ({why})")
+            }
+        });
+    if let Some(line) = &freeze {
+        document = pod::logged(document, &at, actor.as_str(), line);
+    }
+    let mut members = Vec::new();
+    for member in pod::records(&document, "members").to_vec() {
+        let seat = member["seat"].as_str().unwrap_or_default().to_string();
+        let role_id = member["role"].as_str().unwrap_or_default();
+        let outcome = if pod::keeps_open(
+            &member,
+            role_type(&opened.record.worktree, role_id).as_deref(),
+        ) {
+            warnings.push(format!(
+                "{seat} is keep-open, so it was left running and out of the closed pod; take it down with pij close {seat} --stop"
+            ));
+            "left running (keep-open)".to_string()
+        } else if !seat_live(state, &seat).await {
+            "already down".to_string()
+        } else {
+            close_stop(state, caller, &seat, pod_name).await
+        };
+        members.push(json!({"slot": member["slot"], "seat": seat, "outcome": outcome}));
+    }
+    for warning in &warnings {
+        document = pod::logged(
+            document,
+            &at,
+            actor.as_str(),
+            &format!("warning: {warning}"),
+        );
+    }
+    document = pod::logged(
+        document,
+        &at,
+        actor.as_str(),
+        &format!(
+            "down: {}",
+            members
+                .iter()
+                .map(|member| format!(
+                    "{} {}",
+                    text_of(&member["seat"]),
+                    text_of(&member["outcome"])
+                ))
+                .collect::<Vec<_>>()
+                .join("; ")
+        ),
+    );
+    let committed = save(
+        state,
+        &opened.record,
+        &document,
+        &format!("down (by {actor})"),
+    )
+    .await?;
+    Ok(json!({
+        "pod": pod_name,
+        "state": "closing",
+        "members": members,
+        "freeze": freeze,
+        "warnings": warnings,
+        "commit": committed,
+        "next": format!("pij pod show {pod_name} reads closed once every member is down"),
+    }))
+}
+
+fn text_of(value: &Value) -> &str {
+    value.as_str().unwrap_or_default()
+}
+
+/// One member through the close route's own handler with `--stop`, as the
+/// caller: what it answered.
+async fn close_stop(
+    state: &AppState,
+    caller: &CallerContext,
+    seat: &str,
+    pod_name: &str,
+) -> String {
+    let body: std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection> =
+        Ok(Json(json!({
+            "seat": seat,
+            "reason": format!("pij pod down {pod_name}"),
+            "stop": true,
+            "caller": caller,
+        })));
+    let response = super::lifecycle::close(State(state.clone()), body).await;
+    match answer_of(response).await {
+        Ok(answer) if answer["ok"] == true => {
+            if answer["data"]["held"].is_string() {
+                "held for its memory turn; closed and stopped once its note is written, else left running and the prime told".to_string()
+            } else if answer["data"]["stopped"]["stopped"] == true {
+                "closed and stopped".to_string()
+            } else {
+                "closed".to_string()
+            }
+        }
+        Ok(answer) => format!("not closed: {}", text_of(&answer["meta"])),
+        Err(why) => format!("not closed: {why}"),
+    }
+}
+
+/// `pij pod up <pod>` on a closing or closed pod (req-11): each member that
+/// is down is revived through revive's own handler, one at a time, under its
+/// rules (resume, cheap start, the cold refusal with its price).
+async fn revive(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+    opened: Opened,
+) -> Result<Value, Refusal> {
+    let pod_name = opened.record.pod.clone();
+    let mut members = Vec::new();
+    let mut warnings = Vec::new();
+    for member in pod::records(&opened.document, "members") {
+        let seat = member["seat"].as_str().unwrap_or_default().to_string();
+        let outcome = if seat_live(state, &seat).await {
+            "running".to_string()
+        } else {
+            let request: super::types::ReviveRequest = serde_json::from_value(json!({
+                "id": seat,
+                "caller": caller,
+                "caller_pane": caller.pane,
+                "session": call.session,
+            }))
+            .map_err(|error| Refusal::new("E-RS-ARG", error.to_string()))?;
+            let response =
+                super::revive::revive_seat(State(state.clone()), Ok(Json(request))).await;
+            match answer_of(response).await {
+                Ok(answer) if answer["ok"] == true => "revived".to_string(),
+                Ok(answer) => {
+                    let why = text_of(&answer["meta"]).to_string();
+                    warnings.push(format!("{seat} was not revived: {why}"));
+                    format!("not revived: {why}")
+                }
+                Err(why) => {
+                    warnings.push(format!("{seat} was not revived: {why}"));
+                    format!("not revived: {why}")
+                }
+            }
+        };
+        members.push(json!({"slot": member["slot"], "seat": seat, "outcome": outcome}));
+    }
+    let at = holders::now();
+    let mut document = pod::with_state(opened.document, "up");
+    for warning in &warnings {
+        document = pod::logged(
+            document,
+            &at,
+            actor.as_str(),
+            &format!("warning: {warning}"),
+        );
+    }
+    document = pod::logged(document, &at, actor.as_str(), "up again by name");
+    let committed = save(
+        state,
+        &opened.record,
+        &document,
+        &format!("up again (by {actor})"),
+    )
+    .await?;
+    Ok(
+        json!({"pod": pod_name, "state": "up", "members": members, "warnings": warnings, "commit": committed}),
+    )
+}
+
+/// `pij pod add <pod> role:<id>[/<instance>] [--set ...] [--session <tmux>]`
+/// starts a member as `spawn --as --pod` does; `pij pod add <pod> <seat>`
+/// adds a seat already running (req-08). Logged; the template is unchanged.
+async fn add(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
+    const USAGE: &str = "pij pod add <pod> role:<id>[/<instance>] | <seat>";
+    let pod_name = position(call, 0, USAGE)?;
+    let target = position(call, 1, USAGE)?;
+    let opened = open(state, caller, pod_name).await?;
+    if let Some(address) = target.strip_prefix("role:") {
+        let (role_id, instance) = address.split_once('/').unwrap_or((address, ""));
+        let harness = RolePaths::new(role_id)
+            .ok()
+            .and_then(|paths| std::fs::read(opened.record.worktree.join(paths.document)).ok())
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|document| {
+                document["sections"]
+                    .as_array()?
+                    .iter()
+                    .find(|section| section["name"] == "default_seat")?["value"]["harness"]
+                    .as_str()
+                    .and_then(Harness::parse)
+            })
+            .unwrap_or(Harness::Omp);
+        let mut request: SpawnRequest = serde_json::from_value(json!({
+            "harness": harness,
+            "cwd": pod::meta(&opened.document)["work_folder"]
+                .as_str()
+                .filter(|folder| Path::new(folder).is_dir())
+                .or(caller.cwd.as_deref())
+                .unwrap_or_default(),
+            "session": call.session,
+            "caller_pane": caller.pane,
+            "parent": actor,
+            "no_wait": true,
+            "caller": caller,
+        }))
+        .map_err(|error| Refusal::new("E-RS-ARG", error.to_string()))?;
+        request.as_role = Some(AsRole {
+            role: role_id.to_string(),
+            instance: instance.to_string(),
+            set: call
+                .sets
+                .iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .collect(),
+            focus: None,
+            packet: None,
+            subject: pod::meta(&opened.document)["subject"]
+                .as_str()
+                .map(str::to_string),
+            fresh: pod::meta(&opened.document)["fresh"] == "yes",
+            pod: Some(pod_name.to_string()),
+        });
+        let response = super::launch_seat(
+            state,
+            request,
+            ExistingSeatPolicy { allow_absent: true },
+            "pij pod add",
+        )
+        .await;
+        let answer = answer_of(response)
+            .await
+            .map_err(|why| Refusal::new("E-RS-ADAPTER", why))?;
+        if answer["ok"] != true {
+            return Err(Refusal::new(
+                "E-RS-POD-ADD",
+                format!("{target} did not start: {}", text_of(&answer["meta"])),
+            ));
+        }
+        return Ok(
+            json!({"pod": pod_name, "added": answer["data"]["id"], "joined": answer["details"]["pod"], "warnings": answer["details"]["warnings"]}),
+        );
+    }
+    let seat = state
+        .services
+        .registry
+        .get(&SeatId::from(target))
+        .await
+        .ok()
+        .flatten()
+        .filter(|row| row.tombstoned_at.is_none())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-NOT-FOUND",
+                format!("no live seat {target}; start one into the pod with pij pod add {pod_name} role:<id>"),
+            )
+        })?;
+    if pod::records(&opened.document, "members")
+        .iter()
+        .any(|member| member["seat"] == target)
+    {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{target} is already a member of pod {pod_name}"),
+        ));
+    }
+    let holding = state
+        .services
+        .directory
+        .store()
+        .open_assignments(target)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.project == opened.record.project);
+    let slot = pod::Slot {
+        id: target.to_string(),
+        role: holding
+            .as_ref()
+            .map_or_else(|| "none".to_string(), |row| row.role.clone()),
+        instance: holding.map(|row| row.instance).unwrap_or_default(),
+        parameters: Vec::new(),
+        tools: Vec::new(),
+        not_model_of: None,
+        keep_open: None,
+        seed: None,
+    };
+    let at = holders::now();
+    let document = pod::logged(
+        pod::with_members(
+            opened.document,
+            vec![pod::member(&slot, seat.id.as_str(), "none asked")],
+        ),
+        &at,
+        actor.as_str(),
+        &format!("added {target}, already running, in role {}", slot.role),
+    );
+    let committed = save(
+        state,
+        &opened.record,
+        &document,
+        &format!("add {target} (by {actor})"),
+    )
+    .await?;
+    Ok(json!({"pod": pod_name, "added": target, "role": slot.role, "commit": committed}))
+}
+
+/// `pij pod release <pod> <seat>` (req-08): the seat leaves the pod and keeps
+/// running. Logged.
+async fn release(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
+    const USAGE: &str = "pij pod release <pod> <seat>";
+    let pod_name = position(call, 0, USAGE)?;
+    let target = position(call, 1, USAGE)?;
+    let opened = open(state, caller, pod_name).await?;
+    let (document, removed) = pod::without_member(opened.document, target);
+    if removed.is_none() {
+        return Err(Refusal::new(
+            "E-RS-NOT-FOUND",
+            format!("{target} is not a member of pod {pod_name}"),
+        ));
+    }
+    let at = holders::now();
+    let document = pod::logged(
+        document,
+        &at,
+        actor.as_str(),
+        &format!("released {target}; it keeps running"),
+    );
+    let committed = save(
+        state,
+        &opened.record,
+        &document,
+        &format!("release {target} (by {actor})"),
+    )
+    .await?;
+    Ok(json!({
+        "pod": pod_name,
+        "released": target,
+        "commit": committed,
+        "next": format!("{target} keeps running; close it with pij close {target} --stop"),
+    }))
+}
+
+/// The template a pod's record names: relative to the repo, or absolute.
+///
+/// # Errors
+/// Whatever reading it refuses with.
+fn template_of(repo: &Path, document: &Value) -> Result<Template, Refusal> {
+    let source = pod::meta(document)["template"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let file = if Path::new(&source).is_absolute() {
+        PathBuf::from(&source)
+    } else {
+        repo.join(&source)
+    };
+    pod::read(&file, &source)
+}
+
+/// An in-process handler's answer as JSON.
+async fn answer_of(response: Response) -> Result<Value, String> {
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .map_err(|error| format!("its answer could not be read: {error}"))?;
+    serde_json::from_slice(&bytes).map_err(|error| format!("its answer was not JSON: {error}"))
+}
+
+/// The type a role in `worktree` names, if its document says.
+fn role_type(worktree: &Path, role_id: &str) -> Option<String> {
+    let paths = RolePaths::new(role_id).ok()?;
+    let document: Value =
+        serde_json::from_slice(&std::fs::read(worktree.join(paths.document)).ok()?).ok()?;
+    pod::meta(&document)["type"].as_str().map(str::to_string)
+}
+
 /// The pod's record in `worktree`, or why `spawn --as --pod` names no pod.
 ///
 /// # Errors
@@ -905,17 +1452,8 @@ pub(super) async fn join(
     let worktree = root::find(repo)?.worktree;
     let paths = PodPaths::new(pod_name)?;
     let document = recorded(&worktree, project, pod_name)?;
-    let source = pod::meta(&document)["template"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
-    let template_file = if Path::new(&source).is_absolute() {
-        PathBuf::from(&source)
-    } else {
-        repo.join(&source)
-    };
     let mut warning = None;
-    let found = match pod::read(&template_file, &source) {
+    let found = match template_of(repo, &document) {
         Ok(template) => template
             .slots
             .into_iter()
@@ -946,7 +1484,7 @@ pub(super) async fn join(
                 parameters: Vec::new(),
                 tools: Vec::new(),
                 not_model_of: None,
-                keep_open: false,
+                keep_open: None,
                 seed: None,
             }
         }
@@ -1061,6 +1599,7 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
     })?;
     let mut members = Vec::new();
     let mut degraded = Vec::new();
+    let mut running = 0;
     for member in pod::records(&document, "members") {
         let seat = member["seat"].as_str().unwrap_or_default();
         let row = state
@@ -1070,6 +1609,13 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
             .await
             .ok()
             .flatten();
+        let keeps = pod::keeps_open(
+            member,
+            role_type(&worktree, member["role"].as_str().unwrap_or_default()).as_deref(),
+        );
+        if !keeps && row.as_ref().is_some_and(|row| row.tombstoned_at.is_none()) {
+            running += 1;
+        }
         let mut shown = member.clone();
         shown["state"] = match &row {
             Some(row) if row.tombstoned_at.is_some() => json!("closed"),
@@ -1105,9 +1651,21 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
             json!(holders_of(state, &project, row["owner"].as_str().unwrap_or_default()).await);
         deliverables.push(shown);
     }
+    // req-06: a pod taken down reads closing until every member that is not
+    // keep-open is down.
+    let recorded_state = pod::meta(&document)["state"]
+        .as_str()
+        .unwrap_or("up")
+        .to_string();
+    let pod_state = if recorded_state == "closing" && running == 0 {
+        "closed".to_string()
+    } else {
+        recorded_state
+    };
     Ok(json!({
         "pod": pod_name,
         "project": project,
+        "state": pod_state,
         "meta": pod::meta(&document),
         "parameters": pod::records(&document, "parameters"),
         "members": members,

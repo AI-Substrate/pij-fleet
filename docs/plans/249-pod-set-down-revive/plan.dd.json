@@ -36,31 +36,31 @@
         {
           "id": "ac-0001",
           "claim": "`pij pod set <pod> <name>=<value>` records the value in the pod folder and sends it to the members whose slots name it, and only them.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij pod down <pod>` runs the template's close steps, then for each member not marked keep-open runs the same path as `pij close <seat> --stop` (plan 245): memory first, the recorded process stopped, the prime told of any seat that did not answer, cold seats not woken. A keep-open member (knowledge by default) is named in a warning and left running. Consulted roles are not touched. The pod reads closing until every member is down.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Freeze: when the pod names a work folder, down records its branch and head commit in the pod's log and warns that the run is unfrozen when the folder has uncommitted work. Only a warning: down never refuses on it.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
           "claim": "`pij pod up <pod>` on a closed pod revives its members one at a time under today's revive rules (resume, cheap start, the cold warning). `pij pod add <pod> <role|seat>` and `pij pod release <pod> <seat>` reshape a running pod and log it; the template is never changed by a run.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         },
         {
           "id": "ac-0005",
           "claim": "Cost: down is close --stop per member plus at most two git reads in the work folder; set is one delivery per member that needs the value. No loop, poll or timer.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0005"
         }
       ]
@@ -72,7 +72,7 @@
           "id": "ph-0001",
           "title": "Set, down, revive and reshape (workstream 008 s03)",
           "brief": "One phase on PR #346.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

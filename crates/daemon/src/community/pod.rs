@@ -41,8 +41,10 @@ pub struct Slot {
     pub tools: Vec<String>,
     /// A slot whose model this one must not share (req-21).
     pub not_model_of: Option<String>,
-    /// Left running when the pod goes down (req-10).
-    pub keep_open: bool,
+    /// Left running when the pod goes down (req-10): `Some(true)` marked
+    /// keep-open, `Some(false)` marked not, `None` the role type's default
+    /// (a knowledge seat stays open).
+    pub keep_open: Option<bool>,
     /// Text this slot's seat is told at start, after its role.
     pub seed: Option<String>,
 }
@@ -204,7 +206,11 @@ pub fn parse(bytes: &[u8], source: &str) -> Result<Template, Refusal> {
             parameters: uses,
             tools: strings(&row["tools"]),
             not_model_of: Some(text(&row["not_model_of"])).filter(|other| !other.is_empty()),
-            keep_open: row["keep_open"] == "yes",
+            keep_open: match row["keep_open"].as_str() {
+                Some("yes") => Some(true),
+                Some("no") => Some(false),
+                _ => None,
+            },
             seed: Some(text(&row["seed"])).filter(|seed| !seed.is_empty()),
             id,
         });
@@ -594,8 +600,8 @@ pub fn member(slot: &Slot, seat: &str, canary: &str) -> Value {
     if !slot.instance.is_empty() {
         row["instance"] = json!(slot.instance);
     }
-    if slot.keep_open {
-        row["keep_open"] = json!("yes");
+    if let Some(keep) = slot.keep_open {
+        row["keep_open"] = json!(if keep { "yes" } else { "no" });
     }
     row
 }
@@ -634,6 +640,122 @@ pub fn records<'a>(document: &'a Value, name: &str) -> &'a [Value] {
 /// A pod record's meta.
 pub fn meta(document: &Value) -> Value {
     section(document, "meta").cloned().unwrap_or(Value::Null)
+}
+
+/// `document` with parameter `name` set to `value` (replaced, or added).
+pub fn with_parameter(mut document: Value, name: &str, value: &str) -> Value {
+    if let Some(rows) = section_mut(&mut document, "parameters").and_then(Value::as_array_mut) {
+        match rows.iter_mut().find(|row| row["name"] == name) {
+            Some(row) => row["value"] = json!(value),
+            None => rows.push(json!({"name": name, "value": value})),
+        }
+    }
+    document
+}
+
+/// `document` with its meta.state set to `state` (`up`, `closing`, `closed`).
+pub fn with_state(mut document: Value, state: &str) -> Value {
+    if let Some(meta) = section_mut(&mut document, "meta") {
+        meta["state"] = json!(state);
+    }
+    document
+}
+
+/// `document` without `seat`'s member row, and that row when it had one.
+pub fn without_member(mut document: Value, seat: &str) -> (Value, Option<Value>) {
+    let mut removed = None;
+    if let Some(rows) = section_mut(&mut document, "members").and_then(Value::as_array_mut)
+        && let Some(index) = rows.iter().position(|row| row["seat"] == seat)
+    {
+        removed = Some(rows.remove(index));
+    }
+    (document, removed)
+}
+
+/// Whether pij may hand `member` pod work: a brake on pij's own dispatch,
+/// which only ever sends less. A degraded member gets none; anyone may still
+/// send it anything.
+pub fn may_dispatch(member: &Value) -> bool {
+    !member["canary"]
+        .as_str()
+        .is_some_and(|canary| canary.starts_with("degraded"))
+}
+
+/// Whether `pod down` leaves `member` running (req-10): marked keep-open, or
+/// unmarked and its role is of type knowledge.
+pub fn keeps_open(member: &Value, role_type: Option<&str>) -> bool {
+    match member["keep_open"].as_str() {
+        Some("yes") => true,
+        Some("no") => false,
+        _ => role_type == Some("knowledge"),
+    }
+}
+
+/// Where a pod's work folder stood at `down` (req-14).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Freeze {
+    /// The checked-out branch, or `(detached)`.
+    pub branch: String,
+    /// The head commit, or `(initial)` before the first.
+    pub head: String,
+    /// Changed or untracked paths.
+    pub uncommitted: usize,
+}
+
+impl Freeze {
+    /// One line for the pod's log.
+    pub fn line(&self, folder: &str) -> String {
+        format!(
+            "freeze: {folder} is on {} at {}{}",
+            self.branch,
+            self.head,
+            if self.uncommitted == 0 {
+                String::new()
+            } else {
+                format!(
+                    "; warning: the run is unfrozen, {} uncommitted path(s) there",
+                    self.uncommitted
+                )
+            }
+        )
+    }
+}
+
+/// Parse `git status --porcelain=v2 --branch`.
+pub fn parse_freeze(status: &str) -> Freeze {
+    let header = |key: &str| {
+        status
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("# branch.{key} ")))
+            .unwrap_or_default()
+            .to_string()
+    };
+    Freeze {
+        branch: header("head"),
+        head: header("oid"),
+        uncommitted: status
+            .lines()
+            .filter(|line| !line.starts_with('#') && !line.is_empty())
+            .count(),
+    }
+}
+
+/// `folder`'s branch, head and uncommitted paths: ONE git launch (a read,
+/// taking no index lock).
+///
+/// # Errors
+/// Why git could not say.
+pub fn freeze(folder: &Path) -> Result<Freeze, String> {
+    let output = super::git::git(
+        folder,
+        &["status", "--porcelain=v2", "--branch"],
+        super::git::Locks::Read,
+    )
+    .map_err(|error| format!("git could not run: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(parse_freeze(&String::from_utf8_lossy(&output.stdout)))
 }
 
 #[cfg(test)]
@@ -815,5 +937,39 @@ mod tests {
         );
         assert_eq!(members[0]["instance"], "build");
         assert_eq!(members[1]["canary"], "none asked");
+    }
+
+    #[test]
+    fn a_freeze_reads_branch_head_and_uncommitted_paths() {
+        let clean = parse_freeze("# branch.oid abc123\n# branch.head main\n");
+        assert_eq!(
+            (
+                clean.branch.as_str(),
+                clean.head.as_str(),
+                clean.uncommitted
+            ),
+            ("main", "abc123", 0)
+        );
+        assert_eq!(clean.line("/w"), "freeze: /w is on main at abc123");
+        let dirty = parse_freeze(
+            "# branch.oid abc123\n# branch.head main\n1 .M N... 100644 100644 100644 a b f.rs\n? new.txt\n",
+        );
+        assert_eq!(dirty.uncommitted, 2);
+        assert!(
+            dirty
+                .line("/w")
+                .ends_with("the run is unfrozen, 2 uncommitted path(s) there")
+        );
+    }
+
+    /// req-10: a knowledge member stays open unless marked not; a mark wins.
+    #[test]
+    fn keep_open_follows_the_mark_then_the_knowledge_type() {
+        assert!(keeps_open(&json!({}), Some("knowledge")));
+        assert!(!keeps_open(&json!({"keep_open": "no"}), Some("knowledge")));
+        assert!(keeps_open(&json!({"keep_open": "yes"}), Some("coder")));
+        assert!(!keeps_open(&json!({}), Some("coder")));
+        assert!(!may_dispatch(&json!({"canary": "degraded: x"})));
+        assert!(may_dispatch(&json!({"canary": "confirmed"})));
     }
 }

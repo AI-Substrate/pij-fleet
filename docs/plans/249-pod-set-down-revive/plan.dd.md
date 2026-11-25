@@ -47,11 +47,11 @@
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij pod set &lt;pod&gt; &lt;name&gt;=&lt;value&gt;` records the value in the pod folder and sends it to the members whose slots name it, and only them. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij pod down &lt;pod&gt;` runs the template's close steps, then for each member not marked keep-open runs the same path as `pij close &lt;seat&gt; --stop` (plan 245): memory first, the recorded process stopped, the prime told of any seat that did not answer, cold seats not woken. A keep-open member (knowledge by default) is named in a warning and left running. Consulted roles are not touched. The pod reads closing until every member is down. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Freeze: when the pod names a work folder, down records its branch and head commit in the pod's log and warns that the run is unfrozen when the folder has uncommitted work. Only a warning: down never refuses on it. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | `pij pod up &lt;pod&gt;` on a closed pod revives its members one at a time under today's revive rules (resume, cheap start, the cold warning). `pij pod add &lt;pod&gt; &lt;role\|seat&gt;` and `pij pod release &lt;pod&gt; &lt;seat&gt;` reshape a running pod and log it; the template is never changed by a run. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | Cost: down is close --stop per member plus at most two git reads in the work folder; set is one delivery per member that needs the value. No loop, poll or timer. | [ ] unchecked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij pod set &lt;pod&gt; &lt;name&gt;=&lt;value&gt;` records the value in the pod folder and sends it to the members whose slots name it, and only them. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij pod down &lt;pod&gt;` runs the template's close steps, then for each member not marked keep-open runs the same path as `pij close &lt;seat&gt; --stop` (plan 245): memory first, the recorded process stopped, the prime told of any seat that did not answer, cold seats not woken. A keep-open member (knowledge by default) is named in a warning and left running. Consulted roles are not touched. The pod reads closing until every member is down. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Freeze: when the pod names a work folder, down records its branch and head commit in the pod's log and warns that the run is unfrozen when the folder has uncommitted work. Only a warning: down never refuses on it. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | `pij pod up &lt;pod&gt;` on a closed pod revives its members one at a time under today's revive rules (resume, cheap start, the cold warning). `pij pod add &lt;pod&gt; &lt;role\|seat&gt;` and `pij pod release &lt;pod&gt; &lt;seat&gt;` reshape a running pod and log it; the template is never changed by a run. | [x] checked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | Cost: down is close --stop per member plus at most two git reads in the work folder; set is one delivery per member that needs the value. No loop, poll or timer. | [x] checked | — | — | [bp-0005](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -59,7 +59,7 @@
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Set, down, revive and reshape (workstream 008 s03) | One phase on PR #346. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Set, down, revive and reshape (workstream 008 s03) | One phase on PR #346. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

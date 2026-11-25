@@ -132,7 +132,7 @@
 					"statement": "`pij pod set <pod> <name>=<value>` sets a parameter that is only known after the pod is up, and tells the members that need it.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Setting a parameter that one of three members needs delivers it to that member only, and `pij pod show` displays the new value.",
 					"source": "interview with a fleet prime 2026-11-25: a value pinned only when the call starts"
 				},
@@ -142,7 +142,7 @@
 					"statement": "`pij pod down <pod>` runs the template's close steps, then takes each member down exactly as `pij close <seat> --stop` does for one seat (PRD 007 req-12): memory and a ready answer first, the recorded process stopped, the prime told about any seat that did not answer, and cold seats warned about and not woken. It is the same code path, run once per member. Roles the pod only consults are not touched, and the pod reads as closing until every member is down.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "For each member, `pod down` produces the same result and the same messages as `pij close <seat> --stop` run on that seat alone; a consulted role's holder is still live and received nothing; and the pod reads as closed only when no member is running.",
 					"source": "operator rulings 2026-11-25: pod up and pod down actually take them up and down; pod down loops through and runs the same code as taking a single seat down"
 				},
@@ -162,7 +162,7 @@
 					"statement": "A seat can be added to or released from a running pod, including a seat that was already running and is in no pod, and the change is recorded in the pod's log. The template is changed between runs, never during one.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A role added to a running pod, and an already-running seat added to it, both appear in `pij pod show` and in the pod's log, and the template the pod came from is unchanged.",
 					"source": "PRD 001 req-27 and req-28: communities grow from needs and are reshaped as the work changes"
 				},
@@ -182,7 +182,7 @@
 					"statement": "A pod member can be marked keep-open, on its role or when it joins the pod. `pij pod down` does not take a keep-open member down: it warns, naming each one, and leaves it running and out of the closed pod. Such a seat comes down only when it is closed directly, by `pij close <seat> --stop`. Members whose role is of type knowledge are keep-open unless marked otherwise.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pod down` on a pod with one keep-open expert and two other members takes the two down, names the expert in a warning and leaves it live; `pij close <expert> --stop` then takes it down.",
 					"source": "operator ruling 2026-11-25: if an expert ends up in a pod, bringing the pod down should warn; keep it open unless forced directly"
 				},
@@ -192,7 +192,7 @@
 					"statement": "Taking a pod or a seat down does not destroy its context: each harness still holds the seat's conversation. A closed pod keeps its folder, and `pij pod up <pod>` on a closed pod brings its members back under today's revive rules (resume, cheap start, the cold warning), one seat at a time, the same way a single seat is revived.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A pod taken down and brought up again by name has the same members in the same slots, each revived with its earlier conversation, and each cold member was shown with its price before it was revived.",
 					"source": "operator, 2026-11-25: closing does not destroy contexts, so we can revive a pod or a seat"
 				},
@@ -222,7 +222,7 @@
 					"statement": "When a pod's work is on a git branch (a pod parameter names its work folder), `pij pod down` records that branch's name and head commit in the pod's log, and warns that the run is unfrozen when the folder has uncommitted work. It is a warning only: down never refuses on it.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pod down` on a pod whose work folder has one commit and no changes records that commit; with an uncommitted file it records the commit, warns that the run is unfrozen naming the folder, and still takes the pod down.",
 					"source": "Jordan's ruling 2026-11-25, round 2, ruling 6"
 				},
@@ -383,6 +383,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #346 (s01, s02): req-01, req-02, req-03, req-04, req-07, req-12, req-18, req-19, req-21 shipped; req-09 in progress (the live spawn-counter receipt is taken after deploy)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #346 (s03): req-05, req-06, req-08, req-10, req-11, req-14 shipped."
 				}
 			]
 		}

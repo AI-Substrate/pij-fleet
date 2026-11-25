@@ -59,7 +59,7 @@
 				{
 					"id": "s03",
 					"title": "Set, down, revive and reshape",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/008-pods.dd.json#requirements/req-05",
 						"../prds/008-pods.dd.json#requirements/req-06",
@@ -135,6 +135,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s01, s02 complete on #346 (plans 247, 248)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s03 complete on #346 (plans 249)."
 				}
 			]
 		}

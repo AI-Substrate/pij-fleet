@@ -9,6 +9,9 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("up") => Some(UP),
         Some("show") => Some(SHOW),
         Some("confirm") => Some(CONFIRM),
+        Some("set") => Some(SET),
+        Some("down") => Some(DOWN),
+        Some("add" | "release") => Some(RESHAPE),
         _ => None,
     }
 }
@@ -19,7 +22,12 @@ pij pod: a group of seats started together from a pod template.
 Usage:
   pij pod plan <template> [--set <name>=<value>]... [--name <pod>] [--fresh]
   pij pod up <template> [--set <name>=<value>]... [--name <pod>] [--session <tmux>] [--fresh] [--no-start]
+  pij pod up <pod> [--session <tmux>]         bring a pod taken down back, member by member
   pij pod show <pod>
+  pij pod set <pod> <name>=<value>
+  pij pod down <pod>
+  pij pod add <pod> role:<id>[/<instance>] [--set <name>=<value>]... | <seat>
+  pij pod release <pod> <seat>
   pij pod confirm <pod> --tool <tool>...      a slot's seat answering its tool canary
 
 A template is a folder holding pod-template.dd.json (or that file), at any path
@@ -56,6 +64,36 @@ and pij hands it no pod work (a brake on pij's own dispatch; your messages
 still reach it). --no-start creates the record only; start each member on its
 own with `pij spawn --as role:<id>[/<instance>] --pod <pod>`, recorded as the
 slot its role fills. --fresh leaves earlier memory out of every first turn.";
+
+const SET: &str = "\
+pij pod set <pod> <name>=<value>
+
+Records a parameter known only after the pod is up, and sends it to each member
+whose slot uses it, and only them. A degraded member is not sent it (pij's own
+dispatch brake) and is named so you can send it yourself.";
+
+const DOWN: &str = "\
+pij pod down <pod>
+
+Records where the pod's work folder stands (its branch and head, from one git
+read) and warns that the run is unfrozen when it has uncommitted work. Then
+takes each member down exactly as `pij close <seat> --stop` does, once per
+member: memory first, the recorded process stopped, the prime told about any
+seat that did not answer, a cold seat not woken. A keep-open member (marked so,
+or of type knowledge unless marked not) is named and left running. Roles the
+pod consults are never touched. The pod reads closing until every member is
+down; `pij pod up <pod>` brings it back, reviving each member under revive's
+rules.";
+
+const RESHAPE: &str = "\
+pij pod add <pod> role:<id>[/<instance>] [--set <name>=<value>]... [--session <tmux>]
+pij pod add <pod> <seat>
+pij pod release <pod> <seat>
+
+Reshape a running pod; each change is logged and the template is unchanged.
+`add role:` starts a member as `pij spawn --as role:<id> --pod <pod>` does;
+`add <seat>` adds a seat already running. `release` takes a seat out of the pod
+and leaves it running.";
 
 const SHOW: &str = "\
 pij pod show <pod>
