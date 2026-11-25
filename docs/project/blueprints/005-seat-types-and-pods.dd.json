@@ -124,6 +124,75 @@
 						"../prds/006-seat-types.dd.json#requirements/req-07"
 					],
 					"state": "planned"
+				},
+				{
+					"id": "c-launch-settings",
+					"name": "Launch settings and parameters on a role",
+					"kind": "schema",
+					"where": "role schema `default_seat` and a new `parameters` section; crates/daemon/src/community/role.rs",
+					"responsibility": "Harness, model and effort the holder runs on, and named parameters each marked required or optional. A spawn without a required parameter refuses and names it.",
+					"realises": ["../prds/007-role-start.dd.json#requirements/req-01"],
+					"state": "planned"
+				},
+				{
+					"id": "c-first-turn",
+					"name": "The assembled first turn",
+					"kind": "module",
+					"where": "crates/daemon/src/community/first_turn.rs; stored at community/roles/<id>/first-turns/<seat>.md (or the pod folder)",
+					"responsibility": "Builds one first turn from the type's seed, the role text, the filled parameters, the creator's focus or packet and the memory index, with a source line per part; written to governance before the seat starts; `pij directory show <role> --first-turn` prints it and launches nothing.",
+					"realises": [
+						"../prds/007-role-start.dd.json#requirements/req-03",
+						"../prds/007-role-start.dd.json#requirements/req-04",
+						"../prds/007-role-start.dd.json#requirements/req-05",
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-08"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-spawn-role",
+					"name": "`pij spawn --as role:<id>`",
+					"kind": "verb",
+					"where": "crates/daemon/src/http/lifecycle.rs, crates/cli/src/main.rs, the OMP and Copilot spawn tools",
+					"responsibility": "Spawn with a role named: the role's launch settings (a command-line flag wins), the first turn assembled before any launch, then after the seat's row is written ONE writer commit with the first-turn record and the holding, then the first turn queued from its creator so it is the seat's first message. A refused commit rolls the spawn back through the existing failed-row-write path (its own pane, its own row). A spawn with no role still works and warns with the `--as role:` form. A missing governance seed warns with `pij directory seed <type> --shipped`.",
+					"realises": [
+						"../prds/007-role-start.dd.json#requirements/req-02",
+						"../prds/007-role-start.dd.json#requirements/req-07",
+						"../prds/007-role-start.dd.json#requirements/req-09",
+						"../prds/007-role-start.dd.json#requirements/req-10",
+						"../prds/007-role-start.dd.json#requirements/req-11"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-unregistered",
+					"name": "Seats with no role in the view",
+					"kind": "module",
+					"where": "crates/daemon/src/community/picture.rs",
+					"responsibility": "A live project seat holding no role is an action with the line that assigns or closes it.",
+					"realises": ["../prds/007-role-start.dd.json#requirements/req-06"],
+					"state": "planned"
+				},
+				{
+					"id": "c-suggest",
+					"name": "`pij directory suggest`",
+					"kind": "verb",
+					"where": "crates/daemon/src/http/directory.rs, community/suggestions.dd.json",
+					"responsibility": "Records a seat's suggestion of an unowned area without interrupting anyone; the view lists open ones; the prime answers yes, no or not yet with a reason. The prime role template states create-when-sure, ask-when-unsure.",
+					"realises": [
+						"../prds/007-role-start.dd.json#requirements/req-07",
+						"../prds/007-role-start.dd.json#requirements/req-08"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-close-stop",
+					"name": "`pij close --stop`",
+					"kind": "verb",
+					"where": "crates/daemon/src/http/lifecycle.rs, crates/daemon/src/http/memory_turn.rs",
+					"responsibility": "After the memory turn, asks the holder to answer ready, then stops the exact process recorded at launch (never by name). Silent or memoryless seats stay running and the prime is told; a cold seat is not woken. Without `--stop`, close is unchanged. Pod down calls this per member.",
+					"realises": ["../prds/007-role-start.dd.json#requirements/req-12"],
+					"state": "planned"
 				}
 			]
 		},
@@ -178,6 +247,22 @@
 						"../prds/006-seat-types.dd.json#requirements/req-01",
 						"../prds/006-seat-types.dd.json#requirements/req-07"
 					]
+				},
+				{
+					"id": "d-8",
+					"decision": "A spawn with a role makes one writer commit, holding the first-turn record and the holding, after the seat's row is written and before the bind wait or any delivery.",
+					"why": "The daemon writes a seat's row only after tmux launches it, and a holding needs the row, so nothing can be committed before launch. Committing both together keeps the cost at a plain spawn plus one `pij directory assign` (PM ruling), and the seat still receives nothing until the commit has landed. A refused commit is a policy, not a brake: it decides that the spawn does not survive, and rolls it back through the one failed-row-write path.",
+					"realises": [
+						"../prds/007-role-start.dd.json#requirements/req-02",
+						"../prds/007-role-start.dd.json#requirements/req-03",
+						"../prds/007-role-start.dd.json#requirements/req-09"
+					]
+				},
+				{
+					"id": "d-9",
+					"decision": "`pij close --stop` stops the process pij recorded at launch, by pid and only while its start time still matches, after a ready answer: the memory turn ended within its bound and the seat wrote a memory note after the turn was delivered.",
+					"why": "Every seat runs as one user, so stopping by name or pattern would reach other seats' processes (AGENTS rule 6). The start-time match keeps a reused pid safe. Ready is read from facts the daemon already records (the turn's idle, the note's spine event), so it adds no poll.",
+					"realises": ["../prds/007-role-start.dd.json#requirements/req-12"]
 				}
 			]
 		},
@@ -201,6 +286,24 @@
 					"rate": "0 launches: one indexed store query per `/v1/seats` call (open holdings joined to pointers), so it also rides the calls that poll the roster (federation fan-in, about once a second per peer, and the extension roster); never per seat. Each directory write reads the role documents it committed once, in-process",
 					"scaling": "with the rows listed; no loop, poll or timer",
 					"component": ["#components/c-seat-type", "#components/c-mixed-types"]
+				},
+				{
+					"id": "k-3",
+					"what": "Spawning with a role named, and closing with --stop.",
+					"rate": "a spawn with a role: the plain spawn's harness and tmux launches plus one writer commit (the launches of one `pij directory assign`); `--first-turn` 0 launches; close --stop: the existing memory turn plus one process start-time read and one signal",
+					"scaling": "per spawn or close a seat asks for; nothing per tick per seat; no loop, poll or timer",
+					"component": [
+						"#components/c-spawn-role",
+						"#components/c-first-turn",
+						"#components/c-close-stop"
+					]
+				},
+				{
+					"id": "k-5",
+					"what": "Suggestions, creator notes and the no-role action.",
+					"rate": "suggest and its answer: one writer commit each; one FYI per role or seat created by a seat that is not the prime; the no-role action reads live seats the view already reads, with in-process path checks",
+					"scaling": "on demand; the view's checks grow with live seats, per view only",
+					"component": ["#components/c-suggest", "#components/c-unregistered"]
 				}
 			]
 		},
@@ -231,6 +334,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "k-2 names the roster polls the list query rides (review of #344, N2)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "PRD 007's components join (c-launch-settings, c-first-turn, c-spawn-role, c-unregistered, c-suggest, c-close-stop), with d-8, d-9, k-3 and k-5."
 				}
 			]
 		}

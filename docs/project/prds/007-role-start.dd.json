@@ -97,7 +97,7 @@
 				{
 					"id": "req-03",
 					"title": "One first turn, assembled, shown and kept",
-					"statement": "A seat receives one first turn, not several messages. pij puts it together from the type's seed template, the role's own text, the filled parameters, the packet its creator wrote for this seat and the role's memory index. It is written to governance before the seat starts, with a line naming where each part came from. `pij directory show <role> --first-turn` prints it without starting anything.",
+					"statement": "A seat receives one first turn, not several messages. pij puts it together from the type's seed template, the role's own text, the filled parameters, the packet its creator wrote for this seat and the role's memory index. It is written to governance before the seat receives anything, with a line naming where each part came from. `pij directory show <role> --first-turn` prints it without starting anything.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "planned",
@@ -157,11 +157,11 @@
 				{
 					"id": "req-09",
 					"title": "Spawning with a role costs one launch",
-					"statement": "Spawn with a role named launches one process for the seat, as a spawn does today, and adds no loop, poll or timer. `suggest` and `--first-turn` launch nothing.",
+					"statement": "Spawn with a role named launches the seat exactly as a spawn does today, plus one writer commit that records the first turn and the holding together (the same as one `pij directory assign` today), and adds no loop, poll or timer. `--first-turn` launches nothing; `suggest` makes one writer commit.",
 					"actor": "operator",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "`pij-rs --json ping | jq .data.spawns` read before and after one `pij spawn --as role:<id>` differs by the same amount as a spawn without a role; before and after `suggest` it does not move.",
+					"done_when": "`pij-rs --json ping | jq .data.spawns` read before and after one `pij spawn --as role:<id>`: the harness and tmux launch ops move exactly as for a spawn without a role, and the only other launches are one writer commit's; across `--first-turn` it does not move; across `suggest` it moves by one writer commit.",
 					"source": "AGENTS.md: resource cost is a correctness property"
 				},
 				{
@@ -219,6 +219,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Owner moved from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-09 amended: pij's spawn counter counts every daemon launch, git and ddocs included, so a spawn with a role costs a plain spawn plus the one writer commit that records the first turn and the holding (PM ruling on the coder's finding). req-03: the first turn lands before the seat receives anything, since the daemon writes a seat's row only after launch."
 				}
 			]
 		}

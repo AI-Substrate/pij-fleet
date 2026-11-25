@@ -24,10 +24,11 @@
 					"title": "Launch settings and parameters on a role",
 					"state": "planned",
 					"delivers": ["../prds/007-role-start.dd.json#requirements/req-01"],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-launch-settings"],
 					"depends_on": ["006-seat-types.dd.json#steps/s02"],
 					"needs": ["role:coder", "role:reviewer"],
-					"done_when": "A role records harness, model, effort and its parameters, and a missing required parameter is refused by name."
+					"done_when": "A role records harness, model, effort and its parameters, and a missing required parameter is refused by name.",
+					"plan": "docs/plans/240-role-parameters"
 				},
 				{
 					"id": "s02",
@@ -37,10 +38,11 @@
 						"../prds/007-role-start.dd.json#requirements/req-03",
 						"../prds/007-role-start.dd.json#requirements/req-04"
 					],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-first-turn"],
 					"depends_on": ["#steps/s01"],
 					"needs": ["role:coder", "role:reviewer"],
-					"done_when": "`pij directory show <role> --first-turn` prints the turn with the source of each part, including a focus or packet the prime added."
+					"done_when": "`pij directory show <role> --first-turn` prints the turn with the source of each part, including a focus or packet the prime added.",
+					"plan": "docs/plans/241-first-turn"
 				},
 				{
 					"id": "s03",
@@ -53,19 +55,21 @@
 						"../prds/007-role-start.dd.json#requirements/req-10",
 						"../prds/007-role-start.dd.json#requirements/req-11"
 					],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-spawn-role"],
 					"depends_on": ["#steps/s02"],
 					"needs": ["role:coder", "role:reviewer", "role:performance"],
-					"done_when": "One spawn with `--as role:<id>` launches, assigns and briefs a seat for a templated or a dynamic role; a spawn without it works as before and prints how to do it now; the spawn counter moves by one spawn."
+					"done_when": "One spawn with `--as role:<id>` launches, assigns and briefs a seat for a templated or a dynamic role; a spawn without it works as before and prints how to do it now; the spawn counter moves by one spawn.",
+					"plan": "docs/plans/242-spawn-as-role"
 				},
 				{
 					"id": "s04",
 					"title": "Seats with no role in the view",
 					"state": "planned",
 					"delivers": ["../prds/007-role-start.dd.json#requirements/req-06"],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-unregistered"],
 					"needs": ["role:coder", "role:reviewer"],
-					"done_when": "A live seat holding no role appears in `pij directory` with the line that fixes it."
+					"done_when": "A live seat holding no role appears in `pij directory` with the line that fixes it.",
+					"plan": "docs/plans/243-unregistered-seats"
 				},
 				{
 					"id": "s05",
@@ -75,19 +79,21 @@
 						"../prds/007-role-start.dd.json#requirements/req-07",
 						"../prds/007-role-start.dd.json#requirements/req-08"
 					],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-suggest"],
 					"depends_on": ["006-seat-types.dd.json#steps/s02"],
 					"needs": ["role:coder", "role:reviewer", "role:docs-system"],
-					"done_when": "A seat created by a non-prime is recorded with its creator and the prime gets one note; `pij directory suggest` records a suggestion the prime's view lists and answers."
+					"done_when": "A seat created by a non-prime is recorded with its creator and the prime gets one note; `pij directory suggest` records a suggestion the prime's view lists and answers.",
+					"plan": "docs/plans/244-creator-note-suggest"
 				},
 				{
 					"id": "s06",
 					"title": "Close that stops the seat",
 					"state": "planned",
 					"delivers": ["../prds/007-role-start.dd.json#requirements/req-12"],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-close-stop"],
 					"needs": ["role:coder", "role:reviewer", "role:security"],
-					"done_when": "`pij close <seat> --stop` takes a ready holder down by its recorded process, leaves a silent or memoryless one running and tells the prime, and never wakes a cold one."
+					"done_when": "`pij close <seat> --stop` takes a ready holder down by its recorded process, leaves a silent or memoryless one running and tells the prime, and never wakes a cold one.",
+					"plan": "docs/plans/245-close-stop"
 				}
 			]
 		},
@@ -103,6 +109,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Owner moved from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Each step names the blueprint 005 component it builds and its plan (240 to 245)."
 				}
 			]
 		}
