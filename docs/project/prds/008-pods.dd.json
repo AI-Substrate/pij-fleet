@@ -139,7 +139,7 @@
 				{
 					"id": "req-06",
 					"title": "Down takes the pod down, one seat at a time, the same way as a single seat",
-					"statement": "`pij pod down <pod>` runs the template's close steps, then takes each member down exactly as `pij close <seat> --stop` does for one seat (PRD 007 req-12): memory and a ready answer first, the recorded process stopped, the prime told about any seat that did not answer, and cold seats warned about and not woken. It is the same code path, run once per member. Roles the pod only consults are not touched, and the pod reads as closing until every member is down.",
+					"statement": "`pij pod down <pod>` runs the template's close steps once templates carry procedures (PRD 010 req-01), then takes each member down exactly as `pij close <seat> --stop` does for one seat (PRD 007 req-12): memory and a ready answer first, the recorded process stopped, the prime told about any seat that did not answer, and cold seats warned about and not woken. It is the same code path, run once per member. Roles the pod only consults are not touched, and the pod reads as closing until every member is down.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "shipped",
@@ -388,6 +388,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #346 (s03): req-05, req-06, req-08, req-10, req-11, req-14 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-06: the template's close steps run once templates carry procedures (PRD 010 req-01); 008 adds no close-steps section (pm-001 ruling 2026-11-25), so req-06 stays shipped."
 				}
 			]
 		}
