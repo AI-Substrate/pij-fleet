@@ -10,7 +10,7 @@
 				"created_at": "2026-11-25T09:03:31.445Z",
 				"created_by": "pij-multiple-nightingale",
 				"pod": "receipt2",
-				"state": "up",
+				"state": "closing",
 				"template": "/tmp/laneA-receipt2",
 				"template_hash": "73855273ccac4273afaf3729f60036e068955365726b5936397ff5d393403da8",
 				"template_version": "1"
@@ -64,6 +64,11 @@
 					"at": "2026-11-25T09:03:32.977Z",
 					"by": "pij-multiple-nightingale",
 					"change": "started pij-complex-termite, pij-long-vole"
+				},
+				{
+					"at": "2026-11-25T09:04:48.016Z",
+					"by": "pij-multiple-nightingale",
+					"change": "down: pij-complex-termite held for its memory turn; closed and stopped once its note is written, else left running and the prime told; pij-long-vole held for its memory turn; closed and stopped once its note is written, else left running and the prime told"
 				}
 			]
 		}

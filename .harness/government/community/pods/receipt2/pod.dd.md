@@ -16,7 +16,7 @@
 | subject | — |
 | work_folder | — |
 | fresh | — |
-| state | up |
+| state | closing |
 | created_by | pij-multiple-nightingale |
 | created_at | 2026-11-25T09:03:31.445Z |
 
@@ -57,3 +57,4 @@ _No entries._
 | --- | --- | --- |
 | 2026-11-25T09:03:31.445Z | pij-multiple-nightingale | up from /tmp/laneA-receipt2 (version 1, sha256 73855273ccac) |
 | 2026-11-25T09:03:32.977Z | pij-multiple-nightingale | started pij-complex-termite, pij-long-vole |
+| 2026-11-25T09:04:48.016Z | pij-multiple-nightingale | down: pij-complex-termite held for its memory turn; closed and stopped once its note is written, else left running and the prime told; pij-long-vole held for its memory turn; closed and stopped once its note is written, else left running and the prime told |
