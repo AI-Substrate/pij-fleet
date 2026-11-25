@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "Read when resuming pm-001 after the 25 Nov compaction, or before running a multi-PRD build with coder lanes",
+				"tags": [
+					"prd-006-010",
+					"lanes",
+					"disk",
+					"state"
+				],
+				"title": "25 Nov: running the PRD 006-010 build (two lanes), disk floor, cold seats, and where it stands"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Where it stands (25 Nov ~14:00). Jordan's PRD 006-010 build (spine 4761202; packet and staffing in ~/pi-hacking/pij/scratch/prime/*-prds-006-010.md):\n- Merged and deployed: #344 PRD 006 (1ee3b0fa, migration 0052), #348 PRD 009 part 1 (968b79f8), #345 PRD 007 (ccb358ad).\n- Lane A (pij-multiple-nightingale, coder/lane-a, worktree ~/pi-hacking/pij-laneA): #346 PRD 008 (draft 21f60140, code s01-s06 in progress) and #347 PRD 010 (draft 01357433, stacked on #346). Folded in: round-2 rulings (~/pi-hacking/pij/scratch/prime/rulings-pods-round2.md, incl. R10), the pod dogfood inputs (pod-dogfood-inputs.md), and warnings-not-refusals (Jordan: \"we're not the police\").\n- Lane B (pij-yielding-hamster, coder/lane-b, worktree ~/pi-hacking/pij-laneB): the PRD 009 follow-up PR (s04: refusal pointers + the first turn's type section trimmed to one line + docs pointer + the role's own rule changes, option B per req-06; the pods page only if 008 is on main).\n- #350 (the F281 fix, coder pij-spatial-vole) is FINAL at ad7cd0b, in review with pij-strict-reindeer.\n- Open with Jordan: the authority-vs-label question (#344 parrot item 1, req-05); the binder home rule (claude_bind.rs:168); the delivered auto-release case.\n\nLessons:\n- Disk: one cold cargo build regrows target/debug ~12 GB, so every PR hits the 25 GB shared-build floor. Never lower it; ask the prime to clear target/debug (with Jordan's ok) per PR. The coder does docs/plans/TS while waiting. CI's rust-test stands in for local cargo when blocked.\n- Reviewers must be told the disk state: if shared-build refuses, they review from source and CI and NAME the mutants they couldn't run. Then the author runs the essential one.\n- Cold seats: the wake price grows with context (424k idle 28 h = \"price unknown\"). For new work spawn a fresh coder (Copilot claude-opus-5.5 --effort medium; verify the argv, since the footer's trailing 'xhigh' is noise) and put the old seat's diagnosis in the packet.\n- `pij send --fyi` refuses anything that reads as actionable (PR numbers, 'ready for your look'). For a cold advisory seat (parrot), skip the notice rather than force a wake.\n- Each reviewer closes after its one round: ask for a memory note, then close + kill-pane + verify pids. Seats you forget block pr-freeze --prune (it found meerkat).\n- Coders compact after each PR (Jordan): memory note first, then let the pij-bg memory turn run at a pause, after any in-flight cargo test finishes.\n- Test fixtures can leak processes with ppid 1 (shared-build.test.ts's HANG fixture). Have the owning coder kill them by exact pid; that's now #350's fix.\n- Heredoc + $(...) + ${..} in one bash call can trip the shell guard. Write packets with the create tool, then `pij send --body-file`.\n"
+		}
+	]
+}
