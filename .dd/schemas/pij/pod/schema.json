@@ -181,6 +181,68 @@
             },
             "write_back": {
               "type": "string"
+            },
+            "stage_needs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "stage",
+                  "slots"
+                ],
+                "fields": {
+                  "stage": {
+                    "type": "string"
+                  },
+                  "slots": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "stages": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "deliverable",
+            "stage",
+            "output",
+            "by",
+            "at"
+          ],
+          "fields": {
+            "deliverable": {
+              "type": "string"
+            },
+            "stage": {
+              "type": "string"
+            },
+            "output": {
+              "type": "string"
+            },
+            "from": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "by": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "write_back": {
+              "type": "string"
             }
           }
         }

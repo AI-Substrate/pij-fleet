@@ -242,7 +242,7 @@
 					"statement": "A pod's deliverable can be recorded in stages: the first stage is recorded when the members it needs are done, while a member that is late (a slow lane) keeps working; its work is folded in as a later stage. `pij pod show` lists each deliverable's stages, which are recorded and which member each open stage waits on. A late member never blocks the first stage.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "In a pod with three members where one is still working, the first stage of the deliverable is recorded from the other two, `pij pod show` shows the second stage waiting on the late member, and recording the second stage later completes the deliverable.",
 					"source": "pod dogfood input 2026-11-25: lanes finish at different times, so a pod's step completes in passes"
 				},
@@ -252,7 +252,7 @@
 					"statement": "A template can name, for a deliverable, a role its result is written back to: a keep-open member or a consulted role that keeps the knowledge after the pod is gone. When the stage is recorded, pij sends the result to that role as a request and logs it in the pod's log. The pod can go down while the write-back is open; the request stays with that role.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "When a deliverable's stage is recorded, the role it names receives one request carrying it, the pod's log names the request, and taking the pod down leaves the request open with that role.",
 					"source": "pod dogfood input 2026-11-25: a pod proposes changes that a keep-open knowledge seat applies"
 				},
@@ -282,7 +282,7 @@
 					"statement": "Each deliverable in a pod template names the role that owns it. `plan` names a deliverable whose owner role does not exist in the community, with the command that adds it; `up` warns and logs it. `pij pod show` lists each deliverable with its owner and that role's live holder.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A template whose deliverable names an owner role that does not exist plans with that named and the add command, and `up` warns and logs it; `show` lists each deliverable with its owner.",
 					"source": "pod dogfood input 2026-11-25: a deliverable had no owner until a project-manager role was added"
 				},
@@ -403,6 +403,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #346 (s05): req-15 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #346 (s06): req-16, req-17, req-20 shipped."
 				}
 			]
 		}

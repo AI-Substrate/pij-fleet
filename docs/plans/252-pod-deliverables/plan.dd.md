@@ -47,10 +47,10 @@ Each deliverable a pod template names has an owner role and stages; the first st
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij pod show` lists each deliverable with its owner role and that role's live holder; plan and up warn when the owner role does not exist, with the add command. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij pod stage &lt;pod&gt; &lt;deliverable&gt; &lt;stage&gt; --output &lt;path&gt;` records a stage in the pod folder when the members it needs are done; a later stage folds in a late member's work. show lists which stages are recorded and which member each open stage waits on. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | When a stage is recorded and the template names a write-back role for the deliverable, pij sends its result to that role as one request (send to a role, PRD 001) and logs it; the request stays with that role after the pod goes down. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | Cost: one writer commit per stage and one request per write-back. No loop, poll or timer. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij pod show` lists each deliverable with its owner role and that role's live holder; plan and up warn when the owner role does not exist, with the add command. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij pod stage &lt;pod&gt; &lt;deliverable&gt; &lt;stage&gt; --output &lt;path&gt;` records a stage in the pod folder when the members it needs are done; a later stage folds in a late member's work. show lists which stages are recorded and which member each open stage waits on. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | When a stage is recorded and the template names a write-back role for the deliverable, pij sends its result to that role as one request (send to a role, PRD 001) and logs it; the request stays with that role after the pod goes down. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | Cost: one writer commit per stage and one request per write-back. No loop, poll or timer. | [x] checked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -58,7 +58,7 @@ Each deliverable a pod template names has an owner role and stages; the first st
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Deliverables: owners, stages and write-back (workstream 008 s06) | One phase on PR #346. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Deliverables: owners, stages and write-back (workstream 008 s06) | One phase on PR #346. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

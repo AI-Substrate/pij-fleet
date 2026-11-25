@@ -20,10 +20,10 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: show lists owners; a missing owner role warns with its fix. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_owner |
-| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: a first stage is recorded while one member works; the second completes it. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_stage |
-| bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test: recording a stage sends one request to the write-back role, which outlives pod down. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_write_back |
-| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter across a stage. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_stage_cost |
+| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: show lists owners; a missing owner role warns with its fix. | [x] checked | — | — | cargo test -p pij-daemon pod_owner |
+| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: a first stage is recorded while one member works; the second completes it. | [x] checked | — | — | cargo test -p pij-daemon pod_stage |
+| bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test: recording a stage sends one request to the write-back role, which outlives pod down. | [x] checked | — | — | cargo test -p pij-daemon pod_write_back |
+| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter across a stage. | [x] checked | — | — | cargo test -p pij-daemon pod_stage_cost |
 
 <a id="sensors"></a>
 

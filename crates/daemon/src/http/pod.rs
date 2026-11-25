@@ -59,6 +59,8 @@ struct Call {
     session: Option<String>,
     limit: Option<usize>,
     since: Option<String>,
+    output: Option<String>,
+    from: Vec<String>,
     fresh: bool,
     no_start: bool,
     tools: Vec<String>,
@@ -92,6 +94,8 @@ fn parse(argv: &[String]) -> Result<Call, Refusal> {
             "--name" => call.name = Some(value("--name")?),
             "--session" => call.session = Some(value("--session")?),
             "--since" => call.since = Some(value("--since")?),
+            "--output" => call.output = Some(value("--output")?),
+            "--from" => call.from.push(value("--from")?),
             "--limit" => {
                 call.limit = Some(
                     value("--limit")?
@@ -166,6 +170,7 @@ pub(crate) async fn handle(
         "release" => release(&state, &call, &request.caller, &actor).await,
         "sessions" => sessions(&state, &call, &request.caller).await,
         "activity" => activity(&state, &call, &request.caller).await,
+        "stage" => stage(&state, &call, &request.caller, &actor).await,
         verb => Err(Refusal::new(
             "E-RS-UNPORTED",
             format!("pod {verb}: unknown command; pij pod --help"),
@@ -1573,6 +1578,225 @@ async fn activity(state: &AppState, call: &Call, caller: &CallerContext) -> Resu
     }))
 }
 
+/// `pij pod stage <pod> <deliverable> <stage> --output <path> [--from <slot>]...`
+/// (req-16, req-17): record one stage with the slots whose work it folds in
+/// (all the stage needs, unless `--from` names fewer). A stage still waiting
+/// on a slot is recorded with a warning naming it: a late member never blocks
+/// it, and its work is folded into a later stage. When the deliverable names
+/// a write-back role, the stage is sent to it as one request (a send to
+/// role:<id>), which stays with that role after the pod goes down. One
+/// commit per stage.
+async fn stage(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
+    const USAGE: &str =
+        "pij pod stage <pod> <deliverable> <stage> --output <path> [--from <slot>]...";
+    let pod_name = position(call, 0, USAGE)?;
+    let deliverable_id = position(call, 1, USAGE)?;
+    let stage_name = position(call, 2, USAGE)?;
+    let output = call.output.clone().ok_or_else(|| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("{USAGE}: --output names the stage's result"),
+        )
+    })?;
+    let opened = open(state, caller, pod_name).await?;
+    let deliverable = pod::records(&opened.document, "deliverables")
+        .iter()
+        .find(|row| row["id"] == deliverable_id)
+        .cloned()
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-NOT-FOUND",
+                format!("pod {pod_name} has no deliverable {deliverable_id}"),
+            )
+        })?;
+    let stages: Vec<&str> = deliverable["stages"]
+        .as_array()
+        .map(|stages| stages.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if !stages.contains(&stage_name) {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!(
+                "deliverable {deliverable_id} has stages {}, not {stage_name}",
+                stages.join(", ")
+            ),
+        ));
+    }
+    let recorded = pod::records(&opened.document, "stages").to_vec();
+    if recorded
+        .iter()
+        .any(|row| row["deliverable"] == deliverable_id && row["stage"] == stage_name)
+    {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!(
+                "stage {stage_name} of {deliverable_id} is already recorded; record the next stage"
+            ),
+        ));
+    }
+    let members = pod::records(&opened.document, "members").to_vec();
+    let needs = pod::stage_needs(&deliverable, stage_name, &members);
+    let from = if call.from.is_empty() {
+        needs.clone()
+    } else {
+        call.from.clone()
+    };
+    let mut warnings = Vec::new();
+    let view = pod::stage_view(&deliverable, &recorded, &members);
+    let waiting: Vec<String> = view
+        .iter()
+        .find(|row| row["stage"] == stage_name)
+        .and_then(|row| row["waits_on"].as_array())
+        .map(|slots| {
+            slots
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|slot| !from.iter().any(|given| given == slot))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !waiting.is_empty() {
+        warnings.push(format!(
+            "stage {stage_name} of {deliverable_id} is recorded without the work of {}; fold it into a later stage with pij pod stage {pod_name} {deliverable_id} <stage> --output <path> --from <slot>",
+            waiting.join(", ")
+        ));
+    }
+    let write_back = match deliverable["write_back"].as_str() {
+        None => None,
+        Some(role_id) => Some(
+            write_back(
+                state,
+                caller,
+                actor,
+                &opened.record,
+                role_id,
+                deliverable_id,
+                stage_name,
+                &output,
+            )
+            .await,
+        ),
+    };
+    if let Some(Err(why)) = &write_back {
+        warnings.push(why.clone());
+    }
+    let request = write_back
+        .as_ref()
+        .and_then(|sent| sent.as_ref().ok())
+        .cloned();
+    let at = holders::now();
+    let mut row = json!({
+        "deliverable": deliverable_id,
+        "stage": stage_name,
+        "output": output,
+        "from": from,
+        "by": actor,
+        "at": at,
+    });
+    if let Some(request) = &request {
+        row["write_back"] = json!(request);
+    }
+    let mut document = pod::logged(
+        pod::with_stage(opened.document, row),
+        &at,
+        actor.as_str(),
+        &format!(
+            "stage {stage_name} of {deliverable_id} recorded: {output}{}",
+            request
+                .as_ref()
+                .map(|request| format!("; written back as {request}"))
+                .unwrap_or_default()
+        ),
+    );
+    for warning in &warnings {
+        document = pod::logged(
+            document,
+            &at,
+            actor.as_str(),
+            &format!("warning: {warning}"),
+        );
+    }
+    let committed = save(
+        state,
+        &opened.record,
+        &document,
+        &format!("stage {stage_name} of {deliverable_id} (by {actor})"),
+    )
+    .await?;
+    Ok(json!({
+        "pod": pod_name,
+        "deliverable": deliverable_id,
+        "stage": stage_name,
+        "from": from,
+        "write_back": request,
+        "warnings": warnings,
+        "commit": committed,
+    }))
+}
+
+/// Send a recorded stage to `role_id` as one request, through the route a
+/// `pij send role:<id>` takes: the request's id, or why it was not sent.
+#[allow(clippy::too_many_arguments)]
+async fn write_back(
+    state: &AppState,
+    caller: &CallerContext,
+    actor: &SeatId,
+    record: &Record,
+    role_id: &str,
+    deliverable_id: &str,
+    stage_name: &str,
+    output: &str,
+) -> Result<String, String> {
+    let msg_id = state.services.delivery.next_message_id();
+    let to = pij_core::model::Destination {
+        seat: SeatId::from(format!("role:{role_id}")),
+        machine: None,
+    };
+    let body = format!(
+        "pij pod {}: stage {stage_name} of deliverable {deliverable_id} is recorded: {output}. Write back what it teaches into role {role_id}'s knowledge.",
+        record.pod
+    );
+    let routed = super::role_send::route(
+        state,
+        super::role_send::RoleSendCall {
+            command: "pij pod stage",
+            from: actor,
+            to: &to,
+            body: &body,
+            msg_id: &msg_id,
+            in_reply_to: None,
+            fyi: false,
+            control: false,
+            force: false,
+            reason: None,
+            forwarded: false,
+            project: Some(record.project.clone()),
+            options: crate::delivery::role_send::RoleOptions::default(),
+            caller: Some(caller),
+        },
+    )
+    .await
+    .ok_or_else(|| format!("role:{role_id} is not a role address"))?;
+    let answer = answer_of(routed).await?;
+    if answer["ok"] != true {
+        return Err(format!(
+            "the write-back to role {role_id} was not sent: {}",
+            text_of(&answer["meta"])
+        ));
+    }
+    Ok(match &answer["data"]["request"]["id"] {
+        Value::String(id) => id.clone(),
+        Value::Number(id) => id.to_string(),
+        _ => msg_id,
+    })
+}
+
 /// The template a pod's record names: relative to the repo, or absolute.
 ///
 /// # Errors
@@ -1844,6 +2068,11 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
     let mut deliverables = Vec::new();
     for row in pod::records(&document, "deliverables") {
         let mut shown = row.clone();
+        shown["stages"] = json!(pod::stage_view(
+            row,
+            pod::records(&document, "stages"),
+            pod::records(&document, "members"),
+        ));
         shown["owner_holders"] =
             json!(holders_of(state, &project, row["owner"].as_str().unwrap_or_default()).await);
         deliverables.push(shown);

@@ -673,3 +673,137 @@ async fn pod_activity_is_open_to_any_seat_and_reads_in_time_order() {
     assert_eq!(super::role_start::launches(&rig.tmux), launched);
     rig.server.abort();
 }
+
+/// Plan 252, req-16, req-17: the first stage is recorded from the members it
+/// needs while a late one keeps working, and show names what the next stage
+/// waits on; each stage is written back to the role the template names as
+/// one request, which stays open after the pod goes down.
+#[tokio::test]
+async fn stages_never_wait_on_a_late_member_and_each_is_written_back_as_a_request() {
+    let repo = repo("pij-pod-stages");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    let added = directory(
+        rig.addr,
+        &repo,
+        &[
+            "add",
+            "keeper",
+            "--type",
+            "knowledge",
+            "--title",
+            "Keeper",
+            "--holders",
+            "one",
+            "--keeps",
+            "notes/area.md",
+            "--why",
+            "w",
+        ],
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    template(&repo);
+    let file = repo.main.join("pods/build/pod-template.dd.json");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    document["sections"][4]["value"] = json!([{
+        "id": "report", "owner": "keeper", "stages": ["draft", "final"], "write_back": "keeper",
+        "stage_needs": [{"stage": "draft", "slots": ["lead"]}],
+    }]);
+    std::fs::write(&file, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+    let up = pod(
+        rig.addr,
+        &repo,
+        &[
+            "up",
+            "pods/build",
+            "--set",
+            "subject=planning",
+            "--session",
+            "work",
+        ],
+    )
+    .await;
+    assert_eq!(up["ok"], true, "{up}");
+
+    let draft = pod(
+        rig.addr,
+        &repo,
+        &[
+            "stage",
+            "build",
+            "report",
+            "draft",
+            "--output",
+            "out/draft.md",
+        ],
+    )
+    .await;
+    assert_eq!(draft["ok"], true, "{draft}");
+    assert_eq!(draft["data"]["from"], json!(["lead"]));
+    assert_eq!(
+        draft["data"]["warnings"],
+        json!([]),
+        "draft needs only the lead: {draft}"
+    );
+    let request = draft["data"]["write_back"].as_str().unwrap().to_string();
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    let stages = &shown["data"]["deliverables"][0]["stages"];
+    assert_eq!(stages[0]["recorded"], true, "{shown}");
+    assert_eq!(
+        stages[1]["waits_on"],
+        json!(["reviewer"]),
+        "lead is folded in: {shown}"
+    );
+
+    let early = pod(
+        rig.addr,
+        &repo,
+        &[
+            "stage",
+            "build",
+            "report",
+            "final",
+            "--output",
+            "out/final.md",
+            "--from",
+            "lead",
+        ],
+    )
+    .await;
+    assert_eq!(early["ok"], true, "a late member never blocks: {early}");
+    assert!(
+        early["data"]["warnings"][0]
+            .as_str()
+            .unwrap()
+            .contains("without the work of reviewer"),
+        "{early}"
+    );
+    let twice = pod(
+        rig.addr,
+        &repo,
+        &["stage", "build", "report", "final", "--output", "x"],
+    )
+    .await;
+    assert_eq!(twice["ok"], false, "{twice}");
+    let log = pod(rig.addr, &repo, &["show", "build"]).await["data"]["log"].to_string();
+    assert!(log.contains(&format!("written back as {request}")), "{log}");
+
+    let requests = [
+        request,
+        early["data"]["write_back"].as_str().unwrap().to_string(),
+    ];
+    assert_ne!(requests[0], requests[1], "one request per stage");
+    pod(rig.addr, &repo, &["down", "build"]).await;
+    for id in &requests {
+        let found = rig.store.role_request(id).await.unwrap().unwrap();
+        assert_eq!(found.role, "keeper");
+        assert_eq!(
+            found.state,
+            pij_store::RequestState::Queued,
+            "it outlives the pod: {id}"
+        );
+    }
+    rig.server.abort();
+}

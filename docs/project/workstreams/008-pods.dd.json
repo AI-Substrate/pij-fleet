@@ -99,7 +99,7 @@
 				{
 					"id": "s06",
 					"title": "Deliverables: owners, stages and write-back",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/008-pods.dd.json#requirements/req-16",
 						"../prds/008-pods.dd.json#requirements/req-17",
@@ -150,6 +150,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s05 complete on #346 (plans 251)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s06 complete on #346 (plans 252)."
 				}
 			]
 		}

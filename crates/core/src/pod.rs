@@ -14,6 +14,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("add" | "release") => Some(RESHAPE),
         Some("sessions") => Some(SESSIONS),
         Some("activity") => Some(ACTIVITY),
+        Some("stage") => Some(STAGE),
         _ => None,
     }
 }
@@ -32,6 +33,7 @@ Usage:
   pij pod release <pod> <seat>
   pij pod sessions <pod> [--limit <n>]       every member's harness sessions
   pij pod activity <pod> [--since <time>]    what the pod did, in order; open to any seat
+  pij pod stage <pod> <deliverable> <stage> --output <path> [--from <slot>]...
   pij pod confirm <pod> --tool <tool>...      a slot's seat answering its tool canary
 
 A template is a folder holding pod-template.dd.json (or that file), at any path
@@ -117,6 +119,18 @@ pod's consulted roles; then where each member's transcript is. --since takes
 milliseconds since the epoch or a time like 2026-11-25T04:00:00.000Z. Any seat
 may run it, in the pod or not. Reads the event log; writes and launches
 nothing.";
+
+const STAGE: &str = "\
+pij pod stage <pod> <deliverable> <stage> --output <path> [--from <slot>]...
+
+Records one stage of a deliverable with the slots whose work it folds in (all
+the stage needs, unless --from names fewer). A late member never blocks a
+stage: one still waiting on a slot is recorded with a warning naming it, and
+that slot's work is folded into a later stage. `pij pod show` lists each
+stage, recorded or open, and the slots an open one waits on. When the template
+names a write-back role for the deliverable, pij sends the stage to it as one
+request, as `pij send role:<id>` does; the request stays with that role after
+the pod goes down.";
 
 const SHOW: &str = "\
 pij pod show <pod>

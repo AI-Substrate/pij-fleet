@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: show lists owners; a missing owner role warns with its fix.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_owner"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: a first stage is recorded while one member works; the second completes it.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_stage"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: recording a stage sends one request to the write-back role, which outlives pod down.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_write_back"
         },
         {
@@ -51,7 +51,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "The spawn counter across a stage.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_stage_cost"
         }
       ]

@@ -69,6 +69,9 @@ pub struct Deliverable {
     pub stages: Vec<String>,
     /// The role its stages are written back to.
     pub write_back: Option<String>,
+    /// The slots each stage needs, where the template says; a stage it does
+    /// not name needs every slot (req-16).
+    pub needs: Vec<(String, Vec<String>)>,
 }
 
 /// A read, checked pod template.
@@ -250,11 +253,38 @@ pub fn parse(bytes: &[u8], source: &str) -> Result<Template, Refusal> {
             ));
         }
         let write_back = Some(text(&row["write_back"])).filter(|role| !role.is_empty());
+        let stages = Some(strings(&row["stages"]))
+            .filter(|stages| !stages.is_empty())
+            .unwrap_or_else(|| vec!["done".to_string()]);
+        let mut needs = Vec::new();
+        for need in row["stage_needs"].as_array().map_or(&[][..], Vec::as_slice) {
+            let stage = text(&need["stage"]);
+            let slots_needed = strings(&need["slots"]);
+            if !stages.contains(&stage) {
+                return Err(refuse(
+                    source,
+                    format!(
+                        "deliverable {id} names needs for stage {stage:?}, which it does not have"
+                    ),
+                ));
+            }
+            if let Some(unknown) = slots_needed
+                .iter()
+                .find(|slot| !slots.iter().any(|known| &known.id == *slot))
+            {
+                return Err(refuse(
+                    source,
+                    format!(
+                        "deliverable {id}'s stage {stage} needs slot {unknown:?}, which is not a slot"
+                    ),
+                ));
+            }
+            needs.push((stage, slots_needed));
+        }
         deliverables.push(Deliverable {
             owner: role_id(source, &format!("deliverable {id}"), &text(&row["owner"]))?,
-            stages: Some(strings(&row["stages"]))
-                .filter(|stages| !stages.is_empty())
-                .unwrap_or_else(|| vec!["done".to_string()]),
+            stages,
+            needs,
             write_back: write_back
                 .map(|role| role_id(source, &format!("deliverable {id}'s write-back"), &role))
                 .transpose()?,
@@ -423,6 +453,9 @@ pub fn document(template: &Template, filled: &[(String, String)], pod: &NewPod) 
                 let mut row = json!({"id": deliverable.id, "owner": deliverable.owner, "stages": deliverable.stages});
                 if let Some(role) = &deliverable.write_back {
                     row["write_back"] = json!(role);
+                }
+                if !deliverable.needs.is_empty() {
+                    row["stage_needs"] = json!(deliverable.needs.iter().map(|(stage, slots)| json!({"stage": stage, "slots": slots})).collect::<Vec<_>>());
                 }
                 row
             }).collect::<Vec<_>>()},
@@ -640,6 +673,79 @@ pub fn records<'a>(document: &'a Value, name: &str) -> &'a [Value] {
 /// A pod record's meta.
 pub fn meta(document: &Value) -> Value {
     section(document, "meta").cloned().unwrap_or(Value::Null)
+}
+
+/// The slots `stage` of the recorded `deliverable` row needs: those its
+/// `stage_needs` name, else every member's slot.
+pub fn stage_needs(deliverable: &Value, stage: &str, members: &[Value]) -> Vec<String> {
+    deliverable["stage_needs"]
+        .as_array()
+        .and_then(|needs| needs.iter().find(|need| need["stage"] == stage))
+        .map(|need| {
+            need["slots"]
+                .as_array()
+                .map(|slots| {
+                    slots
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_else(|| {
+            members
+                .iter()
+                .filter_map(|member| member["slot"].as_str().map(str::to_string))
+                .collect()
+        })
+}
+
+/// A recorded deliverable's stages in order: each recorded one with what it
+/// folds in, and each open one with the slots it still waits on, those its
+/// needs name that no recorded stage of the deliverable has folded in.
+pub fn stage_view(deliverable: &Value, recorded: &[Value], members: &[Value]) -> Vec<Value> {
+    let id = deliverable["id"].as_str().unwrap_or_default();
+    let mine: Vec<&Value> = recorded
+        .iter()
+        .filter(|row| row["deliverable"] == id)
+        .collect();
+    let folded: Vec<&str> = mine
+        .iter()
+        .flat_map(|row| row["from"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str)
+        .collect();
+    deliverable["stages"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|stage| match mine.iter().find(|row| row["stage"] == stage) {
+            Some(row) => json!({"stage": stage, "recorded": true, "output": row["output"], "from": row["from"], "write_back": row["write_back"]}),
+            None => json!({
+                "stage": stage,
+                "recorded": false,
+                "waits_on": stage_needs(deliverable, stage, members)
+                    .into_iter()
+                    .filter(|slot| !folded.contains(&slot.as_str()))
+                    .collect::<Vec<_>>(),
+            }),
+        })
+        .collect()
+}
+
+/// `document` with one recorded stage row added (a `stages` section is made
+/// on the first).
+pub fn with_stage(mut document: Value, row: Value) -> Value {
+    if section_mut(&mut document, "stages").is_none()
+        && let Some(sections) = document["sections"].as_array_mut()
+    {
+        sections.push(json!({"name": "stages", "value": []}));
+    }
+    if let Some(rows) = section_mut(&mut document, "stages").and_then(Value::as_array_mut) {
+        rows.push(row);
+    }
+    document
 }
 
 /// `document` with parameter `name` set to `value` (replaced, or added).
@@ -971,5 +1077,41 @@ mod tests {
         assert!(!keeps_open(&json!({}), Some("coder")));
         assert!(!may_dispatch(&json!({"canary": "degraded: x"})));
         assert!(may_dispatch(&json!({"canary": "confirmed"})));
+    }
+
+    /// req-16: an open stage waits only on the slots it needs that no
+    /// recorded stage folded in; a template naming an unknown stage or slot
+    /// for a stage's needs is refused.
+    #[test]
+    fn an_open_stage_waits_only_on_what_no_recorded_stage_folded_in() {
+        let deliverable = json!({"id": "pr", "stages": ["draft", "final"],
+            "stage_needs": [{"stage": "draft", "slots": ["pm"]}]});
+        let members = [
+            json!({"slot": "pm"}),
+            json!({"slot": "coder"}),
+            json!({"slot": "reviewer"}),
+        ];
+        let view = stage_view(&deliverable, &[], &members);
+        assert_eq!(view[0]["waits_on"], json!(["pm"]));
+        assert_eq!(view[1]["waits_on"], json!(["pm", "coder", "reviewer"]));
+        let recorded = [
+            json!({"deliverable": "pr", "stage": "draft", "output": "d.md", "from": ["pm", "coder"]}),
+        ];
+        let view = stage_view(&deliverable, &recorded, &members);
+        assert_eq!(view[0]["recorded"], true);
+        assert_eq!(view[1]["waits_on"], json!(["reviewer"]));
+
+        let mut bytes: Value = serde_json::from_slice(&template_bytes("branch")).unwrap();
+        bytes["sections"][4]["value"][0]["stage_needs"] =
+            json!([{"stage": "draft", "slots": ["ghost"]}]);
+        let refused = parse(&serde_json::to_vec(&bytes).unwrap(), "t").unwrap_err();
+        assert!(
+            refused.message.contains("needs slot \"ghost\""),
+            "{refused}"
+        );
+        bytes["sections"][4]["value"][0]["stage_needs"] =
+            json!([{"stage": "review", "slots": ["pm"]}]);
+        let refused = parse(&serde_json::to_vec(&bytes).unwrap(), "t").unwrap_err();
+        assert!(refused.message.contains("stage \"review\""), "{refused}");
     }
 }

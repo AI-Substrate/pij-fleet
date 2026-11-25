@@ -36,25 +36,25 @@
         {
           "id": "ac-0001",
           "claim": "`pij pod show` lists each deliverable with its owner role and that role's live holder; plan and up warn when the owner role does not exist, with the add command.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij pod stage <pod> <deliverable> <stage> --output <path>` records a stage in the pod folder when the members it needs are done; a later stage folds in a late member's work. show lists which stages are recorded and which member each open stage waits on.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "When a stage is recorded and the template names a write-back role for the deliverable, pij sends its result to that role as one request (send to a role, PRD 001) and logs it; the request stays with that role after the pod goes down.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
           "claim": "Cost: one writer commit per stage and one request per write-back. No loop, poll or timer.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         }
       ]
@@ -66,7 +66,7 @@
           "id": "ph-0001",
           "title": "Deliverables: owners, stages and write-back (workstream 008 s06)",
           "brief": "One phase on PR #346.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

@@ -184,6 +184,27 @@
             },
             "write_back": {
               "type": "string"
+            },
+            "stage_needs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "stage",
+                  "slots"
+                ],
+                "fields": {
+                  "stage": {
+                    "type": "string"
+                  },
+                  "slots": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
             }
           }
         }
