@@ -1742,7 +1742,10 @@
 					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
 					"instance_key": "f281-fix",
 					"machine": "studio",
+					"release_why": "falcon cold (424k, idle 28h); fresh coder cheaper",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-cultural-falcon",
+					"to": "2026-11-25T03:19:08.943Z",
 					"why": "Jordan-approved (11-25 13:18): F281 shared-build signal test flake + fixture leak"
 				}
 			]
