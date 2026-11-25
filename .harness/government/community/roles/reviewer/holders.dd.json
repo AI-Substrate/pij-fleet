@@ -3137,6 +3137,16 @@
 					"seat": "pij-varying-ptarmigan",
 					"to": "2026-11-25T06:44:28.720Z",
 					"why": "one C34 review of #346 (PRD 008 pods) at 7b2cc29"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T07:47:08.651Z",
+					"harness": "copilot",
+					"harness_session": "f8676636-ae62-405b-85da-5c3b9988fea5",
+					"instance_key": "354",
+					"machine": "studio",
+					"seat": "pij-graceful-ocelot",
+					"why": "one C34 review of #354 (009 pods page) at d5813ca"
 				}
 			]
 		}
