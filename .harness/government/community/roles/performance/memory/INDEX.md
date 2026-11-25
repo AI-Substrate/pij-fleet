@@ -92,5 +92,6 @@
 - [2026-11-22 F279: lapsed-control cost bounds](2026-11-22-f279-lapsed-control-costs.dd.md): Before pricing Copilot control retries or citing PR334 recovery cost (cost, F279, copilot, sqlite)
 - [2026-11-22 \#318 and \#321 AFTER: cohorts and proof ceilings](2026-11-22-pr318-pr321-after-cohorts.dd.md): Before comparing observer invalidation and pool-cut live CPU receipts, or repeating matched-cost windows (after-deploy, cost, cohort, measurement, proof-limits)
 - [2026-11-25 PRD 008 receipt-only seat: no measurement claim](2026-11-25-prd-008-receipt-only-seat-no-measurement.dd.md): Before using performance/receipt activity as PRD 008 req-09 cost evidence (prd008, receipt, scope, proof-limits)
+- [2026-11-25 Receipt-a closeout: complex-termite](2026-11-25-receipt-a-closeout-complex-termite.dd.md): When reconciling the 2026-11-25 receipt-a pod activity and closeout (receipt-a, handover, closeout)
 - [2026-11-25 Receipt-b closeout: quiet seat activity boundary](2026-11-25-receipt-b-closeout-quiet-seat-activity.dd.md): When separating receipt-b pod-up activity from its closeout commands (receipt, closeout, proof-limits)
 <!-- /pij:generated -->

@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"by": "pij-complex-termite",
+				"date": "2026-11-25",
+				"hook": "When reconciling the 2026-11-25 receipt-a pod activity and closeout",
+				"tags": [
+					"receipt-a",
+					"handover",
+					"closeout"
+				],
+				"title": "Receipt-a closeout: complex-termite"
+			}
+		},
+		{
+			"name": "body",
+			"value": "pij-complex-termite held performance/receipt-a for pij-multiple-nightingale's quiet spawn-count receipt. Before the close-time memory request, it loaded pij and builder, then waited: no shell commands, peer sends, measurements or verdicts. No review or AFTER work was assigned or remains in flight from this seat.\n\nThis closeout adds this seat's activity record, not a new performance conclusion. The existing 2026-11-25-prd-008-receipt-only-seat-no-measurement note carries the shared proof limits; the parent owns any measurement receipts. Memory lookup and this write belong to closeout, not the quiet observation interval.\n"
+		}
+	]
+}
