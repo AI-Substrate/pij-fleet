@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/pod"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"created_at": "2026-11-25T09:03:31.445Z",
+				"created_by": "pij-multiple-nightingale",
+				"pod": "receipt2",
+				"state": "up",
+				"template": "/tmp/laneA-receipt2",
+				"template_hash": "73855273ccac4273afaf3729f60036e068955365726b5936397ff5d393403da8",
+				"template_version": "1"
+			}
+		},
+		{
+			"name": "parameters",
+			"value": []
+		},
+		{
+			"name": "members",
+			"value": []
+		},
+		{
+			"name": "consulted",
+			"value": [
+				{
+					"before_up": "yes",
+					"role": "pm-001"
+				}
+			]
+		},
+		{
+			"name": "deliverables",
+			"value": []
+		},
+		{
+			"name": "log",
+			"value": [
+				{
+					"at": "2026-11-25T09:03:31.445Z",
+					"by": "pij-multiple-nightingale",
+					"change": "up from /tmp/laneA-receipt2 (version 1, sha256 73855273ccac)"
+				}
+			]
+		}
+	]
+}
