@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a21065-45aa-7400-8686-9064f79e4a51",
+				"date": "2026-11-25",
+				"head": "88d07ba5c2d68a480521d66625d57f573ddad28a",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "pass-with-notes",
+				"role": "reviewer",
+				"subject": "pr:348",
+				"writer": "pij-geographical-meerkat",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build -- build -p pij-cli --bin pij-rs --then test -p pij-cli --lib docs:: --then test -p pij-cli --test docs_verbs",
+					"exit_code": 0,
+					"log": "11 + 2 passed"
+				},
+				{
+					"command": "PIJ_RS_BIN=<built> tsx harness/scripts/docs-bundle-check.ts",
+					"exit_code": 0,
+					"log": "14 bundled pages match"
+				},
+				{
+					"command": "vitest run docs-bundle-check.test.ts with text-compare forced true / empty guard removed (archive copy)",
+					"exit_code": 1,
+					"log": "1 failed each: mutations caught"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Review of #348 at 88d07ba (PRD 009 s01–s03): pass-with-notes\n\nCorrectness, cost and security/privacy covered. No normal-use bug and no exposure found.\n\n## Verified\n- Dispatch: `Docs`/`AgentsStartHere` return in `main()` right after `Cli::parse()`, before any runtime, client, state dir or log. `run()` has an `unreachable!` arm. `docs.rs` imports only `pij_core::model` and `pij_daemon::community::types`, and calls `listing()`, `all()`, `get()`, `show()` and `seed` (the `&'static str` field), never `types::seed()`, which reads governance. So the type pages show the shipped seed. The binary ran against a closed `PIJ_RS_ADDR` with no daemon: all 14 pages printed.\n- Section slicing: a fenced `##` is skipped (unit test, and the seeds hold no ```). A heading at end of file works (`concepts#read-more`). Matching by text with punctuation works (`concepts#A type is a label, never authority`). `types#` refuses with the nearest. No page has duplicate headings. Unknown page (`Concepts`, `nope`) refuses with exit 2 and the nearest.\n- `--json` envelope: ok with `data{page,heading,title,text,sources}`. A refusal is `ok:false`, exit 2.\n- Roster: clap roster, `pij-native-verbs.json`, `RS_ROUTE_TABLE` and its test, SKILL.md row and `pij-rs-api.md` all carry both verbs.\n- docs-bundle-check: the real gate passes (14 pages). An edited page plus an unbundled `docs/cli/new.md` fail by name (exit 1). A missing binary exits 2. Two mutations, each in a `git archive` temp dir: making the text compare always pass fails \"fails naming a page edited…\", and dropping the empty-list guard fails \"refuses a binary with no … pages\". The stage is in SENSORS, in `just self-check` and in CI after the pij-rs build.\n- Every command the pages document exists: `directory add|edit|types|seed|assign|retype|templates|routes|memory`, the add flags `--title/--type/--holders/--rule/--packet/--keeps/--sole-writer-of/--type-suggestion`, `--type-change`, `send --fyi`, `project list|show`, `commit-trailers`, `pij proc` and the TYPE column in `pij list`.\n- Privacy: no person names, emails or machine paths in the diff. The only seat id used as an example is generated.\n- Cost: no loop, poll, timer, hook or runtime launch. The gate runs 1+N pij-rs processes (N=14), inside `harness checks` only. Binary growth is about 11 KB of new markdown plus the code; the type JSON and seeds were already compiled in.\n\n## Notes (non-blocking; the author may take or defer them)\n1. Shared target: the gate reads `<cargo-target.sh>/debug/pij-rs`, which in a linked worktree is the main checkout's shared binary, built by whichever tree built last. The debug build is unstamped, so the gate can't tell. `harness checks --quick` in worktree B can fail naming pages that worktree A edited, and the message says \"rebuild pij-rs\". Full checks are mostly saved because the rust stage builds first, but another seat's shared-build can swap the binary between stages. CI is unaffected. Fix: build through `shared-build --copy-out`, or name the risk in the failure text.\n2. concepts.md describes pods in the present tense (\"A seat is in one pod or none\", pod templates, pod folders in governance, \"a seat or a pod can be revived\", and \"the filled parameters\" in seed). No pod verb or pod template is on main yet (templates/ has only roles and types). Mark these as coming, or keep them until the pods PR lands, so a seat doesn't go looking for them.\n3. `slug()` uses `to_ascii_lowercase` and matching uses `eq_ignore_ascii_case`, so a non-ASCII heading (\"Über\") is case-sensitive. CommonMark details are also unhandled: `~~~` fences, setext headings, closing `##`, and headings indented 1–3 spaces. A duplicate heading resolves to the first one, with no `-1` suffix. Today's pages hit none of these.\n4. `print!` on a closed pipe panics with exit 101 (Rust ignores SIGPIPE), e.g. `pij docs get concepts | head -1` under some shells. This is the same as other verbs; it's cosmetic.\n5. Unknown-page suggestions always name something, even when nothing is close (`nope` → `types`). A distance cap would help.\n"
+		}
+	]
+}
