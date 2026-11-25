@@ -369,6 +369,22 @@ pub(crate) async fn designated_prime(services: &Services) -> Result<Option<SeatI
         .map(|designation| designation.seat))
 }
 
+/// Hold one FYI for `to` from pij, when it is live: the outcome, as
+/// [`tell_prime`] reports one.
+pub(crate) async fn tell_seat(services: &Services, to: &SeatId, body: String) -> Value {
+    let told = async {
+        if !seat_live(services, to).await? {
+            return Ok(json!({"sent": false, "seat": to, "reason": "the seat is not live"}));
+        }
+        let msg_id = hold(services, to, body, None).await?;
+        Ok::<_, Refusal>(json!({"sent": "fyi", "seat": to, "msg_id": msg_id}))
+    };
+    match told.await {
+        Ok(outcome) => outcome,
+        Err(refusal) => json!({"sent": false, "seat": to, "reason": refusal.to_string()}),
+    }
+}
+
 async fn seat_live(services: &Services, seat: &SeatId) -> Result<bool, Refusal> {
     Ok(services
         .registry

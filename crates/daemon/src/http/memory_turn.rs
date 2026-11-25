@@ -359,6 +359,10 @@ pub(crate) fn hold(
     answer["memory_turn"] = held(action, &turn, bound);
     answer["memory_turn"]["deadline_ms"] = json!(deadline_ms);
     let stop = matches!(then, Then::Close { stop: true, .. });
+    let closer = match &then {
+        Then::Close { actor, .. } => actor.clone(),
+        Then::Compact(_) => seat.id.clone(),
+    };
     let state = state.clone();
     tokio::spawn(async move {
         let (mut report, late) = run(
@@ -368,7 +372,7 @@ pub(crate) fn hold(
         let (then, closed) = if stop && report.ended != Ended::NoteWritten {
             // PRD 007 req-12: not ready, so the seat is left open and running.
             (
-                super::lifecycle::not_ready(&state, &seat, &report).await,
+                super::lifecycle::not_ready(&state, &seat, &closer, &report).await,
                 None,
             )
         } else {
