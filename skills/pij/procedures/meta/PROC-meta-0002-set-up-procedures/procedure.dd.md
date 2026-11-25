@@ -13,9 +13,9 @@
 | title | Set up procedures in a repo |
 | area | meta |
 | kind | runnable |
-| status | draft |
+| status | current |
 | owner | docs-system |
-| updated | 2026-11-24 |
+| updated | 2026-11-26 |
 | summary | Set a repo up for procedures: copy the schema, make the home, add the `proc` and `procedures-check` recipes, ignore run progress, write a first procedure and pass the drift check. Every step is idempotent. |
 | superseded_by | — |
 
@@ -130,3 +130,4 @@ _No entries._
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-24 | pij-intense-herring | First draft (PRD 005 s06). |
+| 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |

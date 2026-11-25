@@ -13,9 +13,9 @@
 | title | Write a PRD |
 | area | docs |
 | kind | mixed |
-| status | draft |
+| status | current |
 | owner | docs-system |
-| updated | 2026-11-24 |
+| updated | 2026-11-26 |
 | summary | Write a PRD: what to build and why, as requirement rows with a state and a test of done. Then the blueprint and workstream. |
 | superseded_by | — |
 
@@ -112,7 +112,9 @@ _No entries._
 
 ## Comments
 
-_No entries._
+| date | by | text |
+| --- | --- | --- |
+| 2026-11-26 | pij-solid-ox | Live run owed (PRD 005 req-24): the next seat to write a new document of this type runs it, recording each step with pij proc. The PR that made the procedures current wrote none. |
 
 <a id="changelog"></a>
 
@@ -121,3 +123,4 @@ _No entries._
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-24 | pij-intense-herring | First draft (PRD 005 s06). |
+| 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |

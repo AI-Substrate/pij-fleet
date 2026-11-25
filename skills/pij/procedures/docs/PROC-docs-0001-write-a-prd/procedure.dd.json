@@ -11,8 +11,8 @@
 				"area": "docs",
 				"kind": "mixed",
 				"owner": "docs-system",
-				"status": "draft",
-				"updated": "2026-11-24",
+				"status": "current",
+				"updated": "2026-11-26",
 				"summary": "Write a PRD: what to build and why, as requirement rows with a state and a test of done. Then the blueprint and workstream."
 			}
 		},
@@ -128,7 +128,13 @@
 		},
 		{
 			"name": "comments",
-			"value": []
+			"value": [
+				{
+					"date": "2026-11-26",
+					"by": "pij-solid-ox",
+					"text": "Live run owed (PRD 005 req-24): the next seat to write a new document of this type runs it, recording each step with pij proc. The PR that made the procedures current wrote none."
+				}
+			]
 		},
 		{
 			"name": "changelog",
@@ -137,9 +143,13 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "First draft (PRD 005 s06)."
+				},
+				{
+					"date": "2026-11-26",
+					"by": "operator",
+					"change": "Status draft → current; approved by operator (2026-11-26 09:13, \"get procedures stuff in as well\": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox."
 				}
 			]
 		}
-	],
-	"references": []
+	]
 }

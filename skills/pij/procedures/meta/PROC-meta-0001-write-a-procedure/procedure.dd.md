@@ -13,9 +13,9 @@
 | title | Write a procedure |
 | area | meta |
 | kind | meta |
-| status | draft |
+| status | current |
 | owner | docs-system |
-| updated | 2026-11-24 |
+| updated | 2026-11-26 |
 | summary | How to write a procedure: look first, book the id, write it from what really happens with recipes that check their own preconditions, pass the drift check, then get the operator's yes. |
 | superseded_by | — |
 
@@ -128,3 +128,4 @@ _No entries._
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-24 | pij-intense-herring | First draft (PRD 005 s06). |
+| 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |

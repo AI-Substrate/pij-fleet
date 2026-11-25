@@ -13,9 +13,9 @@
 | title | Close a build pod's step |
 | area | pods |
 | kind | runnable |
-| status | draft |
+| status | current |
 | owner | project-manager |
-| updated | 2026-11-25 |
+| updated | 2026-11-26 |
 | summary | Before `pij pod down` closes the build pod's seats: the step's worktree holds nothing uncommitted and its branch has no open PR. Either one stopping stops the down, which closes nothing (a brake; `pij pod down &lt;pod&gt; --skip-close-procedure` goes on anyway). |
 | superseded_by | — |
 
@@ -118,3 +118,4 @@ _No entries._
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-multiple-nightingale | First draft (PRD 010 s04). |
+| 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |
