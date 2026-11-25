@@ -25,6 +25,7 @@ export interface RsHttpRoute extends RouteIdentity {
 export interface RsNativeRoute extends RouteIdentity {
 	/** Native stdout/stderr/exit are the contract, not a JSON envelope. */
 	readonly nativeCommand:
+		| "agents-start-here"
 		| "commit-trailers"
 		| "fleet-report"
 		| "bg"
@@ -32,6 +33,7 @@ export interface RsNativeRoute extends RouteIdentity {
 		| "claim"
 		| "claims"
 		| "delivered"
+		| "docs"
 		| "output"
 		| "outputs"
 		| "project"
@@ -332,6 +334,14 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 			verb,
 			nativeCommand: verb,
 			why: "pij-rs owns this community verb's grammar, help and output",
+		}),
+	),
+	// PRD 009, plan 235: the docs bundled in pij-rs, read with no daemon.
+	...(["agents-start-here", "docs"] as const).map(
+		(verb): RsNativeRoute => ({
+			verb,
+			nativeCommand: verb,
+			why: "pij-rs prints the docs bundled in it, with no daemon",
 		}),
 	),
 	{

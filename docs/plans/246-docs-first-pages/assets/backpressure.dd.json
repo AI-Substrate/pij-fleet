@@ -1,0 +1,42 @@
+{
+  "dd": { "schema": "builder/backpressure" },
+  "sections": [
+    { "name": "meta", "value": { "title": "Plan 246 backpressure", "plan": "../plan.dd.json#meta", "certainty": "Confident" } },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs.rs the_first_pages_are_bundled_and_concepts_defines_the_seven_terms: every first page and types/<type> for each of TYPES is bundled, and concepts has a row for each of the seven terms.",
+          "state": "checked",
+          "probe": "cargo test -p pij-cli docs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs.rs a_type_page_is_its_definition_and_seed: the knowledge page's title, summary (its line), every rule with its mode, the required --keeps, the shipped seed and authority line; prime's authority note; the overview row of every type; `#rules` stops before the seed.",
+          "state": "checked",
+          "probe": "cargo test -p pij-cli docs"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs.rs every_source_is_its_file_and_every_docs_cli_page_is_bundled; docs-bundle-check.test.ts (a relaid document passes, a changed value fails naming the page, an unbundled file, a missing source); `just docs-bundle-check` on the built binary.",
+          "state": "checked",
+          "probe": "just docs-bundle-check"
+        }
+      ]
+    },
+    { "name": "sensors", "value": [{ "id": "sn-0001", "name": "done gate", "command": "harness checks", "dimension": "correctness" }] }
+  ]
+}

@@ -16,6 +16,7 @@ pub mod claude_hooks;
 pub mod claude_stop;
 pub mod client;
 pub mod decisions;
+pub mod docs;
 pub mod fleet_report;
 pub mod governance;
 pub mod lifecycle;

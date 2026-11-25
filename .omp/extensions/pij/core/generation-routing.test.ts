@@ -311,6 +311,8 @@ describe("explicit generation forcing", () => {
 			),
 		);
 		const community = [
+			"agents-start-here",
+			"docs",
 			"directory",
 			"claim",
 			"claims",

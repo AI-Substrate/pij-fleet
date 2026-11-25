@@ -1,0 +1,71 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 239 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs.rs unit test: every listed page's `source` exists and equals its body.",
+          "state": "checked",
+          "probe": "cargo test -p pij-cli docs"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs-bundle-check.test.ts against a fake pij-rs and a scratch page tree: equal passes; an edited page, an unbundled file, a missing source and a missing binary each fail naming it.",
+          "state": "checked",
+          "probe": "vitest run harness/scripts/docs-bundle-check.test.ts"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Receipt (2026-11-25): with a line appended to docs/cli/agents-start-here.md and no rebuild, `harness checks --quick` failed the docs-bundle stage with `agents-start-here: the bundled page differs from docs/cli/agents-start-here.md; rebuild pij-rs`; reverted, `just docs-bundle-check` passes (1 page).",
+          "state": "checked",
+          "probe": "harness checks --quick"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs-bundle-check.test.ts: another tree's binary refuses naming it and compares nothing, an unstamped one refuses; docs.rs list test: built_from is this checkout. Receipt: the gate run from another directory with this tree's binary refused `this pij-rs was built from …/pij-laneB, not this checkout` (exit 2).",
+          "state": "checked",
+          "probe": "vitest run harness/scripts/docs-bundle-check.test.ts"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        }
+      ]
+    }
+  ]
+}

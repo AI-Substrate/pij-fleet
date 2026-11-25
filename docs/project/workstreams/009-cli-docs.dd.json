@@ -1,0 +1,89 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 009: docs in the pij CLI",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pm-001"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "Any seat reads pij's documentation from the CLI, starting with the fleet's constructs."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Start page, list and get, bundled",
+					"state": "complete",
+					"delivers": [
+						"../prds/009-cli-docs.dd.json#requirements/req-01",
+						"../prds/009-cli-docs.dd.json#requirements/req-02",
+						"../prds/009-cli-docs.dd.json#requirements/req-03",
+						"../prds/009-cli-docs.dd.json#requirements/req-07"
+					],
+					"builds": [],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "With the daemon stopped, `pij agents-start-here`, `pij docs list` and `pij docs get <page>#<heading>` print from the installed binary and launch nothing.",
+					"plan": "docs/plans/235-docs-verbs"
+				},
+				{
+					"id": "s02",
+					"title": "One source, checked",
+					"state": "complete",
+					"delivers": ["../prds/009-cli-docs.dd.json#requirements/req-04"],
+					"builds": [],
+					"depends_on": ["#steps/s01"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "`harness checks` fails and names a bundled page that differs from its file.",
+					"plan": "docs/plans/239-docs-one-source"
+				},
+				{
+					"id": "s03",
+					"title": "The first pages",
+					"state": "in-progress",
+					"delivers": ["../prds/009-cli-docs.dd.json#requirements/req-05"],
+					"builds": [],
+					"depends_on": ["#steps/s01", "006-seat-types.dd.json#steps/s02"],
+					"needs": ["role:docs-system", "role:reviewer"],
+					"done_when": "The start page, concepts, one page per type, pods and building a role are listed and read.",
+					"note": "The pods page waits on workstream 008 step s02; the other pages do not. The concepts page is skills/pij/references/community/concepts.md (blueprint 005 c-docs), written here so it has one writer.",
+					"plan": "docs/plans/246-docs-first-pages"
+				},
+				{
+					"id": "s04",
+					"title": "Refusals and first turns point at pages",
+					"state": "planned",
+					"delivers": ["../prds/009-cli-docs.dd.json#requirements/req-06"],
+					"builds": [],
+					"depends_on": ["#steps/s03"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "A refusal for a missing type names its page, and a seat's first turn names the page for its type.",
+					"note": "Waits on workstream 007 step s02 (seats started in a role); link it here when workstream 007 is on main. Comes in the follow-up PR after #348, with the pods page."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pm-001",
+					"change": "Ownership moved from pij-autonomous-parrot to pm-001 for the build."
+				}
+			]
+		}
+	]
+}

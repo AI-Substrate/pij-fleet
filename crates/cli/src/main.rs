@@ -727,6 +727,20 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// The start page for an agent new to pij, bundled in this binary
+    /// (PRD 009, plan 235). No daemon.
+    #[command(disable_help_flag = true)]
+    AgentsStartHere {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// pij's documentation, bundled in this binary: `list`, or `get
+    /// <page>[#<heading>]` (PRD 009, plan 235). No daemon.
+    #[command(disable_help_flag = true)]
+    Docs {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// List registered seats; --here scopes to this process's cwd.
     List {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1081,6 +1095,16 @@ enum DoctorAction {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // PRD 009: the bundled docs need no runtime, no client and no daemon.
+    if let Command::Docs { args } | Command::AgentsStartHere { args } = &cli.command {
+        let verb = match &cli.command {
+            Command::Docs { .. } => "docs",
+            _ => pij_cli::docs::START_PAGE,
+        };
+        let outcome = pij_cli::docs::run(verb, args, cli.json);
+        print!("{}", outcome.stdout);
+        return ExitCode::from(outcome.code);
+    }
     // Plan 226: once per streamed flush of every Claude reply, so no runtime,
     // no client, no daemon; any failure leaves the reply as Claude wrote it.
     if let Command::Hook {
@@ -2248,6 +2272,9 @@ async fn run(cli: Cli) -> ExitCode {
         Command::Claim { args } => claims_verb(&client, "claim", &args, cli.json).await,
         Command::Claims { args } => claims_verb(&client, "claims", &args, cli.json).await,
         Command::Delivered { args } => claims_verb(&client, "delivered", &args, cli.json).await,
+        Command::Docs { .. } | Command::AgentsStartHere { .. } => {
+            unreachable!("docs returned before the runtime")
+        }
         Command::Requests { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             let response =
@@ -5124,6 +5151,8 @@ impl Command {
             Command::Claims { .. } => "pij claims",
             Command::Delivered { .. } => "pij delivered",
             Command::Requests { .. } => "pij requests",
+            Command::Docs { .. } => "pij docs",
+            Command::AgentsStartHere { .. } => "pij agents-start-here",
             Command::List { .. } => "pij list",
             Command::State { .. } => "pij state",
             Command::Tail { .. } => "pij tail",
@@ -6388,6 +6417,9 @@ PEC notice";
                 "claims",
                 "delivered",
                 "requests",
+                // PRD 009 (plan 235): the bundled docs, no daemon.
+                "agents-start-here",
+                "docs",
                 "list",
                 "state",
                 "tail"

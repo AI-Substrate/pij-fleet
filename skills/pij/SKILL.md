@@ -46,6 +46,7 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 | `daemon` `telegram` | ops route — shim `E-RS-UNPORTED`; native `pij-rs daemon` / `daemon bounce` (§ C6) and `pij-rs sidecar telegram` (native table below) |
 | `phonehome` `reap` `close` | ops / peer routes — rs binding, conservative reconciliation, self, parent or prime (F282) tombstone |
 | `commit-trailers` | § Shared conventions C11 — narrow native CLI forwarding; trailer-only stdout, native stderr and exit status |
+| `agents-start-here` `docs` (`list` `get`) | native forward (PRD 009, plan 235): pij's documentation bundled in the binary, read in any repo with no daemon or network; `agents-start-here` is the start page for an agent new to pij, `docs list` names every page, `docs get <page>[#<heading>]` prints one page or one section; an unknown page or heading refuses with the nearest |
 | `fleet-report` | native forward (plan 162) — writes a project's Context Tax folder (`report.json`, static page, tables); no daemon, store read read-only; `--anonymise` before sharing |
 | `bg` (`create/list/tail/kill/emit`) | § Shared conventions C7 — shipped rs detached jobs and event sources; result injected from `pij-bg` |
 | `watchdog` | § C9 — rs; `on\|off\|status [<seat>] [--every 30m]`; any seat may switch any seat; PAs always on |
@@ -66,7 +67,7 @@ Module missing at its path → say so and stop. Never improvise a route from mem
 
 `pij proc [list|new|status|check|report|<proc> [<step>]]` is a shim-local skill tool (`tools/procedures/`, loaded in-process, no daemon): procedures (PRD 005), one folder each in `procedures/` (shipped with this skill) or a project's `docs/project/procedures/`. Set a repo up with `pij proc PROC-meta-0002`.
 
-The shim hands `directory`, `claim`, `claims`, `delivered` and `requests`, and a `send` to `role:<id>`, with `--to` or `--help`, to `pij-rs` unchanged: the same output, help and exit code ([shim forwarding](../../docs/how/pij-rs-api.md#shim-forwarding-plan-213), plan 213).
+The shim hands `directory`, `claim`, `claims`, `delivered`, `requests`, `docs` and `agents-start-here`, and a `send` to `role:<id>`, with `--to` or `--help`, to `pij-rs` unchanged: the same output, help and exit code ([shim forwarding](../../docs/how/pij-rs-api.md#shim-forwarding-plan-213), plan 213).
 
 `/pij prime` selects the skill route; `pij orchestration prime` invokes its CLI
 primitive. `baton` is the other orchestration subcommand.

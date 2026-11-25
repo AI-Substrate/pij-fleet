@@ -1,0 +1,100 @@
+{
+  "dd": { "schema": "builder/plan" },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Docs in the pij CLI: the first pages",
+        "slug": "docs-first-pages",
+        "ordinal": 246,
+        "status": "ready",
+        "summary": "PRD 009 workstream step s03 (req-05). `pij docs` gains `concepts` (the skill's concepts page, bundled), `types` and one `types/<type>` page per seat type (generated from the type catalog compiled into the daemon), and `building-a-role`. Each page names the sources it was built from, and the bundled-docs check compares each with its file.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "PRD 006 compiled the ten type definitions and seeds into the daemon (`templates/types/<type>/v<N>/`). A hand-written page per type would be a second copy, so the type pages are rendered from the catalog when pij-rs runs: always the binary's own types. Pages are now file pages (any repository file, so the skill's concepts page is bundled rather than copied) or generated pages; each carries its sources as compiled in. `docs get --json` returns them (a file's text, or a parsed document), and plan 239's check compares text byte for byte and documents as parsed JSON, so an edited type definition fails `harness checks` until pij-rs is rebuilt."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A seat in any repo reads what a seat, role, type, position, pod, seed and template are, and every type's definition, from pij.",
+        "One copy of each page: the skill's concepts page and the type catalog are the sources, never duplicated."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "The pods page: it waits on workstream 008 step s02.",
+        "Refusals and first turns naming pages (step s04, after workstream 007 step s02).",
+        "A repo's own seeds in the type pages: those are governance (`pij directory types <type> --seed`), which docs never reads."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`pij docs list` names agents-start-here, concepts, types, types/<type> for each of the ten, and building-a-role.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`concepts` is `skills/pij/references/community/concepts.md`, bundled: it defines seat, role, type, position, pod, seed and template, says a type is a label and never authority, separates governance (the team) from the repo (the work), and gives a build fleet and an operating fleet as examples.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "`types` and `types/<type>` are rendered from `pij_daemon::community::types` (`listing()`, `all()`, `TypeDef::show()` and the shipped seed field), never from governance: line, authority, purpose, lifecycle, keeps, required fields with their flags, rules with fixed or default, the shipped seed and the source paths.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "`docs get --json` returns each page's sources as compiled in (`{path, text}` or `{path, document}`); `docs list --json` names them. The bundled-docs check compares every source with its file (text byte for byte, documents as parsed JSON) and fails naming the page.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "First pages shipped",
+          "brief": "One PR (#348): sources per page, the generated type pages, concepts and building-a-role, the check's source comparison.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    { "name": "tasks", "value": [] },
+    { "name": "done_when", "value": {} },
+    {
+      "name": "research_context",
+      "value": "Blueprint 005 c-type-catalog (`crates/daemon/src/community/types.rs`) compiles each `type.dd.json` and `seed.md` with `include_bytes!`/`include_str!` and parses them once (`all()`); `TypeDef` keeps the parsed `document` and the `seed` text, so a page can carry both as sources without a file read. Blueprint 005 c-docs names the concepts page in `skills/pij/references/community/`; pm-001 assigned it to this step so it has one writer."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A new type version ships and a page still names the old path.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "Paths come from each TypeDef's version, and the check compares the file at that path."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: no loop, poll, timer, hook or launch. Pages are rendered in-process from bytes already in the binary, once per call; nothing reads governance or contacts the daemon. The check adds one `docs get` per new page (fourteen in all) inside `harness checks` only.",
+        "Pages are public-safe: no customer or person names."
+      ]
+    }
+  ]
+}

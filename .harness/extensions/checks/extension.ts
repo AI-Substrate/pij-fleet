@@ -121,6 +121,13 @@ const SENSORS: Sensor[] = [
 		proves: "Cargo.lock is current and the Rust workspace passes fmt, clippy and tests",
 	},
 	{
+		name: "docs-bundle",
+		cmd: "just",
+		args: ["docs-bundle-check"],
+		proves:
+			"every page the built pij-rs bundles equals its file, and every docs/cli page is bundled (PRD 009 req-04)",
+	},
+	{
 		name: "smoke",
 		cmd: "just",
 		args: ["smoke"],
@@ -156,7 +163,7 @@ const checks: HarnessVerb = {
 		"Run pij's full deterministic gate (the signal inventory) and report a ship/done verdict.",
 	description:
 		'The single "are we done?" gate. Runs every sensor in the engineering-harness signal inventory ' +
-		"(mirrors `just self-check`: local-paths, omp-config, ddocs, coverage, pij-skill, typecheck, lockfile, lint, test, copilot-native, copilot-sdk, route-inventory, rust, smoke, pij-commit-trailers) as individual " +
+		"(mirrors `just self-check`: local-paths, omp-config, ddocs, coverage, pij-skill, typecheck, lockfile, lint, test, copilot-native, copilot-sdk, route-inventory, rust, docs-bundle, smoke, pij-commit-trailers) as individual " +
 		"stages, reports a per-sensor verdict, and — unlike self-check — runs ALL of them so you see every " +
 		"failure in one pass. Run it before ship and before declaring any non-trivial task done. " +
 		"`--quick` skips heavy sensors (route-inventory, rust, smoke) for a fast static+unit gate.",
