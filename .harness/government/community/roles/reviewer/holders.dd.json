@@ -3085,6 +3085,16 @@
 					"seat": "pij-wonderful-owl",
 					"to": "2026-11-25T03:32:53.606Z",
 					"why": "#345 PRD 007 single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T03:52:06.115Z",
+					"harness": "copilot",
+					"harness_session": "9e1b542a-ae0f-466c-8541-6f47a4878eb9",
+					"instance_key": "350",
+					"machine": "studio",
+					"seat": "pij-strict-reindeer",
+					"why": "#350 F281 fix single review (amended C34; Jordan-approved)"
 				}
 			]
 		}
