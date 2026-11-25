@@ -193,6 +193,84 @@
 					"responsibility": "After the memory turn, asks the holder to answer ready, then stops the exact process recorded at launch (never by name). Silent or memoryless seats stay running and the prime is told; a cold seat is not woken. Without `--stop`, close is unchanged. Pod down calls this per member.",
 					"realises": ["../prds/007-role-start.dd.json#requirements/req-12"],
 					"state": "planned"
+				},
+				{
+					"id": "c-pod-schema",
+					"name": "Pod definition and pod folders",
+					"kind": "schema",
+					"where": ".dd/schemas/pij/pod-template, .dd/schemas/pij/pod; a template folder at any path a command names (main repo or governance); community/pods/<pod>/ on the governance branch",
+					"responsibility": "A template folder: parameters, slots (a seat the pod starts) with the tools each needs and a slot whose model it must not share, wiring, per-slot seed, consulted roles (marked when needed before up), keep-open marks, deliverables (owner role, stages, write-back role) and its own procedures. A pod folder: filled parameters, the template's path and version, slot to seat id, each first turn, a change log. Seat facts stay in the database. Memory is filed per role and subject; `--fresh` leaves earlier memory out of first turns.",
+					"realises": [
+						"../prds/008-pods.dd.json#requirements/req-01",
+						"../prds/008-pods.dd.json#requirements/req-02",
+						"../prds/008-pods.dd.json#requirements/req-07",
+						"../prds/008-pods.dd.json#requirements/req-10",
+						"../prds/008-pods.dd.json#requirements/req-12"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-pod-verbs",
+					"name": "`pij pod plan/up/show/set/down/add/release`",
+					"kind": "verb",
+					"where": "crates/daemon/src/http/pod.rs, crates/daemon/src/community/pod.rs, crates/cli/src/main.rs",
+					"responsibility": "`plan` prints and writes nothing, naming every warning with its fix; `up` spawns each slot through c-spawn-role (or `--no-start`), creates no branch or worktree, and on a closed pod revives its members; `show` reads the folder and the database; `set` delivers a late parameter to the members that need it; `down` runs the template's close steps then c-close-stop per member, skipping keep-open members with a warning, never touching a consulted role, and records the work branch's head with a warning when uncommitted work leaves the run unfrozen; add and release reshape a running pod and log it.",
+					"realises": [
+						"../prds/008-pods.dd.json#requirements/req-03",
+						"../prds/008-pods.dd.json#requirements/req-04",
+						"../prds/008-pods.dd.json#requirements/req-05",
+						"../prds/008-pods.dd.json#requirements/req-06",
+						"../prds/008-pods.dd.json#requirements/req-08",
+						"../prds/008-pods.dd.json#requirements/req-09",
+						"../prds/008-pods.dd.json#requirements/req-11",
+						"../prds/008-pods.dd.json#requirements/req-14"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-pod-checks",
+					"name": "Pod warnings and the tool canary",
+					"kind": "module",
+					"where": "crates/daemon/src/community/pod.rs (checks), crates/daemon/src/http/pod.rs (canary)",
+					"responsibility": "The checks `plan` prints and `up` logs: a consulted role needed before up with no live holder, a reviewing slot on its author's model, a deliverable whose owner role is missing. After a slot's seat starts, one canary message asks it to confirm its tools and one bounded wait reads the answer; a slot that does not confirm is degraded, with its fix, and pij sends it no pod work (a brake on pij's own dispatch). Nothing refuses.",
+					"realises": [
+						"../prds/008-pods.dd.json#requirements/req-18",
+						"../prds/008-pods.dd.json#requirements/req-19",
+						"../prds/008-pods.dd.json#requirements/req-20",
+						"../prds/008-pods.dd.json#requirements/req-21"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-session-history",
+					"name": "`pij sessions --history` and `pij pod sessions`",
+					"kind": "verb",
+					"where": "crates/daemon/src/http/shim.rs (sessions), crates/daemon/src/session_history.rs",
+					"responsibility": "Reads each seat's `seat.put` facts in order from the event log (indexed by seat and kind) and folds them into sessions: start, end, harness, model, session id, transcript location, and why each changed, from the spawn, revive, rebind and compaction events beside them. A past session's final context size is read from its transcript's tail or the harness's usage record, capped per session, else unknown. No new storage.",
+					"realises": ["../prds/008-pods.dd.json#requirements/req-13"],
+					"state": "planned"
+				},
+				{
+					"id": "c-pod-activity",
+					"name": "`pij pod activity`",
+					"kind": "verb",
+					"where": "crates/daemon/src/http/pod.rs",
+					"responsibility": "A read-only view of a pod: its members' state changes, outputs, sends and transcript locations in order, from the event log and the pod folder, open to every seat with no role or membership test.",
+					"realises": ["../prds/008-pods.dd.json#requirements/req-15"],
+					"state": "planned"
+				},
+				{
+					"id": "c-pod-deliverables",
+					"name": "Deliverables: owners, stages and write-back",
+					"kind": "module",
+					"where": "crates/daemon/src/community/pod.rs; community/pods/<pod>/deliverables.json",
+					"responsibility": "Records each deliverable's stages as members finish, so a late member never blocks the first; names its owner role and that role's holder in `show`; when a stage is recorded, sends its result as one request to the write-back role the template names and logs it, and the request outlives the pod.",
+					"realises": [
+						"../prds/008-pods.dd.json#requirements/req-16",
+						"../prds/008-pods.dd.json#requirements/req-17",
+						"../prds/008-pods.dd.json#requirements/req-20"
+					],
+					"state": "planned"
 				}
 			]
 		},
@@ -263,6 +341,45 @@
 					"decision": "`pij close --stop` stops the process pij recorded at launch, by pid and only while its start time still matches, after a ready answer: the memory turn ended within its bound and the seat wrote a memory note after the turn was delivered.",
 					"why": "Every seat runs as one user, so stopping by name or pattern would reach other seats' processes (AGENTS rule 6). The start-time match keeps a reused pid safe. Ready is read from facts the daemon already records (the turn's idle, the note's spine event), so it adds no poll.",
 					"realises": ["../prds/007-role-start.dd.json#requirements/req-12"]
+				},
+				{
+					"id": "d-10",
+					"decision": "Session history is read back from the event log's `seat.put` facts, which carry the whole seat descriptor at every registry write, with no new table and no migration.",
+					"why": "The spine already holds every session id, process and spawn a seat had, with times, and is never pruned; one indexed read per seat answers the history (PM ruling 2026-11-25).",
+					"realises": ["../prds/008-pods.dd.json#requirements/req-13"]
+				},
+				{
+					"id": "d-11",
+					"decision": "A past session's context size is read from at most a fixed tail of its transcript (or the harness's usage record) per session, and is unknown past the cap or when the transcript is gone.",
+					"why": "Transcripts can be hundreds of megabytes; a capped tail read keeps every call's worst case bounded and in-process (PM ruling 2026-11-25).",
+					"realises": ["../prds/008-pods.dd.json#requirements/req-13"]
+				},
+				{
+					"id": "d-12",
+					"decision": "Every pod check warns and logs; none refuses. Withholding pod work from a slot whose tools failed is a brake on pij's own dispatch, never a gate on a person or the prime.",
+					"why": "\"We're building a knowledge system, we're not the police\" (Jordan's ruling 2026-11-25, round 2); PM ruling 2026-11-25 on the dogfood preconditions.",
+					"realises": [
+						"../prds/008-pods.dd.json#requirements/req-04",
+						"../prds/008-pods.dd.json#requirements/req-18",
+						"../prds/008-pods.dd.json#requirements/req-19",
+						"../prds/008-pods.dd.json#requirements/req-20",
+						"../prds/008-pods.dd.json#requirements/req-21"
+					]
+				},
+				{
+					"id": "d-13",
+					"decision": "A pod command takes the template's path; pij does not enforce where a template lives.",
+					"why": "A fleet shared as files keeps its templates in the main repo, another in governance (Jordan's ruling 2026-11-25, round 2, ruling 1).",
+					"realises": [
+						"../prds/008-pods.dd.json#requirements/req-02",
+						"../prds/008-pods.dd.json#requirements/req-07"
+					]
+				},
+				{
+					"id": "d-14",
+					"decision": "`pod down` records the work branch's head by reading the pod's work folder with git (two reads), and only warns on uncommitted work.",
+					"why": "The freeze is a record and a warning, never a refusal (Jordan's ruling 2026-11-25, round 2, ruling 6); the reads happen once per down.",
+					"realises": ["../prds/008-pods.dd.json#requirements/req-14"]
 				}
 			]
 		},
@@ -304,6 +421,31 @@
 					"rate": "suggest and its answer: one writer commit each; one FYI per role or seat created by a seat that is not the prime; the no-role action reads live seats the view already reads, with in-process path checks",
 					"scaling": "on demand; the view's checks grow with live seats, per view only",
 					"component": ["#components/c-suggest", "#components/c-unregistered"]
+				},
+				{
+					"id": "k-6",
+					"what": "Pods.",
+					"rate": "up: one spawn per slot (as `spawn --as`), one canary message per new seat and one bounded wait on its answer; down: `close --stop` per member plus at most two git reads for the freeze; plan, show, set: no launch",
+					"scaling": "per pod command, linear in slots; nothing per tick",
+					"component": [
+						"#components/c-pod-verbs",
+						"#components/c-pod-checks",
+						"#components/c-pod-deliverables"
+					]
+				},
+				{
+					"id": "k-7",
+					"what": "Session history.",
+					"rate": "one indexed event-log read per seat asked for; a past session's context size reads at most 256 KiB from its transcript's tail, so a call reads at most 256 KiB times the sessions it lists (default 20 per seat: 5 MiB); no launch",
+					"scaling": "on demand only; per seat listed",
+					"component": ["#components/c-session-history"]
+				},
+				{
+					"id": "k-8",
+					"what": "Pod activity.",
+					"rate": "indexed event-log reads per member when asked; no launch",
+					"scaling": "on demand only; linear in members",
+					"component": ["#components/c-pod-activity"]
 				}
 			]
 		},
@@ -339,6 +481,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "PRD 007's components join (c-launch-settings, c-first-turn, c-spawn-role, c-unregistered, c-suggest, c-close-stop), with d-8, d-9, k-3 and k-5."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "PRD 008's components join: c-pod-schema and c-pod-verbs (amended for the round-2 rulings), c-pod-checks, c-session-history, c-pod-activity and c-pod-deliverables, with decisions d-10 to d-14 and costs k-6 to k-8 (Jordan's ruling 2026-11-25, round 2; pod dogfood input 2026-11-25; PM rulings 2026-11-25)."
 				}
 			]
 		}

@@ -68,6 +68,18 @@
 				{
 					"id": "n-4",
 					"text": "Shipping, sharing and adopting templates. That is PRD 010; this PRD needs only a definition folder to read."
+				},
+				{
+					"id": "n-5",
+					"text": "Walls between pods. pij does not stop a pod's seats reading earlier runs; a template that wants them not to says so in its seed text (honesty, not enforcement; Jordan's ruling 2026-11-25, round 2, ruling 5)."
+				},
+				{
+					"id": "n-6",
+					"text": "Creating a run's branch or worktree. `pod up` creates neither; a template carries the procedure that does (Jordan's ruling 2026-11-25, round 2, ruling 9)."
+				},
+				{
+					"id": "n-7",
+					"text": "Access control on reading a pod: no observer role, no membership test, no hidden pod (Jordan's ruling 2026-11-25, round 2, ruling 8)."
 				}
 			]
 		},
@@ -77,7 +89,7 @@
 				{
 					"id": "req-01",
 					"title": "A pod groups roles stood up together",
-					"statement": "A pod is a named group of role instances inside one community, with parameters set once for the group. A seat is in one pod or in none: pods are optional, and a seat that several pods rely on, such as a shared expert, belongs to none of them. A fleet may still put its experts in a pod of their own to manage them together. `pij pod show <pod>` shows a pod's members, their types, seats and states, how they feed each other and which outside roles it consults. Several pods from one template can run at the same time.",
+					"statement": "A pod is a named group of role instances inside one community, with parameters set once for the group. A seat is in one pod or in none: pods are optional, and a seat that several pods rely on, such as a shared expert, belongs to none of them. A fleet may still put its experts in a pod of their own to manage them together. `pij pod show <pod>` shows a pod's members, their types, seats and states, how they feed each other and which outside roles it consults. Several pods from one template can run at the same time. The words are \"pod\" (the running group) and \"pod template\" (what it is made from), as in Kubernetes, and no others: there is no \"pod instance\", and no further Kubernetes concepts are brought in.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "planned",
@@ -87,31 +99,31 @@
 				{
 					"id": "req-02",
 					"title": "A pod is defined by a folder",
-					"statement": "A pod is defined by a folder (its template) holding its parameters, its slots, how the slots feed each other, the text each slot is told at start, and the outside roles the pod consults. Every slot is a seat the pod starts. A consulted role is not a member: the pod names it so its seats know who to ask, and the pod never starts, configures or stops it. Each slot names only the parameters it needs.",
+					"statement": "A pod is made from a pod template: a folder holding its parameters, its slots, how the slots feed each other, the text each slot is told at start, the outside roles the pod consults, and its deliverables. Every slot is a seat the pod starts. A consulted role is not a member: the pod names it so its seats know who to ask, and the pod never starts, configures or stops it. Each slot names only the parameters it needs, and may name the tools it needs and a slot whose model it must not share. A consulted role may be marked as needed before `up`. Each deliverable names the role that owns it, its stages and any role it is written back to. Every pod command takes the template's path, so a template can sit in the main repo (a fleet shared as files) or in governance; pij does not enforce where it lives.",
 					"actor": "template author",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "A template with two slots and one consulted role validates, and a slot that names a parameter the template does not declare is refused by name.",
+					"done_when": "A template with two slots, one consulted role and one deliverable validates from a path in the main repo and from one in governance; a slot that names a parameter the template does not declare is refused by name.",
 					"source": "operator, 2026-11-25: parameters change depending on the seat's requirements; operator ruling 2026-11-25: an expert shared between pods is in neither, and not everything needs to be in a pod"
 				},
 				{
 					"id": "req-03",
 					"title": "Plan shows everything and changes nothing",
-					"statement": "`pij pod plan <template> --set <name>=<value>` prints the seats it would start with their models, each seat's first turn, each role the pod consults and whether that role has a live holder, and anything missing. It writes nothing and starts nothing.",
+					"statement": "`pij pod plan <template-path> --set <name>=<value>` prints the seats it would start with their models, each seat's first turn, each role the pod consults and whether that role has a live holder, each deliverable and its owner, and everything `up` would warn about, each with the command that fixes it: a consulted role needed before `up` with no live holder, a reviewing slot on the same model as the slot it reviews, a deliverable whose owner role does not exist, and the tools each slot will be checked for. It writes nothing and starts nothing.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "After `plan`, the governance branch has no new commit and `pij list` is unchanged; a missing required parameter and a consulted role with no live holder are each named in the output.",
+					"done_when": "After `plan`, the governance branch has no new commit and `pij list` is unchanged; a missing required parameter, a consulted role needed before `up` with no live holder, a reviewing slot on its author's model and a deliverable with no owner role are each named with their fix.",
 					"source": "design conversation 2026-11-25: plan, confirm, up"
 				},
 				{
 					"id": "req-04",
 					"title": "Up stands the pod up, together or one seat at a time",
-					"statement": "`pij pod up <template> --set …` creates the pod, starts each slot's seat as `pij spawn --as role:<id>` does (PRD 007), once per slot, and reports each slot as ready or failed. `--no-start` creates the pod only, and each member is then started on its own with `pij spawn --as role:<id> --pod <pod>`.",
+					"statement": "`pij pod up <template-path> --set …` creates the pod, starts each slot's seat as `pij spawn --as role:<id>` does (PRD 007), once per slot, and reports each slot as ready, degraded or failed. It warns and still starts: each warning (req-18, req-19, req-21) is printed with its fix and written to the pod's log. `up` creates no branch and no worktree; a template that needs them carries the procedure that makes them. `--no-start` creates the pod only, and each member is then started on its own with `pij spawn --as role:<id> --pod <pod>`.",
 					"actor": "prime",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "`up` on a three-slot template reports three slots with their seats; with `--no-start` no seat is launched and each member starts individually into the same pod.",
+					"done_when": "`up` on a three-slot template reports three slots with their seats; with a consulted role needed before `up` absent, `up` still starts every slot and the pod's log holds the warning; no branch or worktree is created; with `--no-start` no seat is launched and each member starts individually into the same pod.",
 					"source": "operator, 2026-11-25: the prime might still like to fire them up separately"
 				},
 				{
@@ -136,12 +148,12 @@
 				},
 				{
 					"id": "req-07",
-					"title": "Pods live in governance",
-					"statement": "Type definitions, pod templates and each pod's folder live under `community/` on the governance branch, written only by pij. A pod's folder holds its filled parameters, the seat id that fills each slot, each seat's first turn and a log of what changed. Facts about a seat itself (its working folder, harness session and process) stay in pij's database and are looked up by seat id, not copied into the folder. Each memory note records the id of the seat that wrote it and, for a pod member, its subject.",
+					"title": "Pods live in governance; templates live where their path says",
+					"statement": "Each pod's folder lives under `community/pods/<pod>/` on the governance branch, written only by pij. It holds its filled parameters, the template path and version it came from, the seat id that fills each slot, each seat's first turn and a log of what changed. A pod template is read from the path a command names, in the main repo or in governance. Facts about a seat itself (its working folder, harness sessions and process) stay in pij's database and are looked up by seat id, not copied into the folder. Each memory note records the id of the seat that wrote it and, for a pod member, its subject.",
 					"actor": "operator",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "After `up`, the governance branch has the pod's folder with those four things and no copied seat paths; `pij pod show` displays each member's folder and state from the database; a memory note written by a member names that seat's id; and a hand edit to a pod file makes the next pod command refuse and name the path.",
+					"done_when": "After `up`, the governance branch has the pod's folder with those things and no copied seat paths; `pij pod show` displays each member's folder and state from the database; a memory note written by a member names that seat's id; and a hand edit to a pod file makes the next pod command refuse and name the path.",
 					"source": "operator, 2026-11-25: governance is HR for the team; use the database for seat facts and tie memory to the seat id"
 				},
 				{
@@ -157,11 +169,11 @@
 				{
 					"id": "req-09",
 					"title": "A pod costs one launch per new seat",
-					"statement": "`up` launches one process per slot and nothing for a role the pod only consults. `plan`, `show` and `set` launch no seat. No pod command adds a loop, poll or timer.",
+					"statement": "`up` launches one process per slot and nothing for a role the pod only consults. `plan`, `show`, `set`, `activity` and `sessions` launch no seat. The tool canary is one message to each new seat and one bounded wait on its answer (a subscription and a deadline, no poll). `down` adds at most two git reads in the pod's work folder for the freeze (req-14). No pod command adds a loop, poll or timer.",
 					"actor": "operator",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "`pij-rs --json ping | jq .data.spawns` before and after `up` on a template with two slots and one consulted role differs by two spawns' worth; before and after `plan` it does not move.",
+					"done_when": "`pij-rs --json ping | jq .data.spawns` before and after `up` on a template with two slots and one consulted role differs by two spawns' worth plus the writer commits; before and after `plan`, `show`, `activity` and `sessions` it does not move.",
 					"source": "AGENTS.md: resource cost is a correctness property"
 				},
 				{
@@ -187,12 +199,102 @@
 				{
 					"id": "req-12",
 					"title": "Memory is kept per subject",
-					"statement": "A pod's subject (for example the customer or the workstream it is for) is one of its parameters, and a member's memory is filed under its role and that subject. Two pods from one template for different subjects never read or write each other's memory, and a later pod for the same subject starts from what the earlier one left. A role held outside any pod keeps its memory at the role, as today.",
+					"statement": "A pod's subject (for example the customer or the workstream it is for) is one of its parameters, and a member's memory is filed under its role and that subject. Two pods from one template for different subjects never read or write each other's memory, and a later pod for the same subject starts from what the earlier one left. A role held outside any pod keeps its memory at the role, as today. A new pod from the same template can start without reading earlier pods' seat memory: `pij pod up … --fresh` leaves the memory index out of every first turn and says so in each, while what the new pod's members write is still filed for that subject.",
 					"actor": "role holder",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "With two pods from one template for subjects A and B, a note written by A's member is listed for A and absent for B; a new pod for A lists it in its member's first turn.",
+					"done_when": "With two pods from one template for subjects A and B, a note written by A's member is listed for A and absent for B; a new pod for A lists it in its member's first turn. A pod started with `--fresh` for subject A lists no earlier note in any first turn, and a note its member writes is filed for A.",
 					"source": "operator ruling 2026-11-25: pods for different subjects do not share role memory; each subject gets its own"
+				},
+				{
+					"id": "req-13",
+					"title": "pij keeps every harness session a seat has used",
+					"statement": "`pij sessions --history` lists, for each seat, every harness session it has used, not only the current one: its start and end, harness, model, session id, transcript location, the context size at its end and why it changed (spawn, revive, compact or rebind). `pij pod sessions <pod>` lists them per member, so cost per pod needs no manual matching. It is read back from what pij already records (the registry's facts on the event log), with no new storage. A past session's context size is read from its transcript's tail or the harness's own usage record, never more than a fixed byte cap per session, and shows unknown when the transcript is gone or the figure is not in the tail. It makes visible what a single current row hides: one seat went through three sessions and three processes in nine seconds, a rebind storm no one saw.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "For a seat spawned, compacted, revived and rebound, `pij sessions --history` lists each session with its start, end, harness, model, transcript location and why it changed; a session whose transcript is gone shows its context as unknown; `pij pod sessions <pod>` lists each member's sessions; and the read launches nothing.",
+					"source": "Jordan's ruling 2026-11-25, round 2, rulings 3 and 10; PM ruling 2026-11-25: read the event log, no migration, a byte cap on transcript reads"
+				},
+				{
+					"id": "req-14",
+					"title": "Pod down records the freeze",
+					"statement": "When a pod's work is on a git branch (a pod parameter names its work folder), `pij pod down` records that branch's name and head commit in the pod's log, and warns that the run is unfrozen when the folder has uncommitted work. It is a warning only: down never refuses on it.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "`pod down` on a pod whose work folder has one commit and no changes records that commit; with an uncommitted file it records the commit, warns that the run is unfrozen naming the folder, and still takes the pod down.",
+					"source": "Jordan's ruling 2026-11-25, round 2, ruling 6"
+				},
+				{
+					"id": "req-15",
+					"title": "Any seat can read a pod's activity",
+					"statement": "`pij pod activity <pod>` shows, read only, what the pod did: its members' state changes, outputs, sends between members and to consulted roles, and where each member's transcript is. It is open to every seat: there is no observer role, no membership test and no way to hide a pod.",
+					"actor": "any seat",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A seat that is not in the pod and holds no role in it runs `pij pod activity <pod>` and sees each member's state changes, outputs and sends in order, with each transcript's location; the read launches nothing and writes nothing.",
+					"source": "Jordan's ruling 2026-11-25, round 2, ruling 8"
+				},
+				{
+					"id": "req-16",
+					"title": "A deliverable is finished in stages",
+					"statement": "A pod's deliverable can be recorded in stages: the first stage is recorded when the members it needs are done, while a member that is late (a slow lane) keeps working; its work is folded in as a later stage. `pij pod show` lists each deliverable's stages, which are recorded and which member each open stage waits on. A late member never blocks the first stage.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "In a pod with three members where one is still working, the first stage of the deliverable is recorded from the other two, `pij pod show` shows the second stage waiting on the late member, and recording the second stage later completes the deliverable.",
+					"source": "pod dogfood input 2026-11-25: lanes finish at different times, so a pod's step completes in passes"
+				},
+				{
+					"id": "req-17",
+					"title": "A pod writes back to a seat that outlives it",
+					"statement": "A template can name, for a deliverable, a role its result is written back to: a keep-open member or a consulted role that keeps the knowledge after the pod is gone. When the stage is recorded, pij sends the result to that role as a request and logs it in the pod's log. The pod can go down while the write-back is open; the request stays with that role.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "When a deliverable's stage is recorded, the role it names receives one request carrying it, the pod's log names the request, and taking the pod down leaves the request open with that role.",
+					"source": "pod dogfood input 2026-11-25: a pod proposes changes that a keep-open knowledge seat applies"
+				},
+				{
+					"id": "req-18",
+					"title": "Consulted roles a pod needs are ready before it starts",
+					"statement": "A consulted role can be marked as needed before `up`. `plan` names each one with no live holder and the command that starts it (`pij spawn --as role:<id>`); `up` warns, still starts, and logs it. pij never starts, configures or stops a consulted role.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "With a consulted role needed before `up` and no live holder, `plan` names it with the spawn command, and `up` starts every slot, warns and logs it; the consulted role is not started.",
+					"source": "pod dogfood input 2026-11-25: a consulted expert outside the pod is a precondition; PM ruling 2026-11-25: warn, never refuse"
+				},
+				{
+					"id": "req-19",
+					"title": "Each slot's tools are checked when the pod starts",
+					"statement": "A slot can name the tools its seat needs. After `up` starts a slot's seat, pij sends it one canary asking it to confirm each tool, and waits a bounded time for the answer. A slot that does not confirm every tool is reported degraded, with the missing tools and the command that fixes it, in `up`'s report, the pod's log and `pij pod show`; it is never silently skipped. pij hands a degraded slot no pod work of its own: that is a brake on pij's own dispatch (it only ever sends less), not a gate on the prime or anyone else, who may still send it work.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A slot whose seat lacks one named tool is shown degraded with that tool and its fix in `up`, the log and `show`; pij sends it no pod work; a message the prime sends it is delivered.",
+					"source": "pod dogfood input 2026-11-25: a researcher seat started without its tools; PM ruling 2026-11-25 on the brake"
+				},
+				{
+					"id": "req-20",
+					"title": "Every deliverable has an owner role",
+					"statement": "Each deliverable in a pod template names the role that owns it. `plan` names a deliverable whose owner role does not exist in the community, with the command that adds it; `up` warns and logs it. `pij pod show` lists each deliverable with its owner and that role's live holder.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A template whose deliverable names an owner role that does not exist plans with that named and the add command, and `up` warns and logs it; `show` lists each deliverable with its owner.",
+					"source": "pod dogfood input 2026-11-25: a deliverable had no owner until a project-manager role was added"
+				},
+				{
+					"id": "req-21",
+					"title": "A reviewing slot runs on a different model",
+					"statement": "A slot can name another slot whose model it must not share (a reviewer and the author it reviews). `plan` and `up` warn when the two would run on the same model, naming both and how to change one; `up` still starts and logs it.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "planned",
+					"done_when": "A template whose reviewer slot and author slot resolve to the same model plans with a warning naming both, and `up` starts both and logs the warning.",
+					"source": "pod dogfood input 2026-11-25: a reviewer on a different model blocked over-claims in two trials"
 				}
 			]
 		},
@@ -226,6 +328,56 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Owner moves from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010 (operator's approval, 2026-11-25)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Why: the principle that every pod check informs and warns, never gates (Jordan's ruling 2026-11-25, round 2)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-01: the names are pod and pod template only (Jordan's ruling 2026-11-25, round 2, ruling 7)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-02: a pod command takes the template's path and pij does not enforce where it lives (Jordan's ruling 2026-11-25, round 2, ruling 1); the template also names slot tools, a model a slot must not share, consulted roles needed before up, and deliverables with their owner, stages and write-back (pod dogfood input 2026-11-25)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-03: plan names each warning `up` would give, with its fix (pod dogfood input 2026-11-25; Jordan's ruling 2026-11-25, round 2)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-04: up warns and still starts, logging each warning (pod dogfood input 2026-11-25, PM ruling 2026-11-25 on the principle); up creates no branch or worktree (Jordan's ruling 2026-11-25, round 2, ruling 9)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-07: templates are read from the path a command names; pods' folders stay in governance (Jordan's ruling 2026-11-25, round 2, ruling 1)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-09: the costs of the canary, the freeze record, the activity view and session history are stated (pod dogfood input 2026-11-25; Jordan's ruling 2026-11-25, round 2)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-12: a new pod can start without earlier pods' memory (Jordan's ruling 2026-11-25, round 2, ruling 4)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-13 to req-21 added: session history (Jordan's ruling 2026-11-25, round 2, rulings 3 and 10), the freeze record at down (ruling 6), the activity view open to every seat (ruling 8), and, from the pod dogfood inputs, staged deliverables, write-back to a seat that outlives the pod, consulted roles needed before up, the per-slot tool canary, an owner role per deliverable and a reviewing slot on a different model. Every check warns; none refuses."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Non-goals n-5 to n-7: no walls between pods, no branches or worktrees from up, no access control on reading a pod (Jordan's ruling 2026-11-25, round 2, rulings 5, 8 and 9)."
 				}
 			]
 		}
