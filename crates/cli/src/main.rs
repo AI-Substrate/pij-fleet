@@ -6417,6 +6417,9 @@ PEC notice";
                 "claims",
                 "delivered",
                 "requests",
+                // PRD 009 (plan 235): the bundled docs, no daemon.
+                "agents-start-here",
+                "docs",
                 "list",
                 "state",
                 "tail"
