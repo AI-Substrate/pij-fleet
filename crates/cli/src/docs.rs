@@ -1,42 +1,213 @@
-//! PRD 009 (plan 235): pij's documentation, compiled into the binary.
+//! PRD 009 (plans 235, 239, 240): pij's documentation, compiled into the binary.
 //!
-//! Each page is a markdown file under `docs/cli/` in the pij repository; its id
-//! is its path there without `.md` (so `types/knowledge` is
-//! `docs/cli/types/knowledge.md`). The bytes are fixed at build time, so the
-//! pages a seat reads match the pij it runs. Reading one starts nothing and
-//! contacts no daemon: everything here is pure.
+//! A page is either a markdown file in the pij repository (most under
+//! `docs/cli/`; `concepts` is the skill's own page) or generated from the
+//! daemon's type catalog (`types`, `types/<type>`). Every source is fixed at
+//! build time, so the pages a seat reads match the pij it runs. Reading one
+//! starts nothing and contacts no daemon: everything here is pure.
 
 use std::fmt::Write as _;
+use std::sync::OnceLock;
 
 use pij_core::model::{Envelope, ErrorKind};
+use pij_daemon::community::types::{self, TypeDef};
 use serde_json::{Value, json};
+
+/// What a page is built from, as compiled in.
+pub enum Source {
+    /// A file whose text is the page, byte for byte.
+    Text {
+        /// From the repository root.
+        path: String,
+        /// The file as built.
+        text: &'static str,
+    },
+    /// A JSON document a page is generated from, as parsed.
+    Document {
+        /// From the repository root.
+        path: String,
+        /// The document as built.
+        document: &'static Value,
+    },
+}
+
+impl Source {
+    /// The source's file, from the repository root.
+    pub fn path(&self) -> &str {
+        match self {
+            Source::Text { path, .. } | Source::Document { path, .. } => path,
+        }
+    }
+
+    fn json(&self) -> Value {
+        match self {
+            Source::Text { path, text } => json!({ "path": path, "text": text }),
+            Source::Document { path, document } => json!({ "path": path, "document": document }),
+        }
+    }
+}
 
 /// One bundled page.
 pub struct Page {
-    /// The path under `docs/cli/` without `.md`.
-    pub id: &'static str,
-    /// The page's file, from the repository root.
-    pub source: &'static str,
-    /// The page's markdown, as built.
-    pub body: &'static str,
+    /// Its id: `agents-start-here`, `types/knowledge`.
+    pub id: String,
+    /// The page's markdown.
+    pub body: String,
+    /// What it is built from; the first is its primary file.
+    pub sources: Vec<Source>,
 }
 
-/// A page whose file is `docs/cli/<id>.md`.
-macro_rules! cli_page {
-    ($id:literal) => {
-        Page {
-            id: $id,
-            source: concat!("docs/cli/", $id, ".md"),
-            body: include_str!(concat!("../../../docs/cli/", $id, ".md")),
-        }
+fn file_page(id: &str, path: &str, text: &'static str) -> Page {
+    Page {
+        id: id.to_string(),
+        body: text.to_string(),
+        sources: vec![Source::Text {
+            path: path.to_string(),
+            text,
+        }],
+    }
+}
+
+/// A page that is one repository file, given from the repository root.
+macro_rules! file_page {
+    ($id:literal, $path:literal) => {
+        file_page($id, $path, include_str!(concat!("../../../", $path)))
     };
+}
+
+fn type_path(def: &TypeDef) -> String {
+    format!("templates/types/{}/v{}/type.dd.json", def.id, def.version)
+}
+
+fn seed_path(def: &TypeDef) -> String {
+    format!("templates/types/{}/v{}/seed.md", def.id, def.version)
+}
+
+fn text_of(value: &Value) -> &str {
+    value.as_str().unwrap_or("-")
+}
+
+/// `types`: the ten, one line each, from the catalog.
+fn types_page() -> Page {
+    let mut body = String::from(
+        "# Seat types\n\npij's ten seat types: how a seat of each lives, one line each. Every role names exactly one.\n\n## The ten\n\n| type | what it is | for a position of authority |\n|---|---|---|\n",
+    );
+    for row in types::listing()
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let _ = writeln!(
+            body,
+            "| `{}` | {} | {} |",
+            text_of(&row["id"]),
+            text_of(&row["line"]),
+            if row["authority"] == true {
+                "yes"
+            } else {
+                "no"
+            },
+        );
+    }
+    body.push_str(
+        "\n## Type, role and position\n\n\
+- A role names its type (`pij directory add --type <type>`); a seat's TYPE in `pij list` is the type of the roles it holds.\n\
+- A type is a label, never authority. Authority comes from position: the prime designation and the seat roles `pm` and `pa`. The three types marked above describe the seats that hold those positions and grant nothing themselves.\n\
+- Types are pij's fixed set: a repo builds any role it needs on one, and changes a type's default rules per role with a reason.\n\
+\n## Read one\n\n\
+`pij docs get types/<type>` prints a type's purpose, lifecycle, what it keeps, what a role of it must give, its rules and its shipped seed. `pij directory types <type> --seed` shows the seed pij would use in this repo. To build a role on a type: `pij docs get building-a-role`.\n",
+    );
+    Page {
+        id: "types".to_string(),
+        body,
+        sources: types::all()
+            .iter()
+            .map(|def| Source::Document {
+                path: type_path(def),
+                document: &def.document,
+            })
+            .collect(),
+    }
+}
+
+/// `types/<type>`: one type's whole definition and its shipped seed.
+fn type_page(def: &'static TypeDef) -> Page {
+    let show = def.show();
+    let mut body = format!(
+        "# Type: {}\n\n{}\n\n{}\n\n## Purpose\n\n{}\n\n## Lifecycle\n\n{}\n\n## Keeps\n\n{}\n\n## A role of this type must give\n\n",
+        def.id,
+        def.line(),
+        if def.authority() {
+            "This type describes a seat that holds a position of authority. The type itself grants nothing: authority comes from the position (`pij docs get concepts#a-type-is-a-label-never-authority`)."
+        } else {
+            "Carries no authority."
+        },
+        text_of(&show["purpose"]),
+        text_of(&show["lifecycle"]),
+        text_of(&show["keeps"]),
+    );
+    if def.requires.is_empty() {
+        body.push_str("Nothing beyond any role's own fields.\n");
+    }
+    for field in &def.requires {
+        let _ = writeln!(body, "- `{field}`: `--{}`", field.replace('_', "-"));
+    }
+    body.push_str("\n## Rules\n\n");
+    for rule in &def.rules {
+        let _ = writeln!(
+            body,
+            "- `{}` ({}): {}",
+            rule.id,
+            if rule.fixed { "fixed" } else { "default" },
+            rule.text
+        );
+    }
+    let _ = write!(
+        body,
+        "\nA fixed rule holds for every role of this type. A role may change a default rule with a reason: `pij directory edit <role> --why <text> --type-change <rule>=<why>`.\n\n\
+## Seed\n\n\
+What a seat of this type is told at start, as pij ships it (version {}). A repo may keep its own: `pij directory types {} --seed` shows the one pij would use there.\n\n\
+```text\n{}\n```\n\n\
+## Source\n\n`{}` and `{}`.\n",
+        def.version,
+        def.id,
+        def.seed.trim_end(),
+        type_path(def),
+        seed_path(def),
+    );
+    Page {
+        id: format!("types/{}", def.id),
+        body,
+        sources: vec![
+            Source::Document {
+                path: type_path(def),
+                document: &def.document,
+            },
+            Source::Text {
+                path: seed_path(def),
+                text: def.seed,
+            },
+        ],
+    }
 }
 
 /// The start page `pij agents-start-here` prints.
 pub const START_PAGE: &str = "agents-start-here";
 
-/// Every bundled page. A test holds this equal to the files in `docs/cli/`.
-pub const PAGES: &[Page] = &[cli_page!("agents-start-here")];
+/// Every bundled page, in the order `pij docs list` shows them.
+pub fn pages() -> &'static [Page] {
+    static PAGES: OnceLock<Vec<Page>> = OnceLock::new();
+    PAGES.get_or_init(|| {
+        let mut pages = vec![
+            file_page!("agents-start-here", "docs/cli/agents-start-here.md"),
+            file_page!("concepts", "skills/pij/references/community/concepts.md"),
+            types_page(),
+        ];
+        pages.extend(types::all().iter().map(type_page));
+        pages.push(file_page!("building-a-role", "docs/cli/building-a-role.md"));
+        pages
+    })
+}
 
 /// `pij docs --help`, which needs nothing.
 pub const HELP: &str = "\
@@ -72,7 +243,7 @@ pub fn summary(body: &str) -> String {
 }
 
 fn page(id: &str) -> Option<&'static Page> {
-    PAGES.iter().find(|page| page.id == id)
+    pages().iter().find(|page| page.id == id)
 }
 
 /// A heading line's level and text, outside fenced code.
@@ -204,7 +375,7 @@ fn get(query: &str, json: bool) -> Outcome {
         None => (query, None),
     };
     let Some(page) = page(id) else {
-        let hint = nearest(id, PAGES.iter().map(|page| page.id))
+        let hint = nearest(id, pages().iter().map(|page| page.id.as_str()))
             .map(|near| format!("; nearest: `pij docs get {near}`"))
             .unwrap_or_default();
         return refused(
@@ -214,8 +385,8 @@ fn get(query: &str, json: bool) -> Outcome {
         );
     };
     let text = match heading {
-        None => page.body.to_string(),
-        Some(heading) => match section(page.body, heading) {
+        None => page.body.clone(),
+        Some(heading) => match section(&page.body, heading) {
             Ok(text) => text,
             Err(slugs) => {
                 let hint = nearest(heading, slugs.iter().map(String::as_str))
@@ -229,36 +400,44 @@ fn get(query: &str, json: bool) -> Outcome {
             }
         },
     };
-    let data = json!({ "page": id, "heading": heading, "title": title(page.body), "text": text });
+    let sources: Vec<Value> = page.sources.iter().map(Source::json).collect();
+    let data = json!({
+        "page": id,
+        "heading": heading,
+        "title": title(&page.body),
+        "text": text,
+        "sources": sources,
+    });
     printed(command, text, data, json)
 }
 
 fn list(json: bool) -> Outcome {
-    let width = PAGES.iter().map(|page| page.id.len()).max().unwrap_or(0);
+    let width = pages().iter().map(|page| page.id.len()).max().unwrap_or(0);
     let mut text = String::from("pij docs: the pages bundled with this pij\n\n");
-    for page in PAGES {
+    for page in pages() {
         let _ = write!(
             text,
             "  {:width$}  {}\n  {:width$}  {}\n",
             page.id,
-            title(page.body),
+            title(&page.body),
             "",
-            summary(page.body)
+            summary(&page.body)
         );
     }
     text.push_str("\nRun `pij docs get <page>` or `pij docs get <page>#<heading>` to print one.\n");
-    let pages: Vec<Value> = PAGES
+    let listed: Vec<Value> = pages()
         .iter()
         .map(|page| {
             json!({
                 "page": page.id,
-                "title": title(page.body),
-                "summary": summary(page.body),
-                "source": page.source,
+                "title": title(&page.body),
+                "summary": summary(&page.body),
+                "source": page.sources.first().map(Source::path),
+                "sources": page.sources.iter().map(Source::path).collect::<Vec<_>>(),
             })
         })
         .collect();
-    printed("pij docs list", text, json!({ "pages": pages }), json)
+    printed("pij docs list", text, json!({ "pages": listed }), json)
 }
 
 /// `pij <verb> <args>` for `verb` `docs` or `agents-start-here`. `json` is the
@@ -313,40 +492,102 @@ mod tests {
     const SAMPLE: &str = "# Sample\n\nOne line\nsummary.\n\n## First part\n\nalpha\n\n### Nested bit\n\nbeta\n\n```\n## not a heading\n```\n\n## Second part\n\ngamma\n";
 
     #[test]
-    fn the_table_is_exactly_the_files_in_docs_cli() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/cli");
-        fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<String>) {
+    fn every_source_is_its_file_and_every_docs_cli_page_is_bundled() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        fn walk(dir: &std::path::Path, repo: &std::path::Path, out: &mut Vec<String>) {
             for entry in std::fs::read_dir(dir).expect("read docs/cli") {
                 let path = entry.expect("entry").path();
                 if path.is_dir() {
-                    walk(&path, root, out);
+                    walk(&path, repo, out);
                 } else if path.extension().is_some_and(|ext| ext == "md") {
-                    let id = path.strip_prefix(root).unwrap().with_extension("");
-                    out.push(id.to_string_lossy().replace('\\', "/"));
+                    let relative = path.strip_prefix(repo).unwrap();
+                    out.push(relative.to_string_lossy().replace('\\', "/"));
                 }
             }
         }
         let mut files = Vec::new();
-        walk(&root, &root, &mut files);
-        files.sort();
-        let mut table: Vec<String> = PAGES.iter().map(|page| page.id.to_string()).collect();
-        table.sort();
-        assert_eq!(
-            table, files,
-            "PAGES in docs.rs must list every docs/cli/*.md"
-        );
-        let repo = root.join("../..");
-        for page in PAGES {
-            let file = std::fs::read_to_string(repo.join(page.source)).unwrap();
-            assert_eq!(page.body, file, "{} differs from {}", page.id, page.source);
+        walk(&repo.join("docs/cli"), &repo, &mut files);
+        let sources: Vec<&str> = pages()
+            .iter()
+            .flat_map(|page| page.sources.iter().map(Source::path))
+            .collect();
+        for file in &files {
+            assert!(sources.contains(&file.as_str()), "{file} is not bundled");
+        }
+        for page in pages() {
+            assert!(!page.sources.is_empty(), "{} has no source", page.id);
+            for source in &page.sources {
+                let file = std::fs::read_to_string(repo.join(source.path()))
+                    .unwrap_or_else(|_| panic!("{}: {} is missing", page.id, source.path()));
+                match source {
+                    Source::Text { text, .. } => assert_eq!(*text, file, "{}", source.path()),
+                    Source::Document { document, .. } => assert_eq!(
+                        **document,
+                        serde_json::from_str::<Value>(&file).unwrap(),
+                        "{}",
+                        source.path()
+                    ),
+                }
+            }
             assert!(
-                !title(page.body).is_empty(),
+                !title(&page.body).is_empty(),
                 "{} has no `# ` title",
                 page.id
             );
-            assert!(!summary(page.body).is_empty(), "{} has no summary", page.id);
+            assert!(
+                !summary(&page.body).is_empty(),
+                "{} has no summary",
+                page.id
+            );
         }
+        let ids: Vec<&str> = pages().iter().map(|page| page.id.as_str()).collect();
+        let mut unique = ids.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len(), "page ids are unique");
         assert!(page(START_PAGE).is_some());
+    }
+
+    /// PRD 009 req-05: the first pages, and concepts defines every term.
+    #[test]
+    fn the_first_pages_are_bundled_and_concepts_defines_the_seven_terms() {
+        for id in ["agents-start-here", "concepts", "types", "building-a-role"] {
+            assert!(page(id).is_some(), "{id}");
+        }
+        for kind in types::TYPES {
+            assert!(page(&format!("types/{kind}")).is_some(), "types/{kind}");
+        }
+        let concepts = &page("concepts").unwrap().body;
+        for term in [
+            "seat", "role", "type", "position", "pod", "seed", "template",
+        ] {
+            assert!(
+                concepts.contains(&format!("| {term} |")),
+                "concepts defines {term}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_type_page_is_its_definition_and_seed() {
+        let def = types::get("knowledge").unwrap();
+        let body = &page("types/knowledge").unwrap().body;
+        assert_eq!(title(body), "Type: knowledge");
+        assert_eq!(summary(body), def.line());
+        for rule in &def.rules {
+            assert!(body.contains(&format!("- `{}` (fixed): {}", rule.id, rule.text)));
+        }
+        assert!(body.contains("- `keeps`: `--keeps`"));
+        assert!(body.contains(def.seed.trim_end()));
+        assert!(body.contains("Carries no authority."));
+        let prime = &page("types/prime").unwrap().body;
+        assert!(prime.contains("The type itself grants nothing"));
+        let rules = section(body, "rules").unwrap();
+        assert!(rules.starts_with("## Rules\n") && !rules.contains("## Seed"));
+        let overview = &page("types").unwrap().body;
+        for def in types::all() {
+            assert!(overview.contains(&format!("| `{}` | {} |", def.id, def.line())));
+        }
     }
 
     #[test]
@@ -391,7 +632,7 @@ mod tests {
     fn the_start_page_prints_with_no_daemon() {
         let out = run_words("agents-start-here", &[]);
         assert_eq!(out.code, 0);
-        assert_eq!(out.stdout, page(START_PAGE).unwrap().body);
+        assert_eq!(out.stdout, page(START_PAGE).unwrap().body.as_str());
         let json: Value =
             serde_json::from_str(&run_words("agents-start-here", &["--json"]).stdout).unwrap();
         assert_eq!(json["ok"], true);
@@ -403,13 +644,28 @@ mod tests {
     fn list_names_every_page() {
         let out = run_words("docs", &["list"]);
         assert_eq!(out.code, 0);
-        for page in PAGES {
-            assert!(out.stdout.contains(page.id) && out.stdout.contains(title(page.body)));
+        for page in pages() {
+            assert!(out.stdout.contains(&page.id) && out.stdout.contains(title(&page.body)));
         }
         let json: Value =
             serde_json::from_str(&run_words("docs", &["list", "--json"]).stdout).unwrap();
-        assert_eq!(json["data"]["pages"].as_array().unwrap().len(), PAGES.len());
-        assert_eq!(json["data"]["pages"][0]["source"], PAGES[0].source);
+        assert_eq!(
+            json["data"]["pages"].as_array().unwrap().len(),
+            pages().len()
+        );
+        assert_eq!(
+            json["data"]["pages"][0]["source"],
+            "docs/cli/agents-start-here.md"
+        );
+        let get: Value =
+            serde_json::from_str(&run_words("docs", &["get", "types/coder", "--json"]).stdout)
+                .unwrap();
+        assert_eq!(
+            get["data"]["sources"][0]["path"],
+            "templates/types/coder/v1/type.dd.json"
+        );
+        assert!(get["data"]["sources"][0]["document"].is_object());
+        assert!(get["data"]["sources"][1]["text"].is_string());
     }
 
     #[test]
@@ -417,7 +673,7 @@ mod tests {
         let whole = run_words("docs", &["get", START_PAGE]);
         assert_eq!(
             (whole.code, whole.stdout.as_str()),
-            (0, page(START_PAGE).unwrap().body)
+            (0, page(START_PAGE).unwrap().body.as_str())
         );
         let part = run_words("docs", &["get", "agents-start-here#who-you-are"]);
         assert_eq!(part.code, 0);

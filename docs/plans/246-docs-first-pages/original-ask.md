@@ -1,0 +1,3 @@
+# Original ask
+
+From pm-001, 2026-11-25, after PRD 006 merged (#344): workstream 009 step s03 (PRD 009 req-05). The type pages are generated from the daemon's type catalog (`pij_daemon::community::types`: `TYPES`, `all()`, `get()`, `listing()`, `TypeDef::show()`; never `seed()`, which reads governance), with no hand-written copies. The concepts page is the skill's own `skills/pij/references/community/concepts.md`, written here and bundled, and explains that a type is a label, never authority. building-a-role is a `docs/cli` page. The pods page waits on workstream 008 step s02. The bundled-docs check covers the generated pages.

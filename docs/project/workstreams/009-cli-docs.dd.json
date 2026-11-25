@@ -48,13 +48,14 @@
 				{
 					"id": "s03",
 					"title": "The first pages",
-					"state": "planned",
+					"state": "in-progress",
 					"delivers": ["../prds/009-cli-docs.dd.json#requirements/req-05"],
 					"builds": [],
-					"depends_on": ["#steps/s01"],
+					"depends_on": ["#steps/s01", "006-seat-types.dd.json#steps/s02"],
 					"needs": ["role:docs-system", "role:reviewer"],
 					"done_when": "The start page, concepts, one page per type, pods and building a role are listed and read.",
-					"note": "Also waits on workstream 006 step s02 (the types); link it here when workstream 006 is on main. The pods page waits on workstream 008 step s02; the other pages do not."
+					"note": "The pods page waits on workstream 008 step s02; the other pages do not. The concepts page is skills/pij/references/community/concepts.md (blueprint 005 c-docs), written here so it has one writer.",
+					"plan": "docs/plans/246-docs-first-pages"
 				},
 				{
 					"id": "s04",

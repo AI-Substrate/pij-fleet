@@ -116,7 +116,7 @@
 					"statement": "The first set of pages is: the start page; a concepts page covering seat, role, type, position, pod, seed and template, and how governance (the team) differs from the repo (the work), with one build fleet and one operating fleet as examples; one page per seat type; pods; and how to build a role on a type.",
 					"actor": "any seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "`pij docs list` names each of those pages, and the concepts page defines every one of the seven terms.",
 					"source": "operator, 2026-11-25: we don't document the fleet and its semantics and constructs very well"
 				},
