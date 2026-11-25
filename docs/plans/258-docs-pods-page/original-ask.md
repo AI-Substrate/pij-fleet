@@ -1,0 +1,3 @@
+# Original ask
+
+From pm-001, 2026-11-25, after PRD 008 merged (#346, 387362db): the last PRD 009 item, the pods page (req-05). Describe what is on main now: pod plan, up, show, confirm, set, down, add, release, activity and stage; sessions --history and pod sessions; templates named by path; warnings that name their fixes; the degraded-slot brake; E-RS-POD-EXISTS and E-RS-POD-MEMBER; the freeze at down; keep-open members. Template procedures and shipped templates arrive with PRD 010 (#347): mark them coming. Add pointers where 009 calls for them, keep the docs bundle and its check green, mark req-05 shipped and the workstream step complete, and prove it live with `pij docs get` against the deployed daemon.

@@ -71,3 +71,5 @@ Start a new seat in the role. pij assembles its first turn (the type's seed and 
     pij directory assign <role> <seat> --why "<why>"
 
 `pij directory` then shows the role, its type and its holder. Roles written before types: `pij directory retype` proposes a type for each, and `--apply --why <text>` writes them.
+
+To start several roles together, with shared parameters, as one pod: `pij docs get pods`.

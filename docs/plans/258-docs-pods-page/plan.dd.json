@@ -1,0 +1,102 @@
+{
+	"dd": {
+		"schema": "builder/plan"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Docs in the pij CLI: the pods page",
+				"slug": "docs-pods-page",
+				"ordinal": 258,
+				"status": "ready",
+				"summary": "PRD 009 workstream step s03, its last page (req-05). `pij docs get pods` explains pods as PRD 008 shipped them, and the concepts page, the start page and building-a-role point at it.",
+				"backpressure": "assets/backpressure.dd.json#rows"
+			}
+		},
+		{
+			"name": "summary",
+			"value": "PRD 008 (#346) shipped pods: `pij pod plan|up|show|confirm|set|down|add|release|sessions|activity|stage` and `pij sessions --history`. `docs/cli/pods.md` describes them as main ships them: a template named by its path, plan's warnings that each name a fix and never refuse, up and its tool canary, the degraded-slot brake, `E-RS-POD-EXISTS`, `E-RS-POD-MEMBER`, the secret refusal on `--set`, stages and write-back, the freeze at down, keep-open members and revival. Template procedures and shipped pod templates (PRD 010) are in a Coming section. The page is bundled as `pods` in `pages()`; concepts drops pods from its Coming section, defines the pod term as shipped and adds pod records and subject memory; the start page, building-a-role and the community route point at it."
+		},
+		{
+			"name": "goals",
+			"value": [
+				"A seat reading `pij docs get pods` can plan, start, follow, change and take down a pod with what this pij ships.",
+				"Nothing on the page or in concepts describes PRD 010 as shipped."
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				"A page generated from a pod-template catalog: PRD 008 compiles none in; templates are files a command names.",
+				"Template procedures and shipped templates (PRD 010).",
+				"Any change to pod behaviour or refusals."
+			]
+		},
+		{
+			"name": "acceptance_criteria",
+			"value": [
+				{
+					"id": "ac-0001",
+					"claim": "`pij docs list` names `pods`, and `pij docs get pods` prints docs/cli/pods.md byte-for-byte; the docs-bundle check passes on the rebuilt binary.",
+					"state": "checked",
+					"pressure": "assets/backpressure.dd.json#rows/bp-0001"
+				},
+				{
+					"id": "ac-0002",
+					"claim": "The page covers each verb in `pij pod --help` and `pij sessions --history`, templates named by path, warnings with fixes, the degraded-slot brake, `E-RS-POD-EXISTS`, `E-RS-POD-MEMBER`, the freeze at down and keep-open members, each as main ships it, and marks template procedures and shipped templates as coming (PRD 010).",
+					"state": "checked",
+					"pressure": "assets/backpressure.dd.json#rows/bp-0002"
+				},
+				{
+					"id": "ac-0003",
+					"claim": "Concepts no longer calls pods planned; concepts, the start page, building-a-role and the community route point at `pij docs get pods`; PRD 009 req-05 is shipped and workstream 009 s03 complete, depending on 008 s02.",
+					"state": "checked",
+					"pressure": "assets/backpressure.dd.json#rows/bp-0003"
+				}
+			]
+		},
+		{
+			"name": "phases",
+			"value": [
+				{
+					"id": "ph-0001",
+					"title": "Pods page shipped",
+					"brief": "One PR: the page, its bundling, the pointers and the states.",
+					"state": "checked",
+					"tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+				}
+			]
+		},
+		{
+			"name": "tasks",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": {}
+		},
+		{
+			"name": "research_context",
+			"value": "Sources for the page: `pij pod --help` from the deployed daemon (387362db), the Pods section of docs/how/pij-rs-api.md (PRD 008, plans 247-252), the pij/pod-template schema (.dd/schemas/pij/pod-template/schema.json) and crates/daemon/src/http/pod.rs (flags, refusal codes, the `subject` and `work-folder` parameters)."
+		},
+		{
+			"name": "risks",
+			"value": [
+				{
+					"risk": "The page drifts from the pod verbs as PRD 010 extends them.",
+					"likelihood": "Medium",
+					"impact": "Low",
+					"mitigation": "The Coming section names what PRD 010 adds; PRD 010's PR updates it, as this PR updates concepts for PRD 008."
+				}
+			]
+		},
+		{
+			"name": "execution_guardrails",
+			"value": [
+				"Cost: none. A bundled page is a compiled-in string; no loop, poll, timer, hook or launch, nothing per seat or per tick.",
+				"Pages are public-safe: no customer or person names."
+			]
+		}
+	]
+}
