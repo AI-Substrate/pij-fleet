@@ -29,16 +29,9 @@
 						"../prds/008-pods.dd.json#requirements/req-07",
 						"../prds/008-pods.dd.json#requirements/req-12"
 					],
-					"builds": [
-						"../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-schema"
-					],
-					"depends_on": [
-						"007-role-start.dd.json#steps/s02"
-					],
-					"needs": [
-						"role:coder",
-						"role:reviewer"
-					],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-schema"],
+					"depends_on": ["007-role-start.dd.json#steps/s02"],
+					"needs": ["role:coder", "role:reviewer"],
 					"done_when": "A pod template validates from a path in the main repo or in governance, with slots, consulted roles, deliverables, tools and a model a slot must not share; pod folders under `community/pods/` are written only by pij; memory is filed per role and subject, and `--fresh` leaves earlier memory out.",
 					"plan": "docs/plans/247-pod-template-and-folders"
 				},
@@ -58,15 +51,8 @@
 						"../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-verbs",
 						"../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-checks"
 					],
-					"depends_on": [
-						"#steps/s01",
-						"007-role-start.dd.json#steps/s03"
-					],
-					"needs": [
-						"role:coder",
-						"role:reviewer",
-						"role:performance"
-					],
+					"depends_on": ["#steps/s01", "007-role-start.dd.json#steps/s03"],
+					"needs": ["role:coder", "role:reviewer", "role:performance"],
 					"done_when": "`plan` writes nothing and names every warning with its fix; `up` starts each slot through `spawn --as`, canaries each slot's tools, warns and still starts, logs each warning, and creates no branch or worktree; the spawn counter moves by one spawn per slot.",
 					"plan": "docs/plans/248-pod-plan-up-show"
 				},
@@ -82,18 +68,9 @@
 						"../prds/008-pods.dd.json#requirements/req-11",
 						"../prds/008-pods.dd.json#requirements/req-14"
 					],
-					"builds": [
-						"../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-verbs"
-					],
-					"depends_on": [
-						"#steps/s02",
-						"007-role-start.dd.json#steps/s06"
-					],
-					"needs": [
-						"role:coder",
-						"role:reviewer",
-						"role:performance"
-					],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-verbs"],
+					"depends_on": ["#steps/s02", "007-role-start.dd.json#steps/s06"],
+					"needs": ["role:coder", "role:reviewer", "role:performance"],
 					"done_when": "`set` reaches only the members that need a value; `down` runs `close --stop` per member, spares keep-open members with a warning, records the work branch's head and warns when the run is unfrozen; a closed pod comes back under revive's rules; a running pod is reshaped and logged.",
 					"plan": "docs/plans/249-pod-set-down-revive"
 				},
@@ -101,20 +78,10 @@
 					"id": "s04",
 					"title": "Session history",
 					"state": "complete",
-					"delivers": [
-						"../prds/008-pods.dd.json#requirements/req-13"
-					],
-					"builds": [
-						"../blueprints/005-seat-types-and-pods.dd.json#components/c-session-history"
-					],
-					"depends_on": [
-						"#steps/s01"
-					],
-					"needs": [
-						"role:coder",
-						"role:reviewer",
-						"role:performance"
-					],
+					"delivers": ["../prds/008-pods.dd.json#requirements/req-13"],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-session-history"],
+					"depends_on": ["#steps/s01"],
+					"needs": ["role:coder", "role:reviewer", "role:performance"],
 					"done_when": "`pij sessions --history` and `pij pod sessions` list every session a seat used, with why it changed, read from the event log with no new storage; a past session's context size is read from a capped transcript tail or shown as unknown; nothing is launched.",
 					"plan": "docs/plans/250-session-history"
 				},
@@ -122,19 +89,10 @@
 					"id": "s05",
 					"title": "Pod activity view",
 					"state": "complete",
-					"delivers": [
-						"../prds/008-pods.dd.json#requirements/req-15"
-					],
-					"builds": [
-						"../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-activity"
-					],
-					"depends_on": [
-						"#steps/s02"
-					],
-					"needs": [
-						"role:coder",
-						"role:reviewer"
-					],
+					"delivers": ["../prds/008-pods.dd.json#requirements/req-15"],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-activity"],
+					"depends_on": ["#steps/s02"],
+					"needs": ["role:coder", "role:reviewer"],
 					"done_when": "`pij pod activity <pod>` shows any seat the pod's state changes, outputs, sends and transcript locations, read only, with no role or membership test.",
 					"plan": "docs/plans/251-pod-activity"
 				},
@@ -147,16 +105,9 @@
 						"../prds/008-pods.dd.json#requirements/req-17",
 						"../prds/008-pods.dd.json#requirements/req-20"
 					],
-					"builds": [
-						"../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-deliverables"
-					],
-					"depends_on": [
-						"#steps/s03"
-					],
-					"needs": [
-						"role:coder",
-						"role:reviewer"
-					],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-deliverables"],
+					"depends_on": ["#steps/s03"],
+					"needs": ["role:coder", "role:reviewer"],
 					"done_when": "Each deliverable shows its owner role and stages; a first stage is recorded while a member is late; a recorded stage is written back to the role the template names as one request, which outlives the pod.",
 					"plan": "docs/plans/252-pod-deliverables"
 				}
