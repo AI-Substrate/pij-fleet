@@ -3046,6 +3046,16 @@
 					"seat": "pij-sole-tyrannosaurus",
 					"to": "2026-11-24T00:30:52.545Z",
 					"why": "#343 PRD 005 single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T00:51:36.430Z",
+					"harness": "copilot",
+					"harness_session": "5f00a336-53e9-4a2a-920f-cef0542f5fab",
+					"instance_key": "344",
+					"machine": "studio",
+					"seat": "pij-stormy-eagle",
+					"why": "#344 PRD 006 single review (amended C34; Jordan-approved)"
 				}
 			]
 		}

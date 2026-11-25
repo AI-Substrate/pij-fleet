@@ -253,3 +253,4 @@
 | — | pij-selective-moose | copilot | a72a599c-d586-4811-9f8f-efe3afb135dd | studio | 341 | 2026-11-22T07:55:44.007Z | 2026-11-22T08:01:44.696Z | pij-steady-otter | pij-steady-otter | #341 cc-alt UDS single review (amended C34; Jordan-approved) | close |
 | — | pij-sound-porpoise | copilot | b80e8708-c7c2-43df-9ebf-75542d1efb76 | studio | 342 | 2026-11-23T05:58:07.524Z | 2026-11-23T06:10:25.400Z | pij-steady-otter | pij-steady-otter | #342 claim-prd-case single review (amended C34; Jordan-approved) | close |
 | — | pij-sole-tyrannosaurus | copilot | da458922-c70d-44c4-8136-3b5166e33abc | studio | 343 | 2026-11-24T00:25:26.905Z | 2026-11-24T00:30:52.545Z | pij-steady-otter | pij-steady-otter | #343 PRD 005 single review (amended C34; Jordan-approved) | close |
+| — | pij-stormy-eagle | copilot | 5f00a336-53e9-4a2a-920f-cef0542f5fab | studio | 344 | 2026-11-25T00:51:36.430Z | — | pij-steady-otter | — | #344 PRD 006 single review (amended C34; Jordan-approved) | — |
