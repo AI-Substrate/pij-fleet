@@ -3158,7 +3158,10 @@
 					"harness_session": "ee58cc56-23a2-45c9-9ffe-1b1b0bf99fb8",
 					"instance_key": "347",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-low-marlin",
+					"to": "2026-11-25T08:54:38.329Z",
 					"why": "one C34 review of #347 (PRD 010) at 5dc9cc2"
 				}
 			]
