@@ -1,0 +1,47 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:350",
+				"writer": "pij-strict-reindeer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t 'review ownership'",
+					"exit_code": 1,
+					"log": "Synthetic lifecycle witness failed on unchanged helper: reused -12001 signaled; all OS signals mocked. Same witness passed with observed-dead IDs retired."
+				},
+				{
+					"command": "just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t 're-sends TERM to a group'",
+					"exit_code": 1,
+					"log": "One-TERM drain mutant: expected failure, 11418ms versus less than 10000ms."
+				},
+				{
+					"command": "just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t 'stops every fixture still running at teardown'",
+					"exit_code": 1,
+					"log": "No-teardown mutant: expected failure, five groups/seven processes alive, exact fixture PID cleanup verified all seven absent."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "Receipt clarification for verdict 58be4ef at ad7cd0b4159c6650bb36173af07f8d8dac62ec2c: the verdict body has the exact test selectors; its structured evidence labels abbreviated them. The records here give the exact commands. All three were expected failures, not passing baseline runs. The ownership control that retired observed-dead IDs passed. The verdict and B350-R1-01 are unchanged."
+		}
+	]
+}
