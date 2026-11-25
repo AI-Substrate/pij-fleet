@@ -883,6 +883,15 @@
 					"machine": "studio",
 					"seat": "pij-complex-termite",
 					"why": "started in the role by pij-multiple-nightingale (pij spawn --as)"
+				},
+				{
+					"assigned_by": "pij-multiple-nightingale",
+					"from": "2026-11-25T09:03:32.683Z",
+					"harness": "copilot",
+					"instance_key": "receipt-b",
+					"machine": "studio",
+					"seat": "pij-long-vole",
+					"why": "started in the role by pij-multiple-nightingale (pij spawn --as)"
 				}
 			]
 		}

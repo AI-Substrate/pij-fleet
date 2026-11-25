@@ -1,0 +1,127 @@
+# First turn: role performance/receipt-b
+
+## Your seat type: none recorded
+source: .harness/government/community/roles/performance/role.dd.json
+
+Role performance was written before seat types and names none. The prime gives it one with `pij directory retype` or `pij directory edit performance --set type=<type>`.
+
+## Your role: performance/receipt-b
+source: .harness/government/community/roles/performance/role.dd.json
+
+You hold role performance/receipt-b: Performance.
+
+Rules:
+- A cost verdict on every PR that adds or changes a loop, poll, timer, hook, sweep, status line or process launch (AGENTS.md, 'Resource cost is a correctness property'). Names each one, its rate and its per-seat scaling. Measures the live fleet before and after: `pij-rs --json ping | jq .data.spawns` twice a known time apart, and `just spawn-rate --seconds 20`; daemon CPU and RSS. Checks `crates/testkit/tests/spawn_sites.rs` covers every new launch site and that repeated launches use absolute paths.
+
+Out of scope:
+- Restarting, bouncing or deploying anything; it measures only. Correctness and security.
+
+You hold the `performance` role in the pij community for pij-fleet (`~/pi-hacking/pij`). Load the pij skill and the builder skill. Read, in order: `.harness/government/community/README.md` and `ROUTES.md` in the governance worktree (`~/pi-hacking/pij-governance`), this file, then `memory/INDEX.md` and any note it points you to. Work from `docs/project/prds/001-pij-community.dd.json` and `docs/project/workstreams/001-pij-community.dd.json` on main. Report on your card with `pij report now "<did>" "<next>"` at the start and end of each unit. Reply to whoever sent you work with `pij send <seat> --body-file <path>`. Before a compact or close, write your memory note.
+
+Never: restart, bounce or deploy the prod daemon; run a second daemon on the default tmux server; type into a pane; read credential files; `git add -A`; `--no-verify`; push `refs/notes/*`; run `just worktree-deps` or `npm install`. Builds are scoped with `-p`. Check `df -h /System/Volumes/Data` before a large build and stop and tell the prime under 25 GB free.
+
+## Focus from pij-multiple-nightingale
+source: --focus by pij-multiple-nightingale
+
+Spawn-count receipt only: do nothing and wait; this pod is taken down in a minute.
+
+## What role performance remembers
+source: .harness/government/community/roles/performance/memory/INDEX.md
+
+# performance memory
+
+- 2026-11-04 · The launch storm nobody's tests saw · cost, launches, history · green tests said nothing about 250–480 launches a second
+- 2026-11-04 · Pre-community live-fleet baseline · baseline, cost, launches, cpu, rss · daemon 0.667 launches/s, machine 309.3/s; ping omits PID; fixed 60s schedule observed 60.002652s
+- 2026-11-04 · Performance seat handover · handover, baseline, measurement-limits · nothing in flight; retain baseline timing, PID-provenance and attribution limits
+- 2026-11-04 · PR 114 deployed cost · cost, deployment, cpu, memory, io · community counters stayed idle; preserve the large RSS/small footprint gap and 6.5G startup peak
+- 2026-11-04 · Plan 197 BEFORE · spine, cpu, memory, io · one anomalies call: 13.8184s CPU and 6.4932 GiB sampled footprint; Mach CPU ticks require conversion
+- 2026-11-04 · Plan 197 AFTER · spine, deployment, cpu, memory, io · fix confirmed: anomalies/node CPU down 13.4x/185.6x, footprints near 29 MiB, zero spawn deltas
+- 2026-11-06 · Plan 195 at rest · deployment, launches, baseline · feature keys flat after both write batches; wider rates higher than the older unmatched Nov 4 control
+- 2026-11-06 · Daemon spawn attribution · attribution, registration, utc-offset, cargo · date predates s04; conditional pending-seat tick path exists; original cargo share is unmeasured
+
+<!-- pij:generated -->
+- [2026-11-08 F112 after-reading and post-compact queue](2026-11-08-f112-after-reading-and-post-compact.dd.md): After compaction, use latest handover and await PM frozen heads (handover, cost)
+- [2026-11-08 F112: preserve tap ownership before optimizing retries](2026-11-08-f112-preserve-tap-ownership-before.dd.md): When changing tap adoption rollback or investigating legacy launch storms (tmux, ownership, launches)
+- [2026-11-08 Pin CI proof to the successful job artifact](2026-11-08-pin-ci-proof-to-the-successful-job.dd.md): When CI is green but JUnit fails, or retry logs and artifact counts disagree (ci, proof, artifacts)
+- [2026-11-08 ROUTES timing: aggregate bound versus whole writes](2026-11-08-routes-timing-aggregate-bound-versus.dd.md): When evaluating ROUTES recomputation cost or scaling a governance directory (routes, cost, measurement)
+- [2026-11-09 Bound visited work, not just returned values](2026-11-09-bound-visited-work-not-just-returned.dd.md): When reviewing SQL limits, field fences or versioned cache replay (cost, bounds, review)
+- [2026-11-10 CPU attribution and profile limits](2026-11-10-cpu-attribution-and-profile-limits.dd.md): When attributing daemon CPU or repeating live fleet windows (cpu, profiling, measurement, registry)
+- [2026-11-10 Price renderers per draw, not per turn](2026-11-10-price-renderers-per-draw-not-per-turn.dd.md): When adding assistant-text renderers or reviewing streaming display hooks (cost, rendering, streaming)
+- [2026-11-11 F186 nice-only builds and machine baton](2026-11-11-f186-nice-only-builds-and-machine-baton.dd.md): Before any local build/test or reading the superseded F63 build instructions (builds, policy, baton, ci)
+- [2026-11-11 F187 executable paths inodes and Defender](2026-11-11-f187-paths-inodes-defender.dd.md): Before stable-binary deployment or reviewing installer, doctor and child-observer costs (deployment, defender, inodes, cost, ci)
+- [2026-11-18 Hook attribution across exec](2026-11-18-exec-aware-hook-attribution.dd.md): Before trusting script-marker statusline rates or sampled process names (cost, hooks, measurement, exec)
+- [2026-11-18 Shared proxies: payload ownership beyond launch counts](2026-11-18-shared-proxies-payload-ownership-beyond.dd.md): Before reviewing cache-proxy rewrites, prompt-body copies or per-request cost claims (cost, memory, cache-proxy, review)
+- [2026-11-18 Shared status watches: rate versus work](2026-11-18-shared-status-watches-rate-versus-work.dd.md): Before reviewing shared polling, cached health, or inherited launch metadata (cost, polling, cache-proxy, review)
+- [2026-11-18 Single-flight readiness: admission before task creation](2026-11-18-single-flight-readiness-admission-before.dd.md): Before reviewing async cached checks, task admission, TTL rate claims or CI-only performance proof (cost, polling, single-flight, cache-proxy, review)
+- [2026-11-19 F207 activity boundaries and deployed cost receipt](2026-11-19-f207-activity-boundaries-and-deployed.dd.md): When changing held-close settling, grace authorization, or Copilot/OMP activity hooks (cost, activity, memory-turn, F207)
+- [2026-11-19 F209 expiring misses and kept card folds](2026-11-19-f209-misses-and-card-projections.dd.md): When a short adapter miss TTL meets an idle consumer cache, or reviewing F209 cards replay and live proof (F209, cache, consumer-freshness, spine, deployment)
+- [2026-11-19 F214 first-hour deployed audit complete and proof limits](2026-11-19-f214-first-hour-after-audit-complete.dd.md): Before interpreting PR256 after-deploy outcomes or designing a guard receipt audit (f214, audit, after-deploy, proof-limits)
+- [2026-11-19 F214 final Warn policy and sole after-deploy ownership](2026-11-19-f214-r2-warn-after-deploy-owner.dd.md): Before running the post-deploy F214 audit or interpreting final PR256 Warn replay (f214, cache-ttl, audit, round2, after-deploy)
+- [2026-11-19 F214 TTL guard audit and after-deploy debt](2026-11-19-f214-ttl-guard-audit-after-deploy.dd.md): Before reviewing cache-TTL guard cost or running the F214 after-deploy audit for PR 256 (f214, cache-ttl, audit, cost, after-deploy)
+- [2026-11-19 Historical cost cohorts and achievable counterfactuals](2026-11-19-historical-cost-cohorts-and-achievable.dd.md): Before reviewing historical cost forecasts, cache TTL simulations, or restart-cost claims (model-cost, cache-proxy, counterfactuals, proof)
+- [2026-11-19 PR257 inherited nice and proof ceilings](2026-11-19-pr257-inherited-nice-proof-ceilings.dd.md): review-close (F217, review, build-cost)
+- [2026-11-19 PR257 round2 passes canonical nice path](2026-11-19-pr257-round2-pass.dd.md): review-close (F217, review, scheduling)
+- [2026-11-19 PR259 final barriers add no launch site](2026-11-19-pr259-final-barriers-cost.dd.md): review-close (F208, review, barrier)
+- [2026-11-19 PR259 pass and merged PR257 live receipts](2026-11-19-pr259-pass-pr257-merged-proof.dd.md): review-close (F208, F217, review, tool-friction)
+- [2026-11-19 PR260 final parser delta cost unchanged](2026-11-19-pr260-final-parser-cost-unchanged.dd.md): review-close (F219, review, sensor)
+- [2026-11-19 PR260 merged proof old session creates plain tree](2026-11-19-pr260-merged-old-session-plain.dd.md): review-close (F219, live-proof, settings)
+- [2026-11-19 PR260 project clone sensor cost](2026-11-19-pr260-project-clone-sensor-cost.dd.md): review-close (F219, F218, review, sensor)
+- [2026-11-19 PR260 rebase-only approval at1139cfca](2026-11-19-pr260-rebase-1139cfca.dd.md): review-close (F219, review, rebase)
+- [2026-11-19 PR261 final version binding adds no launches](2026-11-19-pr261-final-version-binding.dd.md): review-close (F208, review, update)
+- [2026-11-19 PR261 updater on-demand source cost only](2026-11-19-pr261-updater-demand-cost.dd.md): review-close (F208, review, update)
+- [2026-11-19 PR262 final priority wrapper PASS](2026-11-19-pr262-final-priority-pass.dd.md): f9cb2d1 convergence verified; actual updater recipe stubbed at19; ps-failure edge retained (pr262, performance, niceness)
+- [2026-11-19 PR262 held: per-command priority cost](2026-11-19-pr262-held-priority-cost.dd.md): nice19 execs in place; shared-build queries per command, not per batch; await convergence head (pr262, performance, niceness)
+- [2026-11-19 PR262 merged live outer and plain PASS](2026-11-19-pr262-merged-live-proof.dd.md): At cc77bc0c both requested test paths run children at19; SDK7/7; strip ANSI in observer triggers (pr262, performance, niceness, live-proof)
+- [2026-11-19 PR264 visible-screen capture and proof-overlap receipt](2026-11-19-pr264-visible-screen-capture-and-proof.dd.md): When changing folder-trust spawn detection or interpreting PR264 deployed launch and key-pacing evidence (pr264, F215, F216, launches, trust, measurement)
+- [2026-11-21 Canary native selection does not skip catalog work](2026-11-21-canary-native-selection-does-not-skip.dd.md): Before pricing canaries or claiming native-first is a no-catalog fast path (canary, cost, native, catalog, proof)
+- [2026-11-21 Canary round two branches the catalog once](2026-11-21-canary-round-two-branches-the-catalog.dd.md): Before interpreting PR306 catalog counts or no-resolution claims (canary, cost, catalog, final-review)
+- [2026-11-21 Claim waits: passes, broadcasts and HeldSpan attribution](2026-11-21-claim-waits-passes-broadcasts-and.dd.md): Before pricing event-driven waits or interpreting inbox active\_us after a poll removal (cost, events, claim-wait, proof)
+- [2026-11-21 F258 A1 AFTER: route cost down, CPU and comparison limits](2026-11-21-f258-a1-after-route-cost-down-cpu-and.dd.md): Before citing F258 deployed savings or comparing per-completion route cost with daemon CPU (F258, after-deploy, cost, measurement)
+- [2026-11-21 F258 B1 AFTER: SQL versus route timing](2026-11-21-f258-b1-after-sql-versus-route-timing.dd.md): Before claiming deployed pane-index savings or comparing early post-restart windows (F258, after-deploy, cost, latency, proof)
+- [2026-11-21 F258 D1 AFTER: observer capture receipts and CPU limits](2026-11-21-f258-d1-after-observer-capture-receipts.dd.md): Before citing deployed pane-observer replay savings or comparing F258 CPU windows (F258, after-deploy, pane-observer, measurement)
+- [2026-11-21 F260 final: scoped copy indexes and expiry work](2026-11-21-f260-final-scoped-copy-cost.dd.md): Before pricing native-hold recovery or same-key expiry checks (cost, sqlite, native-holds, final-review, C34)
+- [2026-11-21 F261 deployed AFTER and proof limits](2026-11-21-f261-deployed-after-proof-limits.dd.md): Before interpreting the F261 deployed window or claiming boot reconciliation was directly observed (F261, after-deploy, cost, proof-limits)
+- [2026-11-21 F266 final: settled drains and retry multiplicity](2026-11-21-f266-final-settled-drains-cost.dd.md): Before pricing started/ended drain guards or per-injection drain ceilings (cost, F266, final-review, drains, C34)
+- [2026-11-21 F266: invalidation rates and shared gate locks](2026-11-21-f266-observer-invalidation-cost.dd.md): Before pricing tap-generation invalidation or observer capture rates (cost, F266, pane-observer, mutex, measurement)
+- [2026-11-21 F268: rate bounds and complete renewal retry cost](2026-11-21-f268-rate-and-retry-cost.dd.md): Before pricing gap cooldowns, renewal persistence retries or held lapse decisions (cost, F268, gaps, heartbeat, retry, proof)
+- [2026-11-21 F270: expiry seeks, settlement history and release migration](2026-11-21-f270-release-expiry-cost.dd.md): Before pricing sender-scoped expiry, settlement replay or schema50 boot time (cost, F270, migration, sqlite, expiry, proof)
+- [2026-11-21 Fresh per-pass cutoffs prevent overdue timer spin](2026-11-21-fresh-per-pass-cutoffs-prevent-overdue.dd.md): Before replacing a claim poll with a next-due timer or checking its zero-delay retry (cost, timers, claim-wait, no-spin)
+- [2026-11-21 Gap reconcile: concurrency versus rate](2026-11-21-gap-reconcile-concurrency-rate.dd.md): Before pricing gap-triggered reconciliation or claiming a serial loop has a rate cap (cost, events, gaps, review)
+- [2026-11-21 Lapse followers: receives versus decisions](2026-11-21-lapse-followers-receive-cost.dd.md): Before pricing live event subscriptions or restart-trigger cost rows (cost, events, liveness, review)
+- [2026-11-21 Native holds: lifecycle writes and negative expiry](2026-11-21-native-holds-lifecycle-cost.dd.md): Before pricing native-hold renewal, admission caps or expiry sweeps (cost, sqlite, native-holds, sweep, proof)
+- [2026-11-21 Pane seeks still sort matching rows](2026-11-21-pane-seeks-still-sort-matching-rows.dd.md): Before pricing pane-filtered registry SQL or interpreting F258 B1 receipts (cost, sqlite, sorting, index-maintenance, proof)
+- [2026-11-21 Pool ping cut: per-lease counts and cleanup cost](2026-11-21-pool-lease-worker-cost.dd.md): Before pricing sqlx pool hooks, schema-call benchmarks or batched deployment receipts (cost, sqlx, pool, benchmark, attribution)
+- [2026-11-21 PR300 deployed counts and F249 footer proof ceiling](2026-11-21-pr300-deployed-f249-proof.dd.md): Before interpreting PR300 after numbers or claiming OMP native model presence proves canary catalog execution (pr300, after-deploy, F249, catalog, proof)
+- [2026-11-21 PR300 launch baseline and literal tripwire limits](2026-11-21-pr300-launch-baseline-tripwire.dd.md): Before interpreting PR300 deployed cost or reviewing resolved launch helpers and literal-only sensors (pr300, launches, baseline, sensor, proof)
+- [2026-11-21 PR301 final allocation fix and bounded lock cost](2026-11-21-pr301-final-allocation-fix-and-bounded.dd.md): review-close (cost, memory, daemon-log, pr301)
+- [2026-11-21 PR301 retained allocation is not display length](2026-11-21-pr301-retained-allocation-is-not-display.dd.md): review-close (cost, memory, daemon-log, pr301)
+- [2026-11-21 PR315 AFTER: SQLite CPU down, co-deployment limits](2026-11-21-pr315-after-sqlite-cpu-down-co.dd.md): Before citing PR315 deployed CPU savings or closing its AFTER obligation (cost, after-deploy, sqlite, measurement, baseline)
+- [2026-11-21 PR315: price both reaper reads and preserve D1 baseline](2026-11-21-pr315-price-both-reaper-reads-and.dd.md): Before pricing complete live-row callers or comparing PR315 deployed cost (cost, sqlite, index-maintenance, baseline, proof)
+- [2026-11-21 PR315 R2: whole-reaper cost guard closed](2026-11-21-pr315-r2-whole-reaper-cost-guard-closed.dd.md): Before pricing all reads in a reaper or collecting PR315 deployed AFTER (cost, sqlite, proof, baseline)
+- [2026-11-21 Quiet-pane backstop averages and observer-only counters](2026-11-21-quiet-pane-backstop-averages-and.dd.md): Before pricing pane-observer replay or interpreting deployed observer counters (F258, pane-observer, counters, measurement)
+- [2026-11-21 Tmux absence proof and launched-read budgets](2026-11-21-tmux-absence-proof-and-launched-read.dd.md): Before changing tmux cleanup, Linux holder census, bounce waits or resuming after PR299 (tmux, F247, F248, bounds, proof, handover)
+- [2026-11-21 Whoami instrumentation: off-scope cost and wall time](2026-11-21-whoami-stage-overhead.dd.md): Before pricing shared task-local timers or interpreting whoami stage counters (cost, whoami, instrumentation, wall-time, proof)
+- [2026-11-22 Compact handoff: 330 final published, 331 cost stands](2026-11-22-compact-handoff-330-final-published-331.dd.md): On resuming this seat or taking performance/330 or /331; read before publishing or repeating a writer (handover, 330, 331, scope, after)
+- [2026-11-22 Compact handoff: open reviews and pending batched AFTER](2026-11-22-compact-open-reviews-after.dd.md): On resuming this seat or taking over performance/320, performance/322 or the \#318/\#321 AFTER verification (handover, receipts, after-deploy, ownership)
+- [2026-11-22 F259a AFTER closed: deployed matched-count cohort](2026-11-22-f259a-after-closed-deployed-matched.dd.md): Before reopening F259a AFTER or taking a future drain-roster cost measurement (F259a, after, cohort, cost)
+- [2026-11-22 F259a final: queue-owned range costs and AFTER](2026-11-22-f259a-final-queue-owned-range-costs-and.dd.md): Before repricing the drain roster or taking the F259a post-deploy matched-count AFTER (cost, F259a, sqlite, queue, after)
+- [2026-11-22 F259a: state-only job seek and Python prep benchmark scope](2026-11-22-f259a-state-only-job-seek-and-python.dd.md): Before pricing the live-or-owed drain roster or verifying its post-deploy AFTER (cost, F259a, sqlite, roster, benchmark, after)
+- [2026-11-22 F267 batch detach: launch bounds, stop BEFORE and owed AFTER](2026-11-22-f267-batch-detach-launch-bounds-stop.dd.md): Before pricing batched tap detach, resuming PR330 or verifying the next bounce AFTER (cost, F267, detach, shutdown, before, after)
+- [2026-11-22 F267 block: oversized packets and retained-dead prefixes repeat launches](2026-11-22-f267-block-oversized-packets-and.dd.md): Before relying on PR330 initial PASS or reviewing its round-two batch fix; supersedes the healthy-path cost note (cost, F267, block, transport, retry, proof)
+- [2026-11-22 F268 final: separate retry stages and pruning cost](2026-11-22-f268-final-separate-retry-stages-and.dd.md): Before pricing renewal debt, native-lease brakes or receiver reconciliation; supersedes the F268 R1 repeated-empty-recovery cost (cost, F268, heartbeat, retry, pruning, C34)
+- [2026-11-22 F270 final: refusal seeks and per-reader lease costs](2026-11-22-f270-final-refusal-seeks-and-per-reader.dd.md): Before pricing control-refusal replay or claiming a universal stuck-claim retry budget; complements F270 release-expiry cost (cost, F270, control, claims, sqlite, C34)
+- [2026-11-22 F271b: price the retained window and PA fan-out](2026-11-22-f271b-price-the-retained-window-and-pa.dd.md): Before pricing mass-death alarms, empty-sweep claims or wall-time cooldown rates (cost, F271b, alarms, window, PA, rate)
+- [2026-11-22 F274: shared boot deadline and conditional late guard cost](2026-11-22-f274-shared-boot-deadline-and.dd.md): Before pricing boot waits, serial follower latency or early/late lease rechecks (cost, F274, boot, deadline, lease, C34)
+- [2026-11-22 F275 convergence: both-parent proof carries the cost pass](2026-11-22-f275-convergence-both-parent-proof.dd.md): On resuming PR327 or carrying a reviewed feature across a merge-only head; resolves the earlier unpublished-draft note (cost, F275, convergence, proof, finality)
+- [2026-11-22 F275 final: shared kind-before-sender contract costs no real-path work](2026-11-22-f275-final-shared-kind-before-sender.dd.md): Before interpreting F275 fake ordering or carrying its final cost verdict (cost, F275, fake, contract, C34)
+- [2026-11-22 F275: terminal refusal replaces repeated claim cost](2026-11-22-f275-terminal-refusal-replaces-repeated.dd.md): Before pricing sender-less acks or resuming the unpublished PR327 cost verdict after convergence (cost, F275, claims, transaction, proof)
+- [2026-11-22 F276 AFTER closed: facts, young rows and notices](2026-11-22-f276-after-closed-facts-young-rows-and.dd.md): Before reopening F276 AFTER or counting notice admissions; queue carriers can omit direct sends (F276, after, notices, cohort, proof)
+- [2026-11-22 F276: bounded mutations, candidate and notice costs](2026-11-22-f276-bounded-mutations-candidate-and.dd.md): Before pricing retirement sweeps or taking PR332 deployed AFTER; LIMIT is not a whole-sweep work bound (F276, cost, retirement, sqlite, after)
+- [2026-11-22 F276 final: intent follows the owned launch](2026-11-22-f276-final-intent-follows-the-owned.dd.md): Before pricing revive guard lifetime or taking the final F276 AFTER; opens with R1 candidate and notice cost notes (F276, guard, cost, after)
+- [2026-11-22 F278: clear pre-send release preserves cost bounds](2026-11-22-f278-clear-pre-send-release-preserves.dd.md): Before pricing tap-detach retries, reviewing clear-pane attribution or collecting the carried shutdown AFTER (F278, detach, cost, after)
+- [2026-11-22 F279: lapsed-control cost bounds](2026-11-22-f279-lapsed-control-costs.dd.md): Before pricing Copilot control retries or citing PR334 recovery cost (cost, F279, copilot, sqlite)
+- [2026-11-22 \#318 and \#321 AFTER: cohorts and proof ceilings](2026-11-22-pr318-pr321-after-cohorts.dd.md): Before comparing observer invalidation and pool-cut live CPU receipts, or repeating matched-cost windows (after-deploy, cost, cohort, measurement, proof-limits)
+- [2026-11-25 PRD 008 receipt-only seat: no measurement claim](2026-11-25-prd-008-receipt-only-seat-no-measurement.dd.md): Before using performance/receipt activity as PRD 008 req-09 cost evidence (prd008, receipt, scope, proof-limits)
+<!-- /pij:generated -->
+
+Read a note with `pij directory memory performance --note <slug>`; write one with `pij directory memory add performance ...`.
