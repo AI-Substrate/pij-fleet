@@ -624,7 +624,15 @@ enum Command {
         args: Vec<String>,
     },
     /// Tombstone a seat owned by this caller (a prime: any seat, F282) without
-    /// killing its process or pane.
+    /// killing its process or pane, unless --stop.
+    ///
+    /// pij close <seat> [--reason <text>] [--stop]
+    ///
+    /// A role holder first gets a memory turn. --stop (PRD 007) also stops the
+    /// seat's recorded process, by pid with its recorded start time, once its
+    /// memory note is written; a seat with no note, a cold seat, or one whose
+    /// process pij can't confirm is left open and running, and the prime is
+    /// told.
     Close {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,

@@ -1991,7 +1991,12 @@ async fn role_changes_regenerate_routes_in_their_commit_and_tell_the_prime_once(
     assert_eq!(routes["added"].as_array().unwrap().len(), 2, "{routes}");
     assert_eq!(routes["prime"]["sent"], "fyi", "{routes}");
     assert!(added["data"].get("warnings").is_none(), "{added}");
-    let prime = fyis(&rig, "pij-second").await;
+    // The add also holds its creator note (PRD 007 req-07); this is the routes notice.
+    let prime: Vec<(String, String)> = fyis(&rig, "pij-second")
+        .await
+        .into_iter()
+        .filter(|(_, body)| !body.starts_with("pij: "))
+        .collect();
     assert_eq!(prime.len(), 1, "{prime:?}");
     assert_eq!(prime[0].0, "pij-bg");
     assert!(
@@ -2125,8 +2130,16 @@ async fn routes_on_demand_and_write_only_when_stale() {
         ".harness/government/community/ROUTES.md"
     );
     assert_eq!(written["data"]["stale"], false);
-    // No row changed, so the prime hears only of the one role add.
-    assert_eq!(fyis(&rig, "pij-second").await.len(), 1);
+    // No row changed, so the prime hears only of the one role add (its
+    // routes notice; the add's creator note is PRD 007's).
+    assert_eq!(
+        fyis(&rig, "pij-second")
+            .await
+            .iter()
+            .filter(|(_, body)| !body.starts_with("pij: "))
+            .count(),
+        1
+    );
 
     let refused = call(
         rig.addr,
