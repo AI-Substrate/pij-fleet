@@ -2184,6 +2184,7 @@ async fn run(cli: Cli) -> ExitCode {
                         "{}",
                         data["first_turn"].as_str().unwrap_or_default().trim_end()
                     );
+                    print_spawn_warnings(Some(data));
                     ExitCode::SUCCESS
                 }
                 // `directory types [<type> [--seed]]` (PRD 006).
