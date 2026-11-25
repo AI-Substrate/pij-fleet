@@ -60,9 +60,9 @@
         {
           "id": "ac-0005",
           "claim": "Cost: up launches one spawn per slot and nothing for a consulted role; plan and show launch nothing; the canary is one message and one bounded wait per new seat. No loop, poll or timer.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004",
-          "note": "the live spawn-counter receipt is taken after deploy"
+          "note": "live receipt at 387362db (deployed): pij-rs --json ping .data.spawns 546→548 over 20 s idle (+2 ps.registration-native-process, background); one `pod up` of a 1-slot pod 548→579: +4 tmux (new-window, rename-window, pipe-pane attach, set-options tap owner: one spawn) and +27 writer launches (git.community +21, ddocs.community +6: record, role, members commits); then 579→581 over 20 s (+2 background). plan, show, activity, sessions: 581→581. just spawn-rate --seconds 20: no daemon children sampled."
         }
       ]
     },

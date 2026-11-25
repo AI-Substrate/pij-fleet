@@ -23,7 +23,7 @@
 | bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: plan names each warning with its fix and moves no commit. | [x] checked | — | — | cargo test -p pij-daemon pod_plan |
 | bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: up on three slots starts three seats, logs warnings, creates no branch; --no-start launches none. | [x] checked | — | — | cargo test -p pij-daemon pod_up |
 | bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test: a slot that does not confirm a tool is degraded with its fix, gets no pod work, and a prime's message still reaches it. | [x] checked | — | — | cargo test -p pij-daemon pod_canary |
-| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter before and after up and plan. | [ ] unchecked | the live spawn-counter receipt is taken after deploy | — | cargo test -p pij-daemon pod_cost |
+| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter before and after up and plan. | [x] checked | live receipt at 387362db (deployed): pij-rs --json ping .data.spawns 546→548 over 20 s idle (+2 ps.registration-native-process, background); one `pod up` of a 1-slot pod 548→579: +4 tmux (new-window, rename-window, pipe-pane attach, set-options tap owner: one spawn) and +27 writer launches (git.community +21, ddocs.community +6: record, role, members commits); then 579→581 over 20 s (+2 background). plan, show, activity, sessions: 581→581. just spawn-rate --seconds 20: no daemon children sampled. | — | cargo test -p pij-daemon pod_cost |
 
 <a id="sensors"></a>
 

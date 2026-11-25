@@ -38,7 +38,7 @@
 				{
 					"id": "s02",
 					"title": "Plan, up and show, with warnings",
-					"state": "in-progress",
+					"state": "complete",
 					"delivers": [
 						"../prds/008-pods.dd.json#requirements/req-03",
 						"../prds/008-pods.dd.json#requirements/req-04",
@@ -160,6 +160,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s02 back to in-progress: its done_when includes the live spawn-counter receipt, taken after deploy (req-09 stays in-progress; #346 review B346-R1-10)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s02 complete: its live spawn-counter receipt is taken (PRD 008 req-09)."
 				}
 			]
 		}
