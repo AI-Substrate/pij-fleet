@@ -199,4 +199,5 @@
 - [2026-11-24 PR 343 procedures runner: block on relaunch argv secrets](2026-11-24-pr-343-procedures-runner-block-on.dd.md): When reviewing procedure scripts, tmux respawn-pane commands, or progress stores keyed by user input (review, procedures, secrets, argv, prototype)
 - [2026-11-25 Mutation-check TS gates in an archive copy with node\_modules symlinked](2026-11-25-mutation-check-ts-gates-in-an-archive.dd.md): review worktrees have no node\_modules; the debug pij-rs in the shared target is unstamped (mutation, review, shared-target)
 - [2026-11-25 PR 344 seat types at e56bcb4](2026-11-25-pr-344-seat-types-at-e56bcb4.dd.md): Read when reviewing seat types, role\_type pointers, /v1/seats cost or batched mutation checks (review, types, mutation, cost)
+- [2026-11-25 Rollback after a landed commit is a half-write](2026-11-25-rollback-after-a-landed-commit-is-a-half.dd.md): When a rollback follows a governance commit, check what the commit already landed (review, rollback, governance)
 <!-- /pij:generated -->

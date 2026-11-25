@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "When a rollback follows a governance commit, check what the commit already landed",
+				"tags": [
+					"review",
+					"rollback",
+					"governance"
+				],
+				"title": "Rollback after a landed commit is a half-write"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR 345 review: assign_many commits to git FIRST and then indexes the store (flushed, record_assignment_committed). A store failure returns Err after the commit, so a caller that rolls back on any Err (spawn --as roll_back) kills the seat but leaves an open holding on the branch. In every review, sort each failure point by whether it comes before or after the commit. Also: when disk is under shared-build's 25 GiB floor, do mutation by inspection, map each mutant to the assertion that kills it, and say plainly which ones survive (e.g. a start-time guard with no test). FakeLiveness::with_recycled exists for recycled-pid tests."
+		}
+	]
+}
