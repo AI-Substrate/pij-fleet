@@ -10,7 +10,7 @@
 				"created_at": "2026-11-25T07:22:51.598Z",
 				"created_by": "pij-multiple-nightingale",
 				"pod": "receipt-008",
-				"state": "up",
+				"state": "closing",
 				"template": "/tmp/pij-receipt-pod.Firn",
 				"template_hash": "e037d5d1966212de9691497d3b3a4714258a30404ca7a79ab8ffcf42fa258dca",
 				"template_version": "1"
@@ -52,6 +52,11 @@
 					"at": "2026-11-25T07:22:52.540Z",
 					"by": "pij-multiple-nightingale",
 					"change": "started pij-developed-parakeet"
+				},
+				{
+					"at": "2026-11-25T07:23:46.054Z",
+					"by": "pij-multiple-nightingale",
+					"change": "down: pij-developed-parakeet held for its memory turn; closed and stopped once its note is written, else left running and the prime told"
 				}
 			]
 		}

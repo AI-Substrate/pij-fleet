@@ -16,7 +16,7 @@
 | subject | — |
 | work_folder | — |
 | fresh | — |
-| state | up |
+| state | closing |
 | created_by | pij-multiple-nightingale |
 | created_at | 2026-11-25T07:22:51.598Z |
 
@@ -54,3 +54,4 @@ _No entries._
 | --- | --- | --- |
 | 2026-11-25T07:22:51.598Z | pij-multiple-nightingale | up from /tmp/pij-receipt-pod.Firn (version 1, sha256 e037d5d19662) |
 | 2026-11-25T07:22:52.540Z | pij-multiple-nightingale | started pij-developed-parakeet |
+| 2026-11-25T07:23:46.054Z | pij-multiple-nightingale | down: pij-developed-parakeet held for its memory turn; closed and stopped once its note is written, else left running and the prime told |
