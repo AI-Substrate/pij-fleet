@@ -3163,6 +3163,16 @@
 					"seat": "pij-low-marlin",
 					"to": "2026-11-25T08:54:38.329Z",
 					"why": "one C34 review of #347 (PRD 010) at 5dc9cc2"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T09:36:39.066Z",
+					"harness": "copilot",
+					"harness_session": "99e7e762-ff33-4bb9-80d9-2387bed98bd4",
+					"instance_key": "355",
+					"machine": "studio",
+					"seat": "pij-surprised-quelea",
+					"why": "light C34 review of #355 (010 req-06 states) at 82d3034"
 				}
 			]
 		}
