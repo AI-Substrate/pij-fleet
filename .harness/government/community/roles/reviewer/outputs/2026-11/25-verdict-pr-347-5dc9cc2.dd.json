@@ -1,0 +1,51 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a211dd-c228-7291-a2be-b9e0c921f3e0",
+				"date": "2026-11-25",
+				"head": "5dc9cc2e613a0eef60de34534e1e4a1f7fdd3b87",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:347",
+				"writer": "pij-low-marlin",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B347-R1-01..04: author fixes; prime verifies fix range under C34, no second reviewer round",
+				"B347-R1-05..06: procedure command and cost criterion/receipt reconciliation"
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just pr-freeze 347",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --lib pod_templates",
+					"exit_code": 0
+				},
+				{
+					"command": "just shared-build -- test -p pij-daemon --test directory_http reshape::pod_up",
+					"exit_code": 0
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# BLOCK: #347, round 1\n\nHead: `5dc9cc2e613a0eef60de34534e1e4a1f7fdd3b87`.\nBase: `9f625486360f3db433969190039a160c77de65e5`.\nScope: correctness, cost and security together, under amended C34 and C33. The detached review worktree was read-only. All probes and mutations ran in a plain private `git archive` copy with its own `git init`; no `GIT_*` variables were exported.\n\n## Blocking findings\n\n**B347-R1-01: template lookup errors bypass the close brake.**\n`crates/daemon/src/http/pod.rs:2346-2348` returns `null` for an unreadable original template. `skills/pij/tools/procedures/procedures.ts:2259-2267` also ignores the show exit status and turns malformed/error answers into absence. In both cases it forwards `down` without the close procedure or an explicit override; the daemon subsequently closes members even when `template_of` fails (`http/pod.rs:1162-1189`). Moving/deleting a repo-owned template, or a failed show, therefore defeats the promised brake. The private Rust missing-template regression fails, and the Node probe confirms failed show forwards down. Preserve resolution errors and refuse unless the caller explicitly overrides; log that override even when the template is unavailable. Retain the original daemon-routing flags in the preliminary show.\n\n**B347-R1-02: resuming a stopped close skips a newly failing live safety check.**\n`skills/pij/tools/procedures/procedures.ts:2226-2233` selects only steps without persisted completion. Reproduction with shipped PROC-pods-0002: clean work-folder passes s0001; open PR stops s0002; the folder then becomes dirty and the PR settles; another down skips s0001 and forwards `--close-procedure-ran`. The Node probe observes no second `nothing-uncommitted` invocation. The same cache survives down/up of the same pod. Revalidate recorded run steps' live done predicates before accepting close completion, without replaying irreversible steps or discarding recorded decisions.\n\n**B347-R1-03: exporting a reshaped pod can refuse a valid remaining group.**\n`crates/daemon/src/community/pod_templates.rs:403-407` clones remaining original slots, including `not_model_of`. Release the build pod's coder and export its remaining PM and reviewer: wiring/stage needs are pruned, but reviewer still names absent coder. The exporter then rejects its own output at `http/pod.rs:2732`. The private regression fails with `slot reviewer must not share the model of \"coder\", which is not another slot`. Prune dangling slot-model relationships alongside wiring and stage needs.\n\n**B347-R1-04: procedure export can commit private files outside the template tree.**\n`crates/daemon/src/http/pod.rs:2666-2675` follows directory symlinks and dereferences file symlinks; its `strip_prefix` check is lexical, not containment. `http/pod.rs:2735-2778` copies those bytes into the exported procedure assets and can commit them to governance. An existing, legitimate runtime-config symlink can therefore disclose its target when a trusted operator exports the template; no hostile same-user process is required, so C33 does not exempt the accidental disclosure. Refuse escaping links before reading their targets and copy only in-scope assets. Reproduction uses only an innocuous marker file and a private governance repository, never credentials.\n\n| # | Severity | File | Lines | Vulnerability | Confidence |\n|---|----------|------|-------|---------------|------------|\n| B347-R1-04 | 🟠 HIGH | crates/daemon/src/http/pod.rs | 2666-2675, 2735-2778 | Export dereferences out-of-tree procedure links and can commit their private target bytes | 9/10 |\n\n## Notes, not blocks\n\n**B347-R1-05:** `templates/pods/build/v1/pod-template.dd.json:107` prints `pij proc ... --branch ... --folder ...`, but the runner rejects `--branch` (exit 2). Use the runner's `--arg branch=... --arg folder=...` and explicit step commands; up does not execute the procedure automatically.\n\n**B347-R1-06:** reconcile cost criteria with their receipts. PRD 008 req-09 (`docs/project/prds/008-pods.dd.json:176`) requires two slots plus a consulted role; the new live receipt measures one slot. PRD 010 req-06 (`010-pod-templates.dd.json:129`) says the raw spawn counter does not move, but the intended governance writes necessarily increment counted writer launches. Its in-progress state is honest; use a criterion that excludes seats and permits the named writer cost. Workstream 010 records implementation complete while that live receipt remains owed.\n\n## Evidence and limits\n\n- `just pr-freeze 347`: FINAL at the full head; main base, CLEAN, latest CI passed, no migration added.\n- Exact-head CI run `45577353159`: check (22), check (24), rust-lint and rust-test passed. Latest delivers passed.\n- Private `just shared-build -- test -p pij-daemon --lib pod_templates`: 4 passed.\n- Private `just shared-build -- test -p pij-daemon --test directory_http reshape::pod_up`: 22 passed; FakeTmux/private repositories, no real-tmux tests.\n- Private `nice -n 19 node --experimental-strip-types --test review-brake.test.mjs`: 6 probes passed, including observations of the unsafe resumed/failed-show behavior.\n- Matched stop control passed; disabling only the stop guard in a separate private source copy failed the assertion (0 versus refusal 3): mutant killed.\n- Private `just shared-build -- test -p pij-daemon --lib review_347_`: both missing-template and released-coder regressions failed as expected.\n- Private `just shared-build -- test -p pij-daemon --test directory_http review_347_export_must_not_commit_outside_symlink_bytes`: failed as expected after the marker bytes were confirmed in the private governance commit.\n- Private `just shared-build -- test -p pij-daemon --lib a_shipped_pod_template_is_never_edited`: failed after a whitespace-only edit to the private build template; the unchanged pinned digest rejected the changed bytes.\n- Private `harness boot` and `harness checks --quick`: unavailable dependency-based proof, not green. No local node_modules: tsx, Node types and Vitest missing; ambient Biome incompatible. Procedures, skill structure, native Copilot contracts and SDK sensor passed. No dependency symlinks were created. Full Rust/route/smoke gate was not rerun; real-tmux tests were prohibited.\n- Every Cargo run used shared-build's lock, niceness 19, four jobs and the unchanged 25 GB floor. No deploy, daemon restart, seat launch or shared repository edit was performed.\n\n## Cost and supported behavior\n\nNo new daemon launch site, loop, poll, timer, hook, sweep or status line is introduced; spawn_sites.rs is unchanged. Template listing, lookup and diff are in-process. Adopt/init/export use existing counted writer commits or plain file writes. Down adds caller-side show plus just/procedure/git/gh launches on demand, per command, not per tick or seat. The directory suggestion scans pod records per view, without launching processes. Rust/TS SKILL_AREAS additions reserve the pods procedure area and add no runtime loop.\n\nThe compiled shipped catalog uses exact name/version lookup, not caller-derived paths. Both template hashes match the pins. Adopt/init's existing-template/seed guards and no-op diff are covered by passing HTTP tests. Runtime pod parameter values and member seat IDs are not placed into template slots/parameter declarations. PROC-pods-0002 executes only reads; quoted shell values are not re-evaluated.\n\nThe close stop is explicitly a **BRAKE**, not retention policy: removing it can only close more. Its first-call stop works and is mutation-proven, but B347-R1-01/02 bypass it in normal use. Author fixes the findings; prime checks the fix range under C34, with no second reviewer round.\n"
+		}
+	]
+}
