@@ -212,7 +212,7 @@
 					"statement": "`pij sessions --history` lists, for each seat, every harness session it has used, not only the current one: its start and end, harness, model, session id, transcript location, the context size at its end and why it changed (spawn, revive, compact or rebind). `pij pod sessions <pod>` lists them per member, so cost per pod needs no manual matching. It is read back from what pij already records (the registry's facts on the event log), with no new storage. A past session's context size is read from its transcript's tail or the harness's own usage record, never more than a fixed byte cap per session, and shows unknown when the transcript is gone or the figure is not in the tail. It makes visible what a single current row hides: one seat went through three sessions and three processes in nine seconds, a rebind storm no one saw.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "For a seat spawned, compacted, revived and rebound, `pij sessions --history` lists each session with its start, end, harness, model, transcript location and why it changed; a session whose transcript is gone shows its context as unknown; `pij pod sessions <pod>` lists each member's sessions; and the read launches nothing.",
 					"source": "Jordan's ruling 2026-11-25, round 2, rulings 3 and 10; PM ruling 2026-11-25: read the event log, no migration, a byte cap on transcript reads"
 				},
@@ -393,6 +393,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "req-06: the template's close steps run once templates carry procedures (PRD 010 req-01); 008 adds no close-steps section (pm-001 ruling 2026-11-25), so req-06 stays shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #346 (s04): req-13 shipped."
 				}
 			]
 		}

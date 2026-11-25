@@ -489,6 +489,54 @@ describe("routeVerb end to end", () => {
 		}
 	});
 
+	it("sessions --history forwards as history=true and renders each seat's past sessions (PRD 008 req-13)", async () => {
+		const calls: Call[] = [];
+		const result = await routeVerb(
+			"sessions",
+			undefined,
+			["sessions", "--history", "--seat", "pij-a"],
+			deps(
+				answering(
+					JSON.stringify({
+						ok: true,
+						command: "pij sessions",
+						v: 2,
+						data: {
+							history: [
+								{
+									seat: "pij-a",
+									total: 1,
+									sessions: [
+										{
+											started_at: 0,
+											ended_at: null,
+											why: "rebind",
+											harness: "omp",
+											model: "m",
+											session: "s1",
+											context_tokens: "unknown",
+										},
+									],
+								},
+							],
+						},
+					}),
+				),
+				{},
+				calls,
+			),
+		);
+		const url = new URL(calls[1]?.url ?? "");
+		expect(url.searchParams.get("history")).toBe("true");
+		expect(url.searchParams.get("seat")).toBe("pij-a");
+		expect(result.outcome.kind).toBe("rs");
+		const row = result.row;
+		const shown =
+			row !== undefined && "render" in row ? row.render?.(result.payload, []) : undefined;
+		expect(shown).toContain("pij-a: 1 session(s)");
+		expect(shown).toContain("running  rebind  omp m  session s1  context unknown");
+	});
+
 	it("list --here forwards the caller folder instead of refusing", async () => {
 		const calls: Call[] = [];
 		const folder = "/work/project with spaces";

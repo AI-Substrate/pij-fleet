@@ -77,7 +77,7 @@
 				{
 					"id": "s04",
 					"title": "Session history",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/008-pods.dd.json#requirements/req-13"],
 					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-session-history"],
 					"depends_on": ["#steps/s01"],
@@ -140,6 +140,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s03 complete on #346 (plans 249)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s04 complete on #346 (plans 250)."
 				}
 			]
 		}

@@ -506,3 +506,93 @@ async fn a_running_seat_joins_and_leaves_a_pod_and_the_template_is_unchanged() {
     );
     rig.server.abort();
 }
+
+/// Plan 250 ac-0002, ac-0003: `pij sessions --history` and `pij pod sessions`
+/// read the seat's facts back from the event log, show a session whose
+/// transcript is gone as context unknown, and launch nothing.
+#[tokio::test]
+async fn session_history_reads_the_event_log_per_seat_and_per_member() {
+    let repo = repo("pij-pod-sessions");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let up = pod(
+        rig.addr,
+        &repo,
+        &[
+            "up",
+            "pods/build",
+            "--set",
+            "subject=planning",
+            "--session",
+            "work",
+        ],
+    )
+    .await;
+    let lead = up["data"]["members"][0]["seat"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for session in ["pij-history-s1", "pij-history-s2"] {
+        let mut row = rig
+            .services
+            .registry
+            .get(&lead.as_str().into())
+            .await
+            .unwrap()
+            .unwrap();
+        row.harness_session = Some(session.to_string());
+        rig.services.registry.put(row).await.unwrap();
+    }
+    let launched = super::role_start::launches(&rig.tmux);
+
+    let history: Value = reqwest::Client::new()
+        .get(format!(
+            "http://{}/v1/shim/sessions?history=true&seat={lead}",
+            rig.addr
+        ))
+        .bearer_auth(KEY)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let seat = &history["data"]["history"][0];
+    assert_eq!(seat["total"], 2, "{history}");
+    assert_eq!(
+        seat["sessions"][0]["session"], "pij-history-s2",
+        "newest first: {history}"
+    );
+    assert_eq!(
+        seat["sessions"][0]["why"], "relaunch",
+        "no spawn or revive beside it"
+    );
+    assert_eq!(seat["sessions"][1]["why"], "spawn");
+    assert_eq!(
+        seat["sessions"][1]["ended_at"],
+        seat["sessions"][0]["started_at"]
+    );
+    assert_eq!(
+        seat["sessions"][0]["context_tokens"], "unknown",
+        "no transcript"
+    );
+
+    let members = pod(rig.addr, &repo, &["sessions", "build", "--limit", "1"]).await;
+    assert_eq!(members["ok"], true, "{members}");
+    assert_eq!(members["data"]["sessions"][0]["slot"], "lead");
+    assert_eq!(
+        members["data"]["sessions"][0]["sessions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        super::role_start::launches(&rig.tmux),
+        launched,
+        "reads launch nothing"
+    );
+    rig.server.abort();
+}

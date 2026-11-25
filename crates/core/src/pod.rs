@@ -12,6 +12,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("set") => Some(SET),
         Some("down") => Some(DOWN),
         Some("add" | "release") => Some(RESHAPE),
+        Some("sessions") => Some(SESSIONS),
         _ => None,
     }
 }
@@ -28,6 +29,7 @@ Usage:
   pij pod down <pod>
   pij pod add <pod> role:<id>[/<instance>] [--set <name>=<value>]... | <seat>
   pij pod release <pod> <seat>
+  pij pod sessions <pod> [--limit <n>]       every member's harness sessions
   pij pod confirm <pod> --tool <tool>...      a slot's seat answering its tool canary
 
 A template is a folder holding pod-template.dd.json (or that file), at any path
@@ -94,6 +96,15 @@ Reshape a running pod; each change is logged and the template is unchanged.
 `add role:` starts a member as `pij spawn --as role:<id> --pod <pod>` does;
 `add <seat>` adds a seat already running. `release` takes a seat out of the pod
 and leaves it running.";
+
+const SESSIONS: &str = "\
+pij pod sessions <pod> [--limit <n>]
+
+Each member's harness sessions, newest first (20 unless --limit): start, end,
+harness, model, session id, transcript, the context in use at its end, and why
+it changed (spawn, revive, compact, rebind or relaunch), as `pij sessions
+--history --seat <seat>` lists them. Read from the event log; the context from
+at most the last 256 KiB of each transcript, else unknown. Launches nothing.";
 
 const SHOW: &str = "\
 pij pod show <pod>

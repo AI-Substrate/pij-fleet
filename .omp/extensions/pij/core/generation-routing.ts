@@ -86,7 +86,28 @@ function renderWhoami(payload: unknown): string {
 	].join("\n");
 }
 
+function renderHistory(history: readonly unknown[]): string {
+	const cell = (value: unknown): string =>
+		value === undefined || value === null || value === "" ? "—" : String(value);
+	const when = (value: unknown): string =>
+		typeof value === "number" ? new Date(value).toISOString().replace(".000Z", "Z") : "running";
+	const lines: string[] = [];
+	for (const seat of history) {
+		const sessions = field(seat, "sessions");
+		lines.push(`${cell(field(seat, "seat"))}: ${cell(field(seat, "total"))} session(s)`);
+		if (!Array.isArray(sessions)) continue;
+		for (const session of sessions) {
+			lines.push(
+				`  ${when(field(session, "started_at"))} → ${when(field(session, "ended_at"))}  ${cell(field(session, "why"))}  ${cell(field(session, "harness"))} ${cell(field(session, "model"))}  session ${cell(field(session, "session"))}  context ${cell(field(session, "context_tokens"))}  ${cell(field(session, "transcript"))}`,
+			);
+		}
+	}
+	return lines.length === 0 ? "no seats" : lines.join("\n");
+}
+
 function renderSessions(payload: unknown): string {
+	const history = field(payload, "history");
+	if (Array.isArray(history)) return renderHistory(history);
 	const rows = field(payload, "rows");
 	if (!Array.isArray(rows) || rows.length === 0) return "no pij sessions";
 	const cell = (value: unknown): string =>
@@ -227,8 +248,9 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 		verb: "sessions",
 		rsPath: "/v1/shim/sessions",
 		method: "GET",
+		query: { history: ["true"], seat: null, limit: null },
 		render: renderSessions,
-		why: "Read rs session rows without a legacy union",
+		why: "Read rs session rows without a legacy union; --history lists each seat's past sessions (PRD 008 req-13)",
 	},
 	{
 		verb: "send",

@@ -47,10 +47,10 @@
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | A pure fold over a seat's `seat.put` events in order: a session starts at the first event with its session id and ends at the first with another id, or at the seat's tombstone. Why it changed comes from the events beside it: spawn.launched and spawn.bound (spawn), seat.revive-postmortem and seat.resumed (revive), a new session on the same process (rebind), the compaction rows (compact; a harness that keeps its session id across a compact shows the compact as an event inside the session). | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij sessions --history [--seat &lt;id&gt;] [--limit &lt;n&gt;]` (default 20 sessions per seat) and `pij pod sessions &lt;pod&gt;` read one indexed event-log query per seat (seat, kind, seq), launch nothing and write nothing. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Context size at a session's end: the transcript location is derived from the harness and session id; pij reads at most the last 256 KiB of it (or the harness's own usage record) for the last usage figure, and shows unknown when the file is gone or the figure is not in the tail. A transcript is never read whole. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | Cost: one indexed read per seat listed; at most 256 KiB read per session listed, so a default call reads at most 5 MiB per seat. In-process; no launch; nothing per tick. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | A pure fold over a seat's `seat.put` events in order: a session starts at the first event with its session id and ends at the first with another id, or at the seat's tombstone. Why it changed comes from the events beside it: spawn.launched and spawn.bound (spawn), seat.revive-postmortem and seat.resumed (revive), a new session on the same process (rebind), the compaction rows (compact; a harness that keeps its session id across a compact shows the compact as an event inside the session). | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij sessions --history [--seat &lt;id&gt;] [--limit &lt;n&gt;]` (default 20 sessions per seat) and `pij pod sessions &lt;pod&gt;` read one indexed event-log query per seat (seat, kind, seq), launch nothing and write nothing. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Context size at a session's end: the transcript location is derived from the harness and session id; pij reads at most the last 256 KiB of it (or the harness's own usage record) for the last usage figure, and shows unknown when the file is gone or the figure is not in the tail. A transcript is never read whole. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | Cost: one indexed read per seat listed; at most 256 KiB read per session listed, so a default call reads at most 5 MiB per seat. In-process; no launch; nothing per tick. | [x] checked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -58,7 +58,7 @@
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Session history (workstream 008 s04) | One phase on PR #346. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Session history (workstream 008 s04) | One phase on PR #346. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

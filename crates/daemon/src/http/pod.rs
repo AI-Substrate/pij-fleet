@@ -57,6 +57,7 @@ struct Call {
     sets: Vec<(String, String)>,
     name: Option<String>,
     session: Option<String>,
+    limit: Option<usize>,
     fresh: bool,
     no_start: bool,
     tools: Vec<String>,
@@ -89,6 +90,17 @@ fn parse(argv: &[String]) -> Result<Call, Refusal> {
             }
             "--name" => call.name = Some(value("--name")?),
             "--session" => call.session = Some(value("--session")?),
+            "--limit" => {
+                call.limit = Some(
+                    value("--limit")?
+                        .parse()
+                        .ok()
+                        .filter(|limit| *limit > 0)
+                        .ok_or_else(|| {
+                            Refusal::new("E-RS-ARG", "--limit takes a whole number above 0")
+                        })?,
+                );
+            }
             "--tool" => call.tools.push(value("--tool")?),
             "--fresh" => call.fresh = true,
             "--no-start" => call.no_start = true,
@@ -150,6 +162,7 @@ pub(crate) async fn handle(
         "down" => down(&state, &call, &request.caller, &actor).await,
         "add" => add(&state, &call, &request.caller, &actor).await,
         "release" => release(&state, &call, &request.caller, &actor).await,
+        "sessions" => sessions(&state, &call, &request.caller).await,
         verb => Err(Refusal::new(
             "E-RS-UNPORTED",
             format!("pod {verb}: unknown command; pij pod --help"),
@@ -1374,6 +1387,22 @@ async fn release(
         "commit": committed,
         "next": format!("{target} keeps running; close it with pij close {target} --stop"),
     }))
+}
+
+/// `pij pod sessions <pod> [--limit <n>]` (req-13): each member's sessions,
+/// as `pij sessions --history --seat <seat>` lists them. Reads only.
+async fn sessions(state: &AppState, call: &Call, caller: &CallerContext) -> Result<Value, Refusal> {
+    let pod_name = position(call, 0, "pij pod sessions <pod> [--limit <n>]")?;
+    let opened = open(state, caller, pod_name).await?;
+    let limit = call.limit.unwrap_or(crate::session_history::DEFAULT_LIMIT);
+    let mut members = Vec::new();
+    for member in pod::records(&opened.document, "members") {
+        let seat = SeatId::from(member["seat"].as_str().unwrap_or_default());
+        let mut history = super::shim::seat_history(state, &seat, limit).await;
+        history["slot"] = member["slot"].clone();
+        members.push(history);
+    }
+    Ok(json!({"pod": pod_name, "sessions": members}))
 }
 
 /// The template a pod's record names: relative to the repo, or absolute.

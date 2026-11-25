@@ -36,25 +36,25 @@
         {
           "id": "ac-0001",
           "claim": "A pure fold over a seat's `seat.put` events in order: a session starts at the first event with its session id and ends at the first with another id, or at the seat's tombstone. Why it changed comes from the events beside it: spawn.launched and spawn.bound (spawn), seat.revive-postmortem and seat.resumed (revive), a new session on the same process (rebind), the compaction rows (compact; a harness that keeps its session id across a compact shows the compact as an event inside the session).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij sessions --history [--seat <id>] [--limit <n>]` (default 20 sessions per seat) and `pij pod sessions <pod>` read one indexed event-log query per seat (seat, kind, seq), launch nothing and write nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Context size at a session's end: the transcript location is derived from the harness and session id; pij reads at most the last 256 KiB of it (or the harness's own usage record) for the last usage figure, and shows unknown when the file is gone or the figure is not in the tail. A transcript is never read whole.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
           "claim": "Cost: one indexed read per seat listed; at most 256 KiB read per session listed, so a default call reads at most 5 MiB per seat. In-process; no launch; nothing per tick.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         }
       ]
@@ -66,7 +66,7 @@
           "id": "ph-0001",
           "title": "Session history (workstream 008 s04)",
           "brief": "One phase on PR #346.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

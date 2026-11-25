@@ -36,6 +36,7 @@ pub mod reaper;
 mod registration;
 pub mod reported_context;
 mod serve;
+pub mod session_history;
 pub mod session_warmup;
 pub mod spawn_waits;
 mod supervise;
@@ -1490,6 +1491,16 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
         extension_lost,
         spawn_waits,
     })
+}
+
+/// [`session_roots`] as the session history reads them (plan 250).
+pub fn history_roots() -> session_history::Roots {
+    let roots = session_roots();
+    session_history::Roots {
+        claude_homes: roots.claude_homes,
+        omp_sessions: roots.omp_sessions,
+        copilot_sessions: roots.copilot_sessions,
+    }
 }
 
 /// Where every readable harness keeps its sessions on this machine: the one

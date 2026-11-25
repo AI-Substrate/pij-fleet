@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Unit tests of the fold: spawn, compact, revive and rebind give the right sessions and reasons.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon session_history"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: --history and pod sessions list the sessions; the spawn counter does not move.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon sessions_history_http"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Unit tests: a fixture transcript's tail gives the figure; a missing file or a figure outside the cap gives unknown; at most the cap is read.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon session_tail"
         },
         {
@@ -51,7 +51,7 @@
           "mode": "ABSENT",
           "tier": "human-judgement",
           "proof": "The performance role checks the cost row on the live store.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "review"
         }
       ]
