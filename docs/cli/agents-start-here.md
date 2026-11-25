@@ -46,6 +46,7 @@ The fleet's rules and decisions, the role directory and role memory live on the 
 
 - `pij docs get concepts`: what a seat, role, type, position, pod, seed and template are.
 - `pij docs get types`: the ten seat types; `pij docs get building-a-role` to make a role on one.
+- `pij docs get pods`: start, follow and take down a group of seats as one.
 - `pij docs list`: every page bundled with this pij.
 - The pij skill (`/pij` in your harness): when and how to spawn peers, delegate, run as a prime or a project manager.
 - In the pij repository: `AGENTS.md` for the rules every seat follows, `docs/how/pij-rs-api.md` for the daemon's commands and refusals, and `docs/project/` for what pij is for and how it is built.

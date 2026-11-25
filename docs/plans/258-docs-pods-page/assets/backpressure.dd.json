@@ -1,0 +1,71 @@
+{
+	"dd": {
+		"schema": "builder/backpressure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Plan 258 backpressure",
+				"plan": "../plan.dd.json#meta",
+				"certainty": "Confident"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"id": "bp-0001",
+					"criterion": "AC1",
+					"phase": "ph-0001",
+					"mode": "BUILD",
+					"tier": "computational",
+					"proof": "docs.rs the_first_pages_are_bundled_and_concepts_defines_the_seven_terms lists `pods`; `just docs-bundle-check` on the rebuilt binary (every page equals its file, and every docs/cli file is bundled); live `pij docs get pods` against the deployed binary.",
+					"state": "checked",
+					"probe": "just docs-bundle-check"
+				},
+				{
+					"id": "bp-0002",
+					"criterion": "AC2",
+					"phase": "ph-0001",
+					"mode": "BUILD",
+					"tier": "human",
+					"proof": "The page read against `pij pod --help`, the Pods section of docs/how/pij-rs-api.md and pod.rs's flag parser and refusal codes; a reviewer checks the same.",
+					"state": "checked",
+					"probe": "pij pod --help"
+				},
+				{
+					"id": "bp-0003",
+					"criterion": "AC3",
+					"phase": "ph-0001",
+					"mode": "BUILD",
+					"tier": "computational",
+					"proof": "`ddocs validate` and `just ddocs-check` pass with req-05 shipped and s03 complete (the 008 s02 link resolves); `just pij-skill-check` passes with the community route at its line budget.",
+					"state": "checked",
+					"probe": "just ddocs-check"
+				},
+				{
+					"id": "bp-0004",
+					"criterion": "cost",
+					"phase": "ph-0001",
+					"mode": "BUILD",
+					"tier": "human",
+					"proof": "Steady-state cost: 0 launches per second, no poll interval, no per-seat scaling. One compiled-in page; `pij docs` runs in-process with no daemon.",
+					"state": "checked",
+					"probe": "git diff --stat origin/main"
+				}
+			]
+		},
+		{
+			"name": "sensors",
+			"value": [
+				{
+					"id": "sn-0001",
+					"name": "done gate",
+					"command": "harness checks",
+					"dimension": "correctness"
+				}
+			]
+		}
+	]
+}

@@ -213,6 +213,7 @@ pub fn pages() -> &'static [Page] {
         ];
         pages.extend(types::all().iter().map(type_page));
         pages.push(file_page!("building-a-role", "docs/cli/building-a-role.md"));
+        pages.push(file_page!("pods", "docs/cli/pods.md"));
         pages
     })
 }
@@ -605,7 +606,13 @@ mod tests {
     /// PRD 009 req-05: the first pages, and concepts defines every term.
     #[test]
     fn the_first_pages_are_bundled_and_concepts_defines_the_seven_terms() {
-        for id in ["agents-start-here", "concepts", "types", "building-a-role"] {
+        for id in [
+            "agents-start-here",
+            "concepts",
+            "types",
+            "building-a-role",
+            "pods",
+        ] {
             assert!(page(id).is_some(), "{id}");
         }
         for kind in types::TYPES {
