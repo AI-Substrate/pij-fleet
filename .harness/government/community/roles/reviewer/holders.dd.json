@@ -3171,7 +3171,10 @@
 					"harness_session": "99e7e762-ff33-4bb9-80d9-2387bed98bd4",
 					"instance_key": "355",
 					"machine": "studio",
+					"release_why": "PR #355 merged (0b14e30a58e2)",
+					"released_by": "pij-kind-parrotfish",
 					"seat": "pij-surprised-quelea",
+					"to": "2026-11-25T09:37:35.413Z",
 					"why": "light C34 review of #355 (010 req-06 states) at 82d3034"
 				}
 			]
