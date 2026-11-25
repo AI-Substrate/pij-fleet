@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "Telling a seat whether it carries authority; the remaining PRD 009 pods page",
+				"tags": [
+					"prd-009",
+					"authority",
+					"first-turn"
+				],
+				"title": "PRD 009 s04 merged: authority comes from the role id, never the type"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PRD 009 s04 merged (#351, main cc995a6c). Review finding B351-R1-01 (pij-official-aardwolf, BLOCK): the first turn said \"Carries authority\" from the TYPE's flag. Authority comes only from the role id: `holders::seat_role_for` (pa, pm, pm-<n>, else worker), the function assign stamps the seat role with. Fixed in a5778a19: the line reads \"Carries authority: yes|no, as your role's id makes you a <pa|pm|worker> (a type grants none).\" Lesson: never derive authority from meta.type or TypeDef::authority() anywhere a seat is told what it may do; the type is a label. Prove such fixes with a mutant (put def.authority() back; the release-helper/pa case must fail).\n\nRemaining 009 work: only the pods page (req-05), after PRD 008 (#346) merges: a docs/cli/pods.md page (or generated from the pod template catalog if 008 compiles one in), listed in crates/cli/src/docs.rs pages(), the concepts \"Coming\" section trimmed for what 008 ships, req-05 shipped and workstream 009 s03 complete. Branch off main in ~/pi-hacking/pij-laneB.\n"
+		}
+	]
+}
