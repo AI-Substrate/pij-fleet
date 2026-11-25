@@ -1,0 +1,28 @@
+{
+	"dd": {
+		"schema": "pij/holders"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"role": "machine-health"
+			}
+		},
+		{
+			"name": "rows",
+			"value": [
+				{
+					"assigned_by": "pij-kind-parrotfish",
+					"from": "2026-11-25T03:20:45.634Z",
+					"harness": "omp",
+					"harness_session": "01a210b8-218e-7394-a42d-312ab5e2447a",
+					"machine": "studio",
+					"seat": "pij-logical-canid",
+					"why": "standing machine-health steward (Jordan 2026-11-25)"
+				}
+			]
+		}
+	]
+}
