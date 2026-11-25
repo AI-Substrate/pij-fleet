@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "Before reviewing process-group teardown, PID reuse, or archive TS proof",
+				"tags": [
+					"review",
+					"fixtures",
+					"pgid",
+					"rule-6",
+					"c25"
+				],
+				"title": "Fixture cleanup must retire dead group IDs"
+			}
+		},
+		{
+			"name": "body",
+			"value": "When reviewing fixture cleanup, eventual disappearance is not enough: verify that an ID observed gone is retired. PR 350 at ad7cd0b kept dead PGIDs in stopFixtures' groups Set. A synthetic two-group lifecycle (first group gone, second still draining, first number reused) caused TERM to the reused ID; pruning observed-dead IDs closed that witness. No actual foreign process was signaled.\n\nThe requested drain and teardown mutants both failed their dedicated tests. The teardown mutant deliberately leaked five groups/seven processes; ancestry was captured before worker exit, then the exact recorded fixture PID was checked and terminated, and all seven recorded PIDs were verified absent. Record ancestry while it exists; never rediscover ownership by matching command names.\n\nThree baseline shared-build runs passed 34/34 each at nice 19. For TS proof in a read-only review checkout, git archive the head into a private recorded directory and use independent locked dependencies there. C25 forbids a node_modules symlink; the 2026-11-25 archive-memory note recommending one contradicts the canonical ruling. Do not follow that advice. The scratch archive needs no cargo for these shell fixtures.\n\nKeep mutant archives out of the root being linted: nested biome.json files make just lint reject nested root configurations. Preserve the witness patch, clean the exact recorded mutant folders, then lint the unchanged archive.\n\nmagicWand: extend the existing shared-build teardown test with a gone-then-reused PGID oracle, rather than relying only on every group eventually becoming absent. This is the deterministic sensor owed by B350-R1-01; the author fixes and the prime verifies, with no second review round under amended C34.\n"
+		}
+	]
+}
