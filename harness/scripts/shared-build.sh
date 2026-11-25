@@ -324,16 +324,22 @@ release() {
 # reaches rustc, build scripts and linkers, not just cargo's own pid. The lock
 # is released only once that whole group is gone: a descendant that outlived
 # its cargo could otherwise write into the next tree's build.
-DRAIN_TICKS=100 # 0.1 s each: TERM, then KILL after 10 s
+# F281: TERM goes again every tick until the group is gone. A job bash has
+# just forked still carries this script's TERM trap until it resets it, and
+# bash 3.2 drops a TERM that lands in that window (86 of 300 in a probe), so
+# one TERM could leave the group running until the KILL. Re-sending is a
+# brake: it only ever stops this script's own group sooner. The tick and the
+# KILL at 10 s are policy (shared-build.test.ts reads DRAIN_TICKS).
+DRAIN_TICKS=100 # 0.1 s each: TERM each tick, then KILL after 10 s
 drain() {
 	local group=$1 tick=0
-	kill -0 -- "-$group" 2>/dev/null || return 0
-	kill -TERM -- "-$group" 2>/dev/null
 	while kill -0 -- "-$group" 2>/dev/null; do
-		tick=$((tick + 1))
 		if [ "$tick" -ge "$DRAIN_TICKS" ]; then
 			kill -KILL -- "-$group" 2>/dev/null
+		else
+			kill -TERM -- "-$group" 2>/dev/null
 		fi
+		tick=$((tick + 1))
 		/bin/sleep 0.1
 	done
 }
@@ -343,10 +349,11 @@ drain() {
 # returns once the group is gone, so a USR2 it sent is already pending here.
 # Never `wait` on it: bash 5.2 (Linux) can block for good in `wait` on a
 # watchdog that has signalled and exited (1 run in ~20 under load, #326 CI).
+# TERM goes again every tick, as in drain: a just-forked watchdog can drop one.
 stop_watchdog() {
 	[ -n "$watchdog" ] || return 0
-	kill -TERM -- "-$watchdog" 2>/dev/null
 	while kill -0 -- "-$watchdog" 2>/dev/null; do
+		kill -TERM -- "-$watchdog" 2>/dev/null
 		/bin/sleep 0.05
 	done
 	watchdog=""

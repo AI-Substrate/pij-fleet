@@ -1,4 +1,4 @@
-import { type SpawnOptions, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, type SpawnOptions, spawn, spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { scaled } from "../driver/time-scale.js";
 
 // Plan 198: `just shared-build`, driven with a fake cargo and a fake df in
 // temporary directories. Never the real shared target.
@@ -30,9 +31,122 @@ const roots: string[] = [];
  */
 const HERMETIC_GIT = { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
 
-afterEach(() => {
-	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
+/** The script's KILL escalation, read from it so a wait here never gives up first. */
+const DRAIN_MS = Number(/^DRAIN_TICKS=(\d+)/m.exec(readFileSync(SCRIPT, "utf8"))?.[1]) * 100;
+if (!Number.isFinite(DRAIN_MS)) throw new Error(`no DRAIN_TICKS=<n> line in ${SCRIPT}`);
+/** Every process this file starts that can outlive its test, each its own process group (detached). */
+const fixtures: ChildProcess[] = [];
+
+afterEach(
+	async () => {
+		const left = await stopFixtures();
+		for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+		expect(left, "fixture process groups still alive after teardown").toEqual([]);
+	},
+	scaled(DRAIN_MS + 10_000),
+);
+
+function track(child: ChildProcess): ChildProcess {
+	fixtures.push(child);
+	return child;
+}
+
+/** What teardown does to process groups; a test swaps it for a mock. */
+interface GroupSignals {
+	/** The groups of these running leaders and their live descendants, read now. */
+	groupsOf(leaders: number[]): number[];
+	alive(group: number): boolean;
+	signal(group: number, signal: "SIGTERM" | "SIGKILL"): void;
+	now(): number;
+	tick(): Promise<void>;
+}
+
+const realSignals: GroupSignals = {
+	groupsOf: fixtureGroups,
+	alive(group) {
+		try {
+			process.kill(-group, 0);
+			return true;
+		} catch (error) {
+			return (error as NodeJS.ErrnoException).code === "EPERM";
+		}
+	},
+	signal(group, signal) {
+		try {
+			process.kill(-group, signal);
+		} catch {}
+	},
+	now: Date.now,
+	tick: () => new Promise((r) => setTimeout(r, 100)),
+};
+
+/**
+ * The groups of every fixture still running and of each of its descendants
+ * (the script's jobs run in groups of their own): one /bin/ps, only when a
+ * fixture still runs. Only groups this file started, never by pattern (rule 6).
+ */
+function fixtureGroups(leaders: number[]): number[] {
+	if (leaders.length === 0) return [];
+	const rows = (
+		spawnSync("/bin/ps", ["-A", "-o", "pid=,ppid=,pgid="], { timeout: scaled(5_000) }).stdout ?? ""
+	)
+		.toString()
+		.trim()
+		.split("\n")
+		.map((row) => row.trim().split(/\s+/).map(Number));
+	const tree = new Set(leaders);
+	for (let grew = true; grew; ) {
+		grew = false;
+		for (const [pid, ppid] of rows) {
+			if (pid !== undefined && ppid !== undefined && tree.has(ppid) && !tree.has(pid)) {
+				tree.add(pid);
+				grew = true;
+			}
+		}
+	}
+	const groups = new Set(leaders);
+	for (const [pid, , pgid] of rows)
+		if (pid !== undefined && pgid && tree.has(pid)) groups.add(pgid);
+	return [...groups];
+}
+
+/**
+ * F281: stops every fixture still running, by its own process groups: TERM
+ * each tick (as the script's drain does), KILL past the script's own KILL
+ * escalation. Returns the groups still alive after, which teardown fails on.
+ */
+function stopFixtures(): Promise<number[]> {
+	const started = fixtures.splice(0);
+	return stopGroups(() =>
+		started.flatMap((child) =>
+			child.pid !== undefined && child.exitCode === null && child.signalCode === null
+				? [child.pid]
+				: [],
+		),
+	);
+}
+
+/**
+ * A group recorded from a running fixture's tree stays ours after its leader
+ * exits, but only until it is first seen gone: its number can then be reused
+ * by a group that is not ours, so it is retired, and comes back only if a
+ * running fixture's tree names it again (B350-R1-01, rule 6).
+ */
+async function stopGroups(
+	running: () => number[],
+	io: GroupSignals = realSignals,
+): Promise<number[]> {
+	const groups = new Set<number>();
+	const killAt = io.now() + scaled(DRAIN_MS + 5_000);
+	const giveUpAt = killAt + scaled(2_000);
+	for (;;) {
+		for (const group of io.groupsOf(running())) groups.add(group);
+		for (const group of groups) if (!io.alive(group)) groups.delete(group);
+		if (groups.size === 0 || io.now() > giveUpAt) return [...groups];
+		for (const group of groups) io.signal(group, io.now() < killAt ? "SIGTERM" : "SIGKILL");
+		await io.tick();
+	}
+}
 
 function executable(path: string, body: string): void {
 	writeFileSync(path, `#!/bin/sh\n${body}\n`);
@@ -178,7 +292,7 @@ function start(
 	umask?: string,
 	parentNice: readonly number[] = [],
 ) {
-	const options: SpawnOptions = { cwd: f.worktree, env: { ...f.env, ...env } };
+	const options: SpawnOptions = { cwd: f.worktree, env: { ...f.env, ...env }, detached: true };
 	// The caller's own niceness: each entry wraps the script in one more nice.
 	const niced = parentNice.flatMap((n) => ["/usr/bin/nice", "-n", String(n)]);
 	const child = umask
@@ -186,6 +300,7 @@ function start(
 		: niced.length > 0
 			? spawn(niced[0] ?? "", [...niced.slice(1), "bash", SCRIPT, ...args], options)
 			: spawn("bash", [SCRIPT, ...args], options);
+	track(child);
 	let stdout = "";
 	let stderr = "";
 	child.stdout?.on("data", (chunk: Buffer) => {
@@ -599,7 +714,11 @@ describe("just shared-build", () => {
 			}
 			await new Promise((r) => setTimeout(r, delay));
 			run1.child.kill("SIGINT");
-			const timeout = new Promise<"leaked">((r) => setTimeout(() => r("leaked"), 8_000));
+			const sent = Date.now();
+			// Past the script's own KILL escalation, so this never gives up before it.
+			const timeout = new Promise<"leaked">((r) =>
+				setTimeout(() => r("leaked"), scaled(DRAIN_MS + 5_000)),
+			);
 			const stopped = await Promise.race([run1.done, timeout]);
 			if (stopped === "leaked") {
 				throw new Error(
@@ -607,6 +726,8 @@ describe("just shared-build", () => {
 				);
 			}
 			expect(stopped.code, `${delay} ms`).toBe(130);
+			// A stop that took the KILL escalation lost its TERM (drain re-sends it).
+			expect(Date.now() - sent, `${delay} ms: drained only by KILL`).toBeLessThan(DRAIN_MS);
 			expect(existsSync(f.lock)).toBe(false);
 		}
 		if (existsSync(join(f.root, "hang.pid"))) {
@@ -614,6 +735,78 @@ describe("just shared-build", () => {
 			expect(() => process.kill(hungPid, 0)).toThrow();
 		}
 	}, 120_000);
+
+	// F281: bash 3.2 drops a TERM that lands on a job it has just forked (86
+	// of 300 in a probe), which the race above reaches only rarely. A test
+	// binary that drops its first TERM stands in for it, deterministically:
+	// drain sends TERM again on its next tick, never waiting for the KILL.
+	it("re-sends TERM to a group that dropped the first one, never waiting for the KILL (F281)", async () => {
+		const f = fixture();
+		const dropper = join(f.root, "bin", "pij_drop-0123abcd");
+		executable(
+			dropper,
+			[
+				"trap 'trap - TERM' TERM",
+				'echo $$ > "$HANG_PID"',
+				"while :; do /bin/sleep 0.05; done",
+			].join("\n"),
+		);
+		const run1 = start(f, ["--", "test"], { RUNNING: "1", HANG: dropper });
+		await until(() => existsSync(join(f.root, "hang.pid")));
+		const dropperPid = Number(readFileSync(join(f.root, "hang.pid"), "utf8"));
+		const sent = Date.now();
+		run1.child.kill("SIGTERM");
+		expect((await run1.done).code).toBe(143);
+		expect(Date.now() - sent, "drained only by KILL").toBeLessThan(DRAIN_MS);
+		expect(() => process.kill(dropperPid, 0)).toThrow();
+		expect(existsSync(f.lock)).toBe(false);
+	});
+
+	// B350-R1-01 (rule 6): mocked signals. Fixture 100 records its job's
+	// group 200 and exits; 200 is still stopped after (ours, recorded), then
+	// goes, then its number is reused while fixture 300 keeps teardown going:
+	// the reused 200 is never signalled.
+	it("teardown retires a group at its first absence and never signals its reused number", async () => {
+		let tick = 0;
+		const live = (group: number) =>
+			group === 100 ? tick < 1 : group === 200 ? tick < 2 || tick >= 3 : tick < 5;
+		const signalled: [number, number][] = [];
+		const io: GroupSignals = {
+			groupsOf: (leaders) => leaders.flatMap((l) => (l === 100 ? [100, 200] : [l])),
+			alive: live,
+			signal: (group) => {
+				signalled.push([tick, group]);
+			},
+			now: () => tick,
+			tick: async () => {
+				tick++;
+			},
+		};
+		const left = await stopGroups(() => [100, 300].filter((l) => live(l)), io);
+		expect(left).toEqual([]);
+		expect(signalled.filter(([, g]) => g === 200)).toEqual([
+			[0, 200],
+			[1, 200],
+		]);
+		expect(signalled.filter(([t]) => t >= 3).map(([, g]) => g)).toEqual([300, 300]);
+	});
+
+	// F281: a fixture a failed or timed-out test left running (lane A, three
+	// scripts alive for 3 h after a vitest run) is stopped at teardown by its
+	// own process groups, its jobs' groups included, and teardown fails on any
+	// group still alive.
+	it("stops every fixture still running at teardown, its jobs' process groups too", async () => {
+		const f = fixture();
+		const hung = join(f.root, "bin", "pij_left-0123abcd");
+		executable(hung, 'echo $$ > "$HANG_PID"\n/bin/sleep 600');
+		const left = start(f, ["--", "test"], { RUNNING: "1", HANG: hung });
+		await until(() => existsSync(join(f.root, "hang.pid")));
+		const hungPid = Number(readFileSync(join(f.root, "hang.pid"), "utf8"));
+		expect(await stopFixtures()).toEqual([]);
+		expect(() => process.kill(hungPid, 0)).toThrow();
+		expect((await left.done).code).toBe(143);
+		expect(existsSync(f.lock)).toBe(false);
+	});
 
 	it("refuses under the disk floor before the lock, and releases if the floor is crossed while holding", async () => {
 		const f = fixture();
@@ -671,11 +864,13 @@ describe("just shared-build", () => {
 		// the run's group: only the run's own group is ever stopped.
 		const hung = join(f.root, "bin", "pij_rs-0123abcd");
 		executable(hung, 'echo $$ > "$HANG_PID"\n/bin/sleep 600');
-		const bystander = spawn(hung, [], {
-			detached: true,
-			stdio: "ignore",
-			env: { ...f.env, HANG_PID: join(f.root, "bystander.pid") },
-		});
+		const bystander = track(
+			spawn(hung, [], {
+				detached: true,
+				stdio: "ignore",
+				env: { ...f.env, HANG_PID: join(f.root, "bystander.pid") },
+			}),
+		);
 		const started = Date.now();
 		const result = await run(f, ["--", "test", "--then", "build"], {
 			HANG: hung,
