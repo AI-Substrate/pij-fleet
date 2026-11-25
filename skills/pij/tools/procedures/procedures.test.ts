@@ -978,6 +978,26 @@ describe("a pod template's procedures (PRD 010 req-01)", () => {
 		expect(calls.map((c) => c.args)).toEqual([skip]);
 	});
 
+	it("pod down of a shipped template (no folder) runs its repo close procedure, and stops the same way", () => {
+		procedure("fleet", "0003", "close-a-step", {
+			steps: [
+				{
+					id: "s0001",
+					title: "merge it",
+					kind: "decision",
+					decide: "the prime",
+					done_when: "merged",
+				},
+			],
+		});
+		podShown = { close_procedure: { id: "PROC-fleet-0003", template: null, key: "pod-b1" } };
+		const args = ["pod", "down", "b1"];
+		const options = { skillHome: join(root, "no-skill-home") };
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+		expect(calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"))).toEqual([]);
+		expect(err.join("\n")).toContain("resume: just proc PROC-fleet-0003 s0001 --key pod-b1");
+	});
+
 	it("pod down goes straight to pij-rs when the template names no close procedure", () => {
 		const args = ["pod", "down", "b1"];
 		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs")).toBe(EXIT_OK);

@@ -1,0 +1,149 @@
+{
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-pods-0001",
+				"title": "Open a build pod's step worktree",
+				"area": "pods",
+				"kind": "runnable",
+				"owner": "project-manager",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"summary": "Make the step's branch in its own worktree off the base, then record that folder as the pod's work-folder so `pij pod down` records where the step stands. The shipped build pod names it as its up procedure."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "The build pod's project manager, or whoever ran `pij pod up`.",
+				"when": "Right after `pij pod up shipped:build`, from the repo's main checkout, with `--key pod-<pod>` (the pod's name is read from the key)."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": [
+				{
+					"name": "branch",
+					"description": "the step's new branch, e.g. feat/008-s02",
+					"required": "yes"
+				},
+				{
+					"name": "folder",
+					"description": "the worktree's absolute folder; it must not exist yet, or already be this branch's worktree",
+					"required": "yes"
+				},
+				{
+					"name": "base",
+					"description": "what the branch starts from",
+					"required": "no",
+					"fallback": "origin/main"
+				}
+			]
+		},
+		{
+			"name": "preconditions",
+			"value": [
+				{
+					"id": "p-1",
+					"check": "a-pod-key",
+					"text": "the run's key is pod-<pod>",
+					"fix": "run it with --key pod-<pod>, the pod `pij pod up` made"
+				}
+			]
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Make the branch in its own worktree",
+					"kind": "run",
+					"done_when": "<folder> is a git worktree on <branch>.",
+					"run": "add-worktree",
+					"done": "worktree-on-branch",
+					"inputs": ["branch", "folder", "base"]
+				},
+				{
+					"id": "s0002",
+					"title": "Record the folder as the pod's work-folder",
+					"kind": "run",
+					"done_when": "`pij pod show <pod>` lists work-folder=<folder>.",
+					"run": "record-folder",
+					"done": "folder-recorded",
+					"inputs": ["folder"]
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "The step has its own branch and worktree, and the pod knows the folder, so pod down records its head."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "It does not install the worktree's dependencies; run the repo's own setup (in pij, `just worktree-deps`)."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Running it from inside another worktree: the new worktree is still made, but off that checkout's repository; run it from the main checkout."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": [
+				{
+					"row": "../../../../../docs/project/prds/010-pod-templates.dd.json#requirements/req-05",
+					"guarantees": "The shipped build pod's open procedure."
+				}
+			]
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": []
+		},
+		{
+			"name": "side_effects",
+			"value": [
+				{
+					"path": "<folder>",
+					"why": "Step 0001 adds the worktree and its branch."
+				}
+			]
+		},
+		{
+			"name": "comments",
+			"value": []
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "First draft (PRD 010 s04)."
+				}
+			]
+		}
+	],
+	"references": []
+}

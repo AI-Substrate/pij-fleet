@@ -59,7 +59,7 @@
 				{
 					"id": "s04",
 					"title": "The build pod and the live-call pod",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/010-pod-templates.dd.json#requirements/req-05"],
 					"builds": [
 						"../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-templates",
@@ -104,6 +104,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s03 complete on #347 (plan 255)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s04 complete on #347 (plan 256)."
 				}
 			]
 		}

@@ -101,7 +101,7 @@ pub const CLOSE_USE: &str = "close";
 /// The uses a template's procedure may name.
 pub const PROCEDURE_USES: [&str; 3] = ["up", "run", CLOSE_USE];
 /// Procedure areas the pij skill ships, present wherever pij is installed.
-pub const SKILL_PROCEDURE_AREAS: [&str; 2] = ["meta", "docs"];
+pub const SKILL_PROCEDURE_AREAS: [&str; 3] = ["meta", "docs", "pods"];
 
 /// A read, checked pod template.
 #[derive(Clone, Debug, PartialEq)]
@@ -424,7 +424,9 @@ pub fn procedure_present(template: &Template, repo: &Path, procedure: &Procedure
         })
     };
     match procedure.from {
-        ProcedureFrom::Template => in_home(&template.folder.join("procedures")),
+        ProcedureFrom::Template => {
+            !template.folder.as_os_str().is_empty() && in_home(&template.folder.join("procedures"))
+        }
         ProcedureFrom::Repo => {
             SKILL_PROCEDURE_AREAS.contains(&area)
                 || in_home(&repo.join(procedures_home(repo)))

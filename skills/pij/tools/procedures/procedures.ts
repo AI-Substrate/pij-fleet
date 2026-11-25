@@ -38,7 +38,7 @@ export const PROJECT_HOME = "docs/project/procedures";
 /** Procedures that ship with the pij skill, relative to pij's repo root. */
 export const SKILL_HOME = "skills/pij/procedures";
 /** Areas that live in the skill's home; a project's own home refuses them so ids never collide. */
-export const SKILL_AREAS: readonly string[] = ["meta", "docs"];
+export const SKILL_AREAS: readonly string[] = ["meta", "docs", "pods"];
 export const DOC_FILE = "procedure.dd.json";
 export const SCHEMA = "pij/procedure";
 /**
@@ -2264,14 +2264,17 @@ export function podDown(
 	} catch {
 		close = undefined;
 	}
-	if (!isObj(close) || typeof close.id !== "string" || typeof close.template !== "string")
-		return forward([]);
+	if (!isObj(close) || typeof close.id !== "string") return forward([]);
 	const id = close.id;
-	const folder = close.template;
+	// A shipped template has no folder (null): its procedures are the repo's or the skill's.
+	const folder = str(close.template);
+	const where =
+		folder === undefined ? "this repo nor the pij skill" : `${folder}/procedures nor this repo`;
+	const templateFlag = folder === undefined ? "" : ` --template ${folder}`;
 	const key = str(close.key) ?? `pod-${pod}`;
 	const runIo: Io = args.includes("--json") ? { ...io, out: io.err } : io;
 	const skip = `pij pod down ${pod} --skip-close-procedure`;
-	const ctx = context(runIo, { ...options, template: folder });
+	const ctx = context(runIo, folder === undefined ? options : { ...options, template: folder });
 	if (typeof ctx === "string") {
 		io.err(
 			`refused: pod down ${pod}: its close procedure ${id} cannot run: ${ctx}; nothing was closed.`,
@@ -2282,9 +2285,9 @@ export function podDown(
 	const procedure = findProcedure(ctx.loaded.procedures, id);
 	if (procedure === undefined || Array.isArray(procedure)) {
 		io.err(
-			`refused: pod down ${pod}: its template names close procedure ${id}, which is in neither ${folder}/procedures nor this repo; nothing was closed.`,
+			`refused: pod down ${pod}: its template names close procedure ${id}, which is in neither ${where}; nothing was closed.`,
 		);
-		io.err(`  see what it names: ${ctx.entry} list --template ${folder}`);
+		io.err(`  see what it names: ${ctx.entry} list${templateFlag}`);
 		io.err(`  go on without it: ${skip}`);
 		return EXIT_REFUSED;
 	}
@@ -2295,7 +2298,7 @@ export function podDown(
 			`refused: pod down ${pod}: close procedure ${id} stopped${run.stoppedAt ? ` at step ${run.stoppedAt}` : ""}; nothing was closed.`,
 		);
 		io.err(
-			`  resume: ${ctx.entry} ${id}${run.stoppedAt ? ` ${run.stoppedAt}` : ""} --template ${folder} --key ${key}`,
+			`  resume: ${ctx.entry} ${id}${run.stoppedAt ? ` ${run.stoppedAt}` : ""}${templateFlag} --key ${key}`,
 		);
 		io.err(`  then: pij pod down ${pod}   (or go on without it: ${skip})`);
 		return run.code === EXIT_OK ? EXIT_REFUSED : run.code;

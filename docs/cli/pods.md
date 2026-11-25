@@ -11,6 +11,7 @@ A pod is made from a template: a folder holding `pod-template.dd.json` (schema `
 - `wiring`: how the slots feed each other.
 - `consulted`: outside roles the pod asks, and whether one must have a live holder `before_up`.
 - `deliverables`: each with an owner role, its stages, what each stage needs (`stage_needs`) and a role it is written back to (`write_back`).
+- `procedures`: the procedures it names, each its own (`from: template`, under `procedures/` in its folder) or linked from the repo or the pij skill (`from: repo`), used at `up`, as a `run` or at `close`. `pij proc list --template <path>` lists them; `plan` warns about one that is missing.
 
 A pod's record is `community/pods/<pod>/pod.dd.json` (schema `pij/pod`) on the governance branch: its template and that template's version and hash, the filled parameters, members, consulted roles, deliverables and a log. Seat facts stay in pij's database. The template is never written.
 
@@ -80,10 +81,23 @@ Each change is logged. A seat already in another pod refuses `E-RS-POD-MEMBER`, 
 
 `stage` records one stage of a deliverable, with its output and the slots whose work it folds in: all the slots the stage needs, unless `--from` names fewer. A stage still waiting on a slot is recorded with a warning naming it, so a late member never blocks; its work goes into a later stage. When the deliverable names a write-back role, the stage is sent to that role as one request, as `pij send role:<id>` sends it, unless the brake holds it. Recording a stage twice refuses.
 
+## Shipped templates, and your own
+
+    pij pod templates
+    pij pod adopt <name>[@v<n>] [--into <path>] --why <text>
+    pij pod template-diff <path>
+    pij community init --seeds all --templates <name>,... [--into <path>] --why <text>
+    pij pod export <pod> --as-template <path> --why <text>
+    pij directory export <role> --as-template <path> --why <text>
+
+pij ships `build` (a project manager who owns the PR, a coder, and a reviewer that must not run the coder's model; its up procedure makes the step's worktree, its close procedure stops `down` on uncommitted work or an open PR) and `live-call` (a note taker who owns the record, a researcher, and a validator that must not run the researcher's model; it consults `subject-lead` and writes back to `subject-knowledge`, roles to rename when you adopt it). Name one as `shipped:<name>`, or `adopt` a copy the repo then owns (governance by default, files with `--into`); `template-diff` shows what changed upstream since the copy and applies nothing. `community init` is a prime's setup job: the types' seeds and the named templates, keeping anything already there. `export` saves what a pod or a role became as the repo's own template, and the `pij directory` view suggests it for a shape made a second time. None of these launches a seat.
+
 ## Take it down, and revive it
 
     pij pod down <pod>
     pij pod up <pod> [--session <tmux>]
+
+**The close procedure first.** When the template names a `close` procedure, `pij pod down` runs it to its end in your process (key `pod-<pod>`). If it stops early, down closes nothing and prints where it stopped and how to resume; `--skip-close-procedure` goes on without it and says so in the pod's log.
 
 **The freeze at down.** `down` records the work folder's branch and head, and warns that the run is unfrozen if the folder has uncommitted changes. Then it closes each member exactly as `pij close <seat> --stop` would, so each one is asked to write its memory note first.
 
@@ -91,15 +105,9 @@ Each change is logged. A seat already in another pod refuses `E-RS-POD-MEMBER`, 
 
 `up <pod>` on a pod that is down revives each member, one at a time, under revive's own rules: a cold seat's refusal comes back as a warning naming that seat. On a pod that is up it refuses `E-RS-POD-EXISTS`.
 
-## Coming
-
-Planned and not in this pij yet; this section changes as each ships.
-
-- **Template procedures (PRD 010).** A template's own steps to run at up and at down. Until then `down` has none to run.
-- **Shipped pod templates (PRD 010).** Versioned examples a repo copies and adapts. Today you write your own template.
-
 ## Read more
 
 - `pij docs get concepts`: what a pod, seat, role and type are.
+- `pij proc --help`: running a template's procedures.
 - `pij docs get building-a-role`: the roles a slot names.
 - `pij directory memory <role> --subject <subject>`: a role's notes for one subject.

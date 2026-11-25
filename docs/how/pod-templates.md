@@ -51,5 +51,20 @@ seed text carry it:
   {"id": "coder", "role": "coder", "seed": "This is a training run: do not read earlier runs' branches, outputs or notes for this subject."}
   ```
 
+## The shipped pods
+
+`pij pod templates` lists the pods pij ships; name one as `shipped:<name>`, or `pij pod adopt <name>` to own a copy.
+
+- **build**: a project manager (owns the step's PR), a coder and a required reviewer that must not run the coder's
+  model. Its `up` procedure, PROC-pods-0001, makes the step's branch in its own worktree and records it as the
+  `work-folder`; its `close` procedure, PROC-pods-0002, stops `pod down` while that folder holds uncommitted work or
+  its branch has an open PR. Both ship with the pij skill (`from: repo`, area `pods`), because a shipped template has
+  no folder on disk: `pij pod show` answers its close procedure with `template: null` and the pij CLI runs it from the
+  repo's or the skill's procedures.
+- **live-call**: a note taker (owns the meeting record), a researcher and a required validator that must not run the
+  researcher's model. It consults `subject-lead`, needed before up, and writes the record back to
+  `subject-knowledge`; adopt it and rename both to your subject's roles. The researcher's seed carries a training-mode
+  line as the example of honesty instead of walls.
+
 Nothing launches in the background: reading a template's procedures is a few file reads, and a procedure's steps
 launch only what they name, when you run them.

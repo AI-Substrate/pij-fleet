@@ -47,10 +47,10 @@ pij ships two pod templates: a build pod (project manager, coder, reviewer on an
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `templates/pods/build/v1/`: slots project-manager (owns the step's PR), coder and reviewer (must not share the coder's model; required); parameters for the workstream step; procedures to make the run's branch and worktree and to close it. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `templates/pods/live-call/v1/`: slots note-taker (owns the meeting record), researcher (its tools named) and validator (must not share the researcher's model; required); the subject's lead consulted and needed before up; the record written back to the subject's knowledge role; a training-mode seed line as an example of honesty instead of walls. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | `plan` on each with its required parameters prints a complete plan with no warning; with the reviewing slot on its author's model it warns. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | The prime's community route (skills/pij/references/routes/community.md) covers type, spawn with a role, plan-confirm-up, pod down and spot-and-suggest, within its line budget, linking the concepts page PRD 009 delivers. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `templates/pods/build/v1/`: slots project-manager (owns the step's PR), coder and reviewer (must not share the coder's model; required); parameters for the workstream step; procedures to make the run's branch and worktree and to close it. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `templates/pods/live-call/v1/`: slots note-taker (owns the meeting record), researcher (its tools named) and validator (must not share the researcher's model; required); the subject's lead consulted and needed before up; the record written back to the subject's knowledge role; a training-mode seed line as an example of honesty instead of walls. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | `plan` on each with its required parameters prints a complete plan with no warning; with the reviewing slot on its author's model it warns. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | The prime's community route (skills/pij/references/routes/community.md) covers type, spawn with a role, plan-confirm-up, pod down and spot-and-suggest, within its line budget, linking the concepts page PRD 009 delivers. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -58,7 +58,7 @@ pij ships two pod templates: a build pod (project manager, coder, reviewer on an
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | The build pod and the live-call pod (workstream 010 s04) | One phase on PR #347. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | The build pod and the live-call pod (workstream 010 s04) | One phase on PR #347. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

@@ -65,11 +65,18 @@ macro_rules! pod_file {
 }
 
 /// Every shipped `templates/pods/<name>/v<n>/`, by name then version.
-const SHIPPED: &[Shipped] = &[Shipped {
-    name: "build",
-    version: 1,
-    files: &[pod_file!("build", "1", "pod-template.dd.json")],
-}];
+const SHIPPED: &[Shipped] = &[
+    Shipped {
+        name: "build",
+        version: 1,
+        files: &[pod_file!("build", "1", "pod-template.dd.json")],
+    },
+    Shipped {
+        name: "live-call",
+        version: 1,
+        files: &[pod_file!("live-call", "1", "pod-template.dd.json")],
+    },
+];
 
 /// Every shipped version.
 pub fn all() -> &'static [Shipped] {
@@ -456,8 +463,38 @@ pub fn exported(name: &str, pod_name: &str, record: &Value, template: Option<&Va
         json!({"name": "parameters", "value": if parameters.is_null() { json!([]) } else { parameters }}),
         json!({"name": "slots", "value": slots}),
     ];
+    // Wiring and stage needs name slots: keep only the slots exported, so a
+    // slot that had no member leaves no dangling name.
+    let kept: Vec<Value> = slots.iter().map(|slot| slot["id"].clone()).collect();
+    let fit = |wanted: &str, mut value: Value| -> Value {
+        if let Some(rows) = value.as_array_mut() {
+            match wanted {
+                "wiring" => {
+                    rows.retain(|row| kept.contains(&row["from"]) && kept.contains(&row["to"]));
+                }
+                "deliverables" => {
+                    for row in rows.iter_mut() {
+                        if let Some(needs) = row["stage_needs"].as_array_mut() {
+                            for need in needs.iter_mut() {
+                                if let Some(named) = need["slots"].as_array_mut() {
+                                    named.retain(|slot| kept.contains(slot));
+                                }
+                            }
+                            needs.retain(|need| {
+                                need["slots"]
+                                    .as_array()
+                                    .is_some_and(|named| !named.is_empty())
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        value
+    };
     for wanted in ["wiring", "consulted", "deliverables", "procedures"] {
-        let value = pick(wanted);
+        let value = fit(wanted, pick(wanted));
         if value.as_array().is_some_and(|rows| !rows.is_empty()) {
             sections.push(json!({"name": wanted, "value": value}));
         }
@@ -474,11 +511,18 @@ mod tests {
     #[test]
     fn a_shipped_pod_template_is_never_edited() {
         use sha2::{Digest, Sha256};
-        const PINNED: [(&str, u32, &str); 1] = [(
-            "build",
-            1,
-            "c88dc7c5ca69ea7e078b3867c4904f888a53edf568500573b13d95d289f150eb",
-        )];
+        const PINNED: [(&str, u32, &str); 2] = [
+            (
+                "build",
+                1,
+                "fbb657ddca7ec71bf0a2aa50b64d2d9b0677fd6a3eb53aebb911943326629606",
+            ),
+            (
+                "live-call",
+                1,
+                "5aa309c4f49306d3334b5569b91675717dfa4cb9b65c6f05c35d6e66e92caba8",
+            ),
+        ];
         assert_eq!(all().len(), PINNED.len(), "pin every new version here");
         for (name, version, pinned) in PINNED {
             let shipped = get(name, Some(version)).expect("a pinned version ships");
@@ -539,6 +583,10 @@ mod tests {
         let ids: Vec<&str> = parsed.slots.iter().map(|slot| slot.id.as_str()).collect();
         assert_eq!(ids, ["coder", "security"]);
         assert_eq!(parsed.slots[1].keep_open, Some(true));
+        assert!(
+            !text.contains("\"reviewer\"") && !text.contains("\"project-manager\""),
+            "no wiring or stage need names a slot it dropped: {text}"
+        );
     }
 
     /// Plan 255 ac-0003: a role shape made twice by hand, and two pods grown

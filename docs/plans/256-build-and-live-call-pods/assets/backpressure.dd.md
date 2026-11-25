@@ -20,8 +20,8 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2,AC3 | ph-0001 | BUILD | computational | HTTP tests: plan on each shipped pod is complete and warning-free; the same-model reviewer warns. | [ ] unchecked | — | — | cargo test -p pij-daemon shipped_pods |
-| bp-0002 | AC4 | ph-0001 | BUILD | computational | pij-skill-check: the route's budget and verb coverage. | [ ] unchecked | — | — | just pij-skill-check |
+| bp-0001 | AC1,AC2,AC3 | ph-0001 | BUILD | computational | HTTP tests: plan on each shipped pod is complete and warning-free; the same-model reviewer warns. | [x] checked | — | — | cargo test -p pij-daemon shipped_pods |
+| bp-0002 | AC4 | ph-0001 | BUILD | computational | pij-skill-check: the route's budget and verb coverage. | [x] checked | — | — | just pij-skill-check |
 
 <a id="sensors"></a>
 

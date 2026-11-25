@@ -2350,7 +2350,9 @@ fn close_procedure(repo: &Path, document: &Value, pod_name: &str) -> Value {
     template.close_procedure().map_or(Value::Null, |procedure| {
         json!({
             "id": procedure.id,
-            "template": template.folder.display().to_string(),
+            // A shipped template has no folder: its procedures come from the
+            // repo or the pij skill, so the CLI runs them without one.
+            "template": if template.folder.as_os_str().is_empty() { Value::Null } else { json!(template.folder.display().to_string()) },
             "key": format!("pod-{pod_name}"),
             "present": pod::procedure_present(&template, repo, procedure),
         })

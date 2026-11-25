@@ -115,7 +115,7 @@
 					"statement": "pij ships a build pod (a project manager, a coder and a reviewer for one workstream step) and a live-call pod (a note taker, a researcher and a validator for one meeting, consulting the subject's lead). In both, the reviewing slot (the reviewer, the validator) is required and must not share its author's model; each deliverable names its owner role (the step's PR: the project manager; the meeting record: the note taker); each slot names the tools it needs; and the live-call pod marks the subject's lead as needed before `up` and writes its record back to the subject's knowledge role.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pij pod templates` lists both, `plan` on each with its required parameters prints a complete plan with no warning, and `plan` with the reviewer on its author's model warns.",
 					"source": "operator, 2026-11-25: PM, coder and reviewer can be a pod; a working live-call fleet"
 				},
@@ -209,6 +209,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #347 (s03): req-04 shipped (pod and role export, the view's save-as-template suggestion); req-06 stays in progress until its live spawn-counter receipt after deploy."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #347 (s04): req-05 shipped (the build and live-call pods; the build pod's up and close procedures ship with the pij skill, area pods)."
 				}
 			]
 		}

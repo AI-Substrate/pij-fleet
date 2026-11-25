@@ -1546,3 +1546,115 @@ async fn a_pod_and_a_role_export_as_templates_and_a_repeated_shape_is_suggested(
     );
     rig.server.abort();
 }
+
+/// Plan 256 ac-0001..ac-0003: on a project with their roles, the shipped
+/// build and live-call pods each plan with no warning (the live call's lead
+/// live, its procedures pij's own), warn once the reviewing slot shares its
+/// author's model, and each stands up and comes down.
+#[tokio::test]
+async fn the_shipped_pods_plan_clean_then_stand_up_and_come_down() {
+    let repo = repo("pij-pod-shipped-two");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    for (role, kind, model) in [
+        ("pm", "project-manager", "model-a"),
+        ("coder", "coder", "model-a"),
+        ("reviewer", "reviewer", "model-b"),
+        ("note-taker", "worker", "model-a"),
+        ("researcher", "worker", "model-a"),
+        ("validator", "reviewer", "model-b"),
+        ("subject-lead", "worker", "model-a"),
+        ("subject-knowledge", "worker", "model-a"),
+    ] {
+        let added = super::directory(
+            rig.addr,
+            &repo,
+            &[
+                "add",
+                role,
+                "--type",
+                kind,
+                "--title",
+                role,
+                "--holders",
+                "many",
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--harness",
+                "omp",
+                "--model",
+                model,
+                "--why",
+                "w",
+            ],
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    let listed = pod(rig.addr, &repo, &["templates"]).await;
+    let names: Vec<&str> = listed["data"]["templates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["build", "live-call"], "{listed}");
+    let lead =
+        super::role_start::spawn(rig.addr, &repo, Some(json!({"role": "subject-lead"}))).await;
+    assert_eq!(lead["ok"], true, "{lead}");
+
+    let build = ["shipped:build", "--set", "subject=step"];
+    let call = [
+        "shipped:live-call",
+        "--set",
+        "subject=billing",
+        "--set",
+        "meeting=standup",
+    ];
+    for argv in [&build[..], &call[..]] {
+        let planned = pod(rig.addr, &repo, &[&["plan"], argv].concat()).await;
+        assert_eq!(planned["ok"], true, "{planned}");
+        assert_eq!(abouts(&planned), Vec::<String>::new(), "{planned}");
+        assert_eq!(planned["data"]["slots"].as_array().unwrap().len(), 3);
+    }
+    for (role, argv, slot) in [
+        ("reviewer", &build[..], "slot reviewer"),
+        ("validator", &call[..], "slot validator"),
+    ] {
+        let edited = super::directory(
+            rig.addr,
+            &repo,
+            &["edit", role, "--model", "model-a", "--why", "w"],
+        )
+        .await;
+        assert_eq!(edited["ok"], true, "{edited}");
+        let planned = pod(rig.addr, &repo, &[&["plan"], argv].concat()).await;
+        assert_eq!(abouts(&planned), [slot], "its author's model: {planned}");
+    }
+
+    for (argv, name) in [(&build[..], "build"), (&call[..], "live-call")] {
+        let up = pod(
+            rig.addr,
+            &repo,
+            &[&["up"], argv, &["--session", "work"]].concat(),
+        )
+        .await;
+        assert_eq!(up["ok"], true, "{up}");
+        assert_eq!(up["data"]["members"].as_array().unwrap().len(), 3, "{up}");
+        let down = pod(rig.addr, &repo, &["down", name]).await;
+        assert_eq!(down["ok"], true, "{down}");
+        let shown = pod(rig.addr, &repo, &["show", name]).await;
+        assert_ne!(shown["data"]["state"], "up", "{shown}");
+    }
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    assert_eq!(shown["data"]["close_procedure"]["id"], "PROC-pods-0002");
+    assert_eq!(
+        shown["data"]["close_procedure"]["template"],
+        Value::Null,
+        "a shipped template has no folder: {shown}"
+    );
+    assert_eq!(shown["data"]["close_procedure"]["present"], true);
+    rig.server.abort();
+}

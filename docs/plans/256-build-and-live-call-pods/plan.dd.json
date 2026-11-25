@@ -36,25 +36,25 @@
         {
           "id": "ac-0001",
           "claim": "`templates/pods/build/v1/`: slots project-manager (owns the step's PR), coder and reviewer (must not share the coder's model; required); parameters for the workstream step; procedures to make the run's branch and worktree and to close it.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`templates/pods/live-call/v1/`: slots note-taker (owns the meeting record), researcher (its tools named) and validator (must not share the researcher's model; required); the subject's lead consulted and needed before up; the record written back to the subject's knowledge role; a training-mode seed line as an example of honesty instead of walls.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "`plan` on each with its required parameters prints a complete plan with no warning; with the reviewing slot on its author's model it warns.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0004",
           "claim": "The prime's community route (skills/pij/references/routes/community.md) covers type, spawn with a role, plan-confirm-up, pod down and spot-and-suggest, within its line budget, linking the concepts page PRD 009 delivers.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         }
       ]
@@ -66,7 +66,7 @@
           "id": "ph-0001",
           "title": "The build pod and the live-call pod (workstream 010 s04)",
           "brief": "One phase on PR #347.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

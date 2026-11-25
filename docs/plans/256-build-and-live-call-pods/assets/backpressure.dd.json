@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP tests: plan on each shipped pod is complete and warning-free; the same-model reviewer warns.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon shipped_pods"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "pij-skill-check: the route's budget and verb coverage.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "just pij-skill-check"
         }
       ]

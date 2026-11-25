@@ -16,7 +16,7 @@ A pij fleet is a team of agent seats and the work they do. Some fleets build a p
 | position | Who governs whom? | Where a seat sits in the fleet: the designated prime of a project, or a seat role of `pm`, `pa` or `worker` under a parent. Authority comes from here and nowhere else. |
 | pod | Which roles were stood up together? | A named group of role instances with shared parameters, started, shown and taken down as one from a pod template (`pij pod`). A seat is in one pod or none. `pij docs get pods`. |
 | seed | What is a seat of a type told? | The opening text for a type. pij ships one per type, and a repo may keep its own in governance: `pij directory types <type> --seed` shows the one pij would use. A seat started in a role (`pij-rs spawn --as role:<id>`) gets one first turn: its type's seed and a pointer to its type's page, the role's text with its parameters filled, the creator's focus and packet, and the role's memory index. |
-| template | Where does a role start from? | A shipped, versioned example to copy and adapt: role templates (`pij directory templates`). A role made from one records the template and version, and `pij directory template-diff` shows what changed since. Templates are examples, never a checklist. A pod template is a file a pod command names by its path, in governance or the repo; shipped pod templates are planned, see [Coming](#coming). |
+| template | Where does a role start from? | A shipped, versioned example to copy and adapt: role templates (`pij directory templates`). A role made from one records the template and version, and `pij directory template-diff` shows what changed since. Templates are examples, never a checklist. A pod template is a folder a pod command names by its path, in governance or the repo, or a shipped one as `shipped:<name>` (`pij pod templates`; `pij pod adopt` copies one the repo then owns). It may carry its own procedures to run at up and down. |
 
 ## A type is a label, never authority
 
@@ -52,12 +52,6 @@ A procedure belongs to the work, not to a seat: it lives in the repo and is true
 - **An operating fleet** runs recurring work, such as covering a meeting, and builds no product. A note taker, a researcher and a validator do each occurrence's work and consult a knowledge seat that keeps the area's notes current; the knowledge seat stays when the others close.
 
 The same constructs serve both: only the roles and types differ.
-
-## Coming
-
-Planned and not in this pij yet. Each is described here so the terms above make sense; this section changes as each ships.
-
-- **Shipped pod templates and template procedures (PRD 010).** Versioned pod templates a repo copies and adapts, and a template's own steps to run at up and down. Today a pod's template is one you write.
 
 ## Read more
 

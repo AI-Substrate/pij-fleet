@@ -1,0 +1,125 @@
+{
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-pods-0002",
+				"title": "Close a build pod's step",
+				"area": "pods",
+				"kind": "runnable",
+				"owner": "project-manager",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"summary": "Before `pij pod down` closes the build pod's seats: the step's worktree holds nothing uncommitted and its branch has no open PR. Either one stopping stops the down, which closes nothing (a brake; `pij pod down <pod> --skip-close-procedure` goes on anyway)."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "`pij pod down` runs it in the caller's process; anyone may run a step by hand.",
+				"when": "At pod down, with key pod-<pod>. A pod with no work-folder has nothing to check, and both steps pass."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": []
+		},
+		{
+			"name": "preconditions",
+			"value": [
+				{
+					"id": "p-1",
+					"check": "a-pod-key",
+					"text": "the run's key is pod-<pod>",
+					"fix": "run it with --key pod-<pod>; `pij pod down <pod>` does"
+				}
+			]
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Nothing is left uncommitted",
+					"kind": "run",
+					"done_when": "The pod's work-folder has no uncommitted or untracked change (or the pod records none).",
+					"run": "nothing-uncommitted",
+					"done": "nothing-uncommitted"
+				},
+				{
+					"id": "s0002",
+					"title": "The step's PR is settled",
+					"kind": "run",
+					"done_when": "No open PR has the work-folder's branch as its head (or the pod records no folder).",
+					"run": "pr-settled",
+					"done": "pr-settled"
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "The step's work is committed and its PR merged or closed, so closing the pod's seats loses nothing."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "Step 0002 asks GitHub through `gh`; without `gh` or its login it stops with that fix."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Skipping it with --skip-close-procedure while the PR is still open: the seats close and their context goes with them."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": [
+				{
+					"row": "../../../../../docs/project/prds/010-pod-templates.dd.json#requirements/req-05",
+					"guarantees": "The shipped build pod's close procedure."
+				}
+			]
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": []
+		},
+		{
+			"name": "side_effects",
+			"value": []
+		},
+		{
+			"name": "comments",
+			"value": []
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "First draft (PRD 010 s04)."
+				}
+			]
+		}
+	],
+	"references": []
+}
