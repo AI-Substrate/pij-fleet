@@ -36,19 +36,19 @@
         {
           "id": "ac-0001",
           "claim": "A template folder may hold `procedures/<PROC-id>/` (PRD 005's layout) and a list of linked repo procedures; `pij proc` runs both by id from a pod's template path.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "Adopting a template into another repo brings its own procedures and reports each linked one missing there.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "The docs and an example template show a branch-and-worktree procedure and a training-mode seed line; `pod up` creates neither and pij walls nothing off.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         }
       ]
@@ -60,7 +60,7 @@
           "id": "ph-0001",
           "title": "Procedures in a template (workstream 010 s01)",
           "brief": "One phase on PR #347.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

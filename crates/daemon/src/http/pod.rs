@@ -66,6 +66,8 @@ struct Call {
     fresh: bool,
     no_start: bool,
     tools: Vec<String>,
+    skip_close_procedure: bool,
+    close_procedure_ran: bool,
 }
 
 fn parse(argv: &[String]) -> Result<Call, Refusal> {
@@ -112,6 +114,10 @@ fn parse(argv: &[String]) -> Result<Call, Refusal> {
             "--tool" => call.tools.push(value("--tool")?),
             "--fresh" => call.fresh = true,
             "--no-start" => call.no_start = true,
+            "--skip-close-procedure" => call.skip_close_procedure = true,
+            // Set by the pij CLI once it has run the template's close
+            // procedure to its end (PRD 010 req-01); recorded, never checked.
+            "--close-procedure-ran" => call.close_procedure_ran = true,
             "--json" => {}
             flag if flag.starts_with('-') => {
                 return Err(Refusal::new(
@@ -231,6 +237,7 @@ impl Planned {
                 "write_back": deliverable.write_back,
             })).collect::<Vec<_>>(),
             "wiring": wiring_answer(&self.template),
+            "procedures": procedures_answer(&self.template, &self.repo),
             "warnings": warnings(&self.warnings),
             "writes": "nothing: pij pod up <template> ... starts it",
         })
@@ -243,6 +250,26 @@ fn wiring_answer(template: &Template) -> Vec<Value> {
         .wiring
         .iter()
         .map(|(from, to, what)| json!({"from": from, "to": to, "what": what}))
+        .collect()
+}
+
+/// The procedures a template names, each with where it lives and whether it
+/// is there (PRD 010 req-01).
+fn procedures_answer(template: &Template, repo: &Path) -> Vec<Value> {
+    template
+        .procedures
+        .iter()
+        .map(|procedure| {
+            json!({
+                "id": procedure.id,
+                "from": match procedure.from {
+                    pod::ProcedureFrom::Template => "template",
+                    pod::ProcedureFrom::Repo => "repo",
+                },
+                "use": procedure.used_for,
+                "present": pod::procedure_present(template, repo, procedure),
+            })
+        })
         .collect()
 }
 
@@ -368,7 +395,10 @@ async fn plan(
     let live = live_roles(state, &project).await?;
     let exists =
         |id: &str| RolePaths::new(id).is_ok_and(|paths| worktree.join(paths.document).is_file());
-    let warnings = pod::checks(&template, &plans, &|role| live.contains(role), &exists);
+    let mut warnings = pod::checks(&template, &plans, &|role| live.contains(role), &exists);
+    warnings.extend(pod::procedure_checks(&template, &|procedure| {
+        pod::procedure_present(&template, &repo, procedure)
+    }));
     Ok(Planned {
         shown: recorded_source(given, &repo, caller),
         work_folder: value("work-folder"),
@@ -1071,6 +1101,30 @@ async fn down(
     let document = opened.document;
     let mut warnings = Vec::new();
     let mut lines: Vec<String> = Vec::new();
+    // PRD 010 req-01: the pij CLI runs the template's close procedure in the
+    // caller's process before it asks for down; this records what it did.
+    if let Ok(template) = template_of(&opened.record.repo, &document)
+        && let Some(procedure) = template.close_procedure()
+    {
+        let key = format!("pod-{pod_name}");
+        let line = if call.close_procedure_ran {
+            format!("close procedure {} ran (key {key})", procedure.id)
+        } else if call.skip_close_procedure {
+            format!(
+                "close procedure {} skipped (--skip-close-procedure)",
+                procedure.id
+            )
+        } else {
+            warnings.push(format!(
+                "the template's close procedure {} did not run: down was asked for without the pij CLI, which runs it first. Run it: pij proc {} --template {} --key {key}",
+                procedure.id,
+                procedure.id,
+                template.folder.display()
+            ));
+            format!("close procedure {} not run", procedure.id)
+        };
+        lines.push(line);
+    }
     let work_folder = pod::work_folder(&document);
     let freeze = work_folder
         .as_deref()
@@ -1141,6 +1195,7 @@ async fn down(
     .await?;
     Ok(json!({
         "pod": pod_name,
+        "project": opened.record.project,
         "state": "closing",
         "members": members,
         "freeze": freeze,
@@ -2222,8 +2277,26 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
         "deliverables": deliverables,
         "degraded": degraded,
         "wiring": template_of(&repo, &document).map(|template| wiring_answer(&template)).unwrap_or_default(),
+        "close_procedure": close_procedure(&repo, &document, pod_name),
         "log": pod::records(&document, "log"),
     }))
+}
+
+/// The procedure `pij pod down` runs first, from the template the record
+/// names, with what the pij CLI needs to run it (PRD 010 req-01); null when
+/// the template names none or cannot be read.
+fn close_procedure(repo: &Path, document: &Value, pod_name: &str) -> Value {
+    let Ok(template) = template_of(repo, document) else {
+        return Value::Null;
+    };
+    template.close_procedure().map_or(Value::Null, |procedure| {
+        json!({
+            "id": procedure.id,
+            "template": template.folder.display().to_string(),
+            "key": format!("pod-{pod_name}"),
+            "present": pod::procedure_present(&template, repo, procedure),
+        })
+    })
 }
 
 #[cfg(test)]

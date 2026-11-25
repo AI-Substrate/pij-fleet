@@ -28,7 +28,7 @@ Usage:
   pij pod up <pod> [--session <tmux>]         bring a pod taken down back, member by member
   pij pod show <pod>
   pij pod set <pod> <name>=<value>
-  pij pod down <pod>
+  pij pod down <pod> [--skip-close-procedure]
   pij pod add <pod> role:<id>[/<instance>] [--set <name>=<value>]... | <seat>
   pij pod release <pod> <seat>
   pij pod sessions <pod> [--limit <n>]       every member's harness sessions
@@ -52,7 +52,9 @@ fixes it:
   - a consulted role needed before up with no live holder,
   - a reviewing slot that shares (or may share) its author's model,
   - a deliverable whose owner (or write-back) role is missing,
-  - a slot whose role cannot start (its first turn does not build).
+  - a slot whose role cannot start (its first turn does not build),
+  - a procedure the template names that is not where it says (its own folder's
+    procedures/, or the repo's for a linked one).
 Run it before `pij pod up`; up prints and logs the same warnings and starts.";
 
 const UP: &str = "\
@@ -84,9 +86,16 @@ reads the work folder). A value that looks like a secret is refused, naming
 the parameter: the record is committed to the governance branch.";
 
 const DOWN: &str = "\
-pij pod down <pod>
+pij pod down <pod> [--skip-close-procedure]
 
-Records where the pod's work folder stands (its branch and head, from one git
+When the template names a close procedure, the pij CLI first runs it to its
+end in your process (`pij proc <id> --template <folder> --key pod-<pod>`). If
+it stops early (a decision to record, a guide step to mark, a failed check),
+down closes nothing and prints where it stopped and the command to resume; run
+down again once it is done. --skip-close-procedure goes on without it and says
+so in the pod's log. That stop is a brake: removing it only closes more.
+
+Then records where the pod's work folder stands (its branch and head, from one git
 read) and warns that the run is unfrozen when it has uncommitted work. Then
 takes each member down exactly as `pij close <seat> --stop` does, once per
 member: memory first, the recorded process stopped, the prime told about any

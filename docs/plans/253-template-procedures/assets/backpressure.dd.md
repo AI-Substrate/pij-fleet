@@ -20,8 +20,8 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | Procedure tests: a template procedure and a linked one run by id; adopt reports the missing link. | [ ] unchecked | — | — | just procedures-check; node --test procedures |
-| bp-0002 | AC3 | ph-0001 | ABSENT | human-judgement | The reviewer reads the example template and its seed. | [ ] unchecked | — | — | docs |
+| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | Procedure tests: a template procedure and a linked one run by id; adopt reports the missing link. | [x] checked | — | — | just procedures-check; node --test procedures |
+| bp-0002 | AC3 | ph-0001 | ABSENT | human-judgement | The reviewer reads the example template and its seed. | [x] checked | — | — | docs |
 
 <a id="sensors"></a>
 

@@ -47,9 +47,9 @@ A pod template carries procedures about the pod itself and links procedures in t
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | A template folder may hold `procedures/&lt;PROC-id&gt;/` (PRD 005's layout) and a list of linked repo procedures; `pij proc` runs both by id from a pod's template path. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | Adopting a template into another repo brings its own procedures and reports each linked one missing there. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | The docs and an example template show a branch-and-worktree procedure and a training-mode seed line; `pod up` creates neither and pij walls nothing off. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | A template folder may hold `procedures/&lt;PROC-id&gt;/` (PRD 005's layout) and a list of linked repo procedures; `pij proc` runs both by id from a pod's template path. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | Adopting a template into another repo brings its own procedures and reports each linked one missing there. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | The docs and an example template show a branch-and-worktree procedure and a training-mode seed line; `pod up` creates neither and pij walls nothing off. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -57,7 +57,7 @@ A pod template carries procedures about the pod itself and links procedures in t
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Procedures in a template (workstream 010 s01) | One phase on PR #347. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Procedures in a template (workstream 010 s01) | One phase on PR #347. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

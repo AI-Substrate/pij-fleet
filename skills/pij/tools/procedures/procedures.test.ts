@@ -23,6 +23,7 @@ import {
 	type Io,
 	main,
 	pathsIn,
+	podDown,
 	progressDir,
 	RELAYED_MESSAGE,
 	readProgress,
@@ -51,6 +52,8 @@ let recipes: Record<string, Recipe>;
 let out: string[];
 let err: string[];
 let claimNumber: number;
+/** What the fake `pij-rs pod show` answers with. */
+let podShown: Record<string, unknown>;
 
 function write(path: string, text: string): void {
 	mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -88,6 +91,9 @@ function fakeExec(
 			stderr: "",
 		};
 	if (tool === "ddocs") return { status: 0, stdout: "{}", stderr: "" };
+	if (tool === "pij-rs" && args.includes("show"))
+		return { status: 0, stdout: JSON.stringify({ ok: true, data: podShown }), stderr: "" };
+	if (tool === "pij-rs") return { status: 0, stdout: "", stderr: "" };
 	if (tool === "just") {
 		const justfile = args[args.indexOf("--justfile") + 1] ?? "";
 		if (args.includes("--summary"))
@@ -202,6 +208,7 @@ beforeEach(() => {
 	out = [];
 	err = [];
 	claimNumber = 1;
+	podShown = {};
 });
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -866,5 +873,114 @@ describe("real io", () => {
 		const result = realIo().exec("/bin/sleep", ["5"], root, {}, false, 100);
 		expect(result.status).toBe(EXIT_TIMED_OUT);
 		expect(result.stderr).toContain("timed out");
+	});
+});
+
+describe("a pod template's procedures (PRD 010 req-01)", () => {
+	function template(folder: string, procedures: unknown[]): void {
+		write(
+			`${folder}/pod-template.dd.json`,
+			JSON.stringify({
+				dd: { schema: "pij/pod-template" },
+				sections: [
+					{ name: "meta", value: { name: "build", title: "build", version: "1" } },
+					{ name: "slots", value: [{ id: "lead", role: "lead" }] },
+					{ name: "procedures", value: procedures },
+				],
+			}),
+		);
+	}
+
+	it("runs its own procedures and the repo's it links by id, and lists a linked one this repo lacks as missing", () => {
+		template("pods/build", [
+			{ id: "PROC-pod-0001", from: "template", use: "close" },
+			{ id: "PROC-fleet-0002", from: "repo" },
+			{ id: "PROC-fleet-0009", from: "repo" },
+		]);
+		procedure("pod", "0001", "close-run", THREE_STEPS, THREE_RECIPES, "pods/build/procedures");
+		procedure("fleet", "0002", "branch-and-worktree", THREE_STEPS, THREE_RECIPES);
+		// A repo procedure with the template's own id is hidden by the template's.
+		procedure("pod", "0001", "repo-copy", THREE_STEPS, THREE_RECIPES);
+		expect(run(["list", "--template", "pods/build"])).toBe(EXIT_OK);
+		const listed = out.join("\n");
+		expect(listed).toContain(
+			"PROC-pod-0001 [close]  close-run title  (its own: pods/build/procedures/pod/PROC-pod-0001-close-run)",
+		);
+		expect(listed).toContain("PROC-fleet-0002  branch-and-worktree title  (linked from the repo");
+		expect(listed).toContain("PROC-fleet-0009  MISSING (linked from the repo)");
+		out = [];
+		expect(run(["PROC-pod-0001", "--template", "pods/build"])).toBe(EXIT_OK);
+		expect(out.join("\n")).toContain(
+			"from: the pod template's own, pods/build/procedures/pod/PROC-pod-0001-close-run",
+		);
+		expect(run(["PROC-pod-0001", "s0002", "--template", "pods/build"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0002", "s0002", "--template", "pods/build"])).toBe(EXIT_OK);
+		expect(run(["check", "--template", "pods/build"])).toBe(EXIT_USAGE);
+	});
+
+	it("pod down runs the close procedure first, and closes nothing when it stops early", () => {
+		template("pods/build", [{ id: "PROC-pod-0001", from: "template", use: "close" }]);
+		procedure(
+			"pod",
+			"0001",
+			"close-run",
+			{
+				steps: [
+					{ id: "s0001", title: "push the branch", kind: "run", run: "one", done_when: "pushed" },
+					{
+						id: "s0002",
+						title: "merge it",
+						kind: "decision",
+						decide: "the prime",
+						done_when: "merged",
+					},
+				],
+			},
+			THREE_RECIPES,
+			"pods/build/procedures",
+		);
+		podShown = {
+			close_procedure: { id: "PROC-pod-0001", template: join(root, "pods/build"), key: "pod-b1" },
+		};
+		const downs = () => calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"));
+		const args = ["pod", "down", "b1"];
+		const options = { skillHome: join(root, "no-skill-home") };
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+		expect(downs()).toEqual([]);
+		expect(runsOf("one")).toHaveLength(1);
+		expect(err.join("\n")).toContain(
+			"close procedure PROC-pod-0001 stopped at step s0002; nothing was closed",
+		);
+		expect(err.join("\n")).toContain(
+			`resume: just proc PROC-pod-0001 s0002 --template ${join(root, "pods/build")} --key pod-b1`,
+		);
+
+		expect(
+			run([
+				"PROC-pod-0001",
+				"s0002",
+				"--template",
+				"pods/build",
+				"--key",
+				"pod-b1",
+				"--decided-by",
+				"prime",
+				"--note",
+				"merged",
+			]),
+		).toBe(EXIT_OK);
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_OK);
+		expect(downs().map((c) => c.args)).toEqual([["pod", "down", "b1", "--close-procedure-ran"]]);
+
+		const skip = ["pod", "down", "b1", "--skip-close-procedure"];
+		calls = [];
+		expect(podDown(skip, skip.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_OK);
+		expect(calls.map((c) => c.args)).toEqual([skip]);
+	});
+
+	it("pod down goes straight to pij-rs when the template names no close procedure", () => {
+		const args = ["pod", "down", "b1"];
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs")).toBe(EXIT_OK);
+		expect(calls.map((c) => c.args)).toEqual([["--json", "pod", "show", "b1"], args]);
 	});
 });

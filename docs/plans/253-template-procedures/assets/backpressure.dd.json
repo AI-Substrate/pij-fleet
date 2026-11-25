@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Procedure tests: a template procedure and a linked one run by id; adopt reports the missing link.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "just procedures-check; node --test procedures"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "ABSENT",
           "tier": "human-judgement",
           "proof": "The reviewer reads the example template and its seed.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "docs"
         }
       ]

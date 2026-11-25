@@ -140,7 +140,8 @@ export interface PathNote {
 	why: string;
 }
 
-export type HomeKind = "project" | "skill";
+/** `template`: a pod template's own procedures, under `procedures/` in its folder (PRD 010 req-01). */
+export type HomeKind = "project" | "skill" | "template";
 
 export interface Home {
 	kind: HomeKind;
@@ -572,7 +573,7 @@ export function loadProcedures(
 		// Another project's own procedures win: one with the same id as a skill procedure hides it (its ids never move).
 		const own = new Set(procedures.filter((p) => p.home.kind === "project").map((p) => p.id));
 		return {
-			procedures: procedures.filter((p) => p.home.kind === "project" || !own.has(p.id)),
+			procedures: procedures.filter((p) => p.home.kind !== "skill" || !own.has(p.id)),
 			problems,
 		};
 	}
@@ -733,6 +734,7 @@ export interface Flags {
 	why?: string;
 	supersededBy?: string;
 	owner?: string;
+	template?: string;
 }
 
 const BOOL_FLAGS = new Set(["--json", "--again", "--clear", "--done", "--skill", "--help"]);
@@ -747,6 +749,7 @@ const VALUE_FLAGS = new Set([
 	"--why",
 	"--superseded-by",
 	"--owner",
+	"--template",
 ]);
 
 /** Every flag is known or refused: nothing is swallowed (req-15). */
@@ -820,6 +823,7 @@ export function parseFlags(
 		else if (name === "--approved-by") flags.approvedBy = value;
 		else if (name === "--why") flags.why = value;
 		else if (name === "--superseded-by") flags.supersededBy = value;
+		else if (name === "--template") flags.template = value;
 		else flags.owner = value;
 	}
 	return { ok: true, flags };
@@ -827,7 +831,8 @@ export function parseFlags(
 
 function onlyFlags(flags: Flags, allowed: string[], what: string): string | undefined {
 	for (const flag of flags.given) {
-		if (flag !== "--help" && !allowed.includes(flag)) return `${flag} doesn't apply to ${what}`;
+		if (flag === "--help" || flag === "--template") continue;
+		if (!allowed.includes(flag)) return `${flag} doesn't apply to ${what}`;
 	}
 	return undefined;
 }
@@ -838,6 +843,61 @@ function onlyFlags(flags: Flags, allowed: string[], what: string): string | unde
 export interface Options {
 	/** Where the skill's procedures are when the repo has none of its own (default: beside this file). */
 	skillHome?: string;
+	/** A pod template's folder or file (`--template`): its own procedures come first (PRD 010 req-01). */
+	template?: string;
+}
+
+/** The pod template file inside its folder (PRD 008). */
+export const TEMPLATE_FILE = "pod-template.dd.json";
+export const TEMPLATE_SCHEMA = "pij/pod-template";
+
+/** A procedure a pod template names: its own (`template`) or linked from the repo (`repo`). */
+export interface TemplateProcedure {
+	id: string;
+	from: "template" | "repo";
+	use: string;
+}
+
+/** A pod template as the runner reads it. */
+export interface TemplateInfo {
+	/** Absolute folder. */
+	folder: string;
+	name: string;
+	procedures: TemplateProcedure[];
+}
+
+/** Read the pod template at `path` (a folder holding pod-template.dd.json, or that file), or say why not. */
+export function readTemplate(path: string): TemplateInfo | string {
+	const file = isDir(path) ? join(path, TEMPLATE_FILE) : path;
+	const text = readText(file);
+	if (text === undefined)
+		return `no pod template at ${path} (a folder holding ${TEMPLATE_FILE}, or that file)`;
+	let doc: unknown;
+	try {
+		doc = JSON.parse(text);
+	} catch (error) {
+		return `${file}: not JSON (${(error as Error).message})`;
+	}
+	if (!isObj(doc) || !isObj(doc.dd) || doc.dd.schema !== TEMPLATE_SCHEMA)
+		return `${file}: its schema is not ${TEMPLATE_SCHEMA}`;
+	const sectionOf = (name: string) =>
+		list(doc.sections).find((section) => isObj(section) && section.name === name) as
+			| Json
+			| undefined;
+	const meta = sectionOf("meta")?.value;
+	const procedures: TemplateProcedure[] = [];
+	for (const row of list(sectionOf("procedures")?.value)) {
+		if (!isObj(row)) continue;
+		const id = str(row.id) ?? "";
+		const from = row.from === "template" ? "template" : row.from === "repo" ? "repo" : undefined;
+		if (!ID_RE.test(id) || !from) continue;
+		procedures.push({ id, from, use: str(row.use) ?? "" });
+	}
+	return {
+		folder: dirname(resolve(file)),
+		name: (isObj(meta) ? str(meta.name) : undefined) ?? "",
+		procedures,
+	};
 }
 
 export interface Ctx {
@@ -849,6 +909,8 @@ export interface Ctx {
 	/** How to call the runner here: `just proc` where the root justfile has it, else `pij proc`. */
 	entry: string;
 	recipes: Map<string, Set<string>>;
+	/** The pod template `--template` named, when it did. */
+	template?: TemplateInfo;
 }
 
 const RUNNER_FILE = fileURLToPath(import.meta.url);
@@ -885,17 +947,35 @@ export function context(io: Io, options: Options = {}): Ctx | string {
 	if (!root) return `not inside a git checkout (${io.cwd})`;
 	const config = readConfig(root);
 	const homes = homesFor(root, options.skillHome ?? DEFAULT_SKILL_HOME, config);
+	let template: TemplateInfo | undefined;
+	if (options.template !== undefined) {
+		const read = readTemplate(resolve(io.cwd, options.template));
+		if (typeof read === "string") return read;
+		template = read;
+		homes.unshift({ kind: "template", dir: join(read.folder, "procedures") });
+	}
 	const rootFile = rootJustfile(root);
 	const entry =
 		rootFile && recipesIn(readText(rootFile) ?? "").has("proc") ? "just proc" : "pij proc";
+	const loaded = loadProcedures(homes, root, new Set(config.legacyPages.keys()));
+	if (template) {
+		// A template's own procedure is the one its pod means: it hides a repo procedure with the same id.
+		const own = new Set(
+			loaded.procedures.filter((p) => p.home.kind === "template").map((p) => p.id),
+		);
+		loaded.procedures = loaded.procedures.filter(
+			(p) => p.home.kind === "template" || !own.has(p.id),
+		);
+	}
 	return {
 		io,
 		root,
 		homes,
 		config,
-		loaded: loadProcedures(homes, root, new Set(config.legacyPages.keys())),
+		loaded,
 		entry,
 		recipes: new Map(),
+		template,
 	};
 }
 
@@ -987,6 +1067,10 @@ export const HELP = `proc: run, list, write and check pij procedures (PRD 005).
   proc check [--json]                           the drift check (harness checks stage "procedures")
   proc report [--json]                          files only one procedure uses; components no procedure operates
 
+  --template <path>                             with list, a procedure or a step: a pod template's own procedures
+                                                first (its folder's procedures/), then the repo's; list shows
+                                                the ones it names, its own and linked, each found or MISSING
+
 <proc> is an id (PROC-daemon-0001), a folder name or a slug; <step> is its id (s0001) or the digits (0001). Inputs also come from PROC_IN_<NAME> in the
 environment; a secret input only from there. Exit: 0 ok, 1 failed, 2 usage, 3 refused (fix, then rerun).`;
 
@@ -1003,11 +1087,15 @@ export function main(argv: string[], io: Io, options: Options = {}): number {
 		io.out(HELP);
 		return EXIT_OK;
 	}
-	const ctx = context(io, options);
+	if (flags.template !== undefined && ["new", "status", "check", "report"].includes(first ?? ""))
+		return usageIo(io, `--template doesn't apply to ${first}`);
+	const ctx = context(io, { ...options, template: flags.template ?? options.template });
 	if (typeof ctx === "string") {
 		io.err(`proc: ${ctx}`);
 		return EXIT_USAGE;
 	}
+	if ((first === undefined || first === "list") && ctx.template)
+		return templateListCmd(ctx, ctx.template, flags, rest);
 	if (first === undefined || first === "list") return listCmd(ctx, flags, rest);
 	if (first === "new") return newCmd(ctx, flags, rest);
 	if (first === "status") return statusCmd(ctx, flags, rest);
@@ -1032,7 +1120,11 @@ export function main(argv: string[], io: Io, options: Options = {}): number {
 }
 
 function usage(ctx: Ctx, message: string): number {
-	ctx.io.err(`proc: ${message}`);
+	return usageIo(ctx.io, message);
+}
+
+function usageIo(io: Io, message: string): number {
+	io.err(`proc: ${message}`);
 	return EXIT_USAGE;
 }
 
@@ -1075,6 +1167,70 @@ function listCmd(ctx: Ctx, flags: Flags, rest: string[]): number {
 	for (const row of rows) {
 		ctx.io.out(
 			`${row.id.padEnd(width)}  ${row.status.padEnd(10)} ${row.kind.padEnd(8)} ${row.title}  (${row.owner})`,
+		);
+	}
+	return EXIT_OK;
+}
+
+// --- a pod template's procedures (PRD 010 req-01)
+
+/** The template's own procedures and the ones it links, each found here or missing, with where it came from. */
+export function templateRows(ctx: Ctx, template: TemplateInfo) {
+	const rows = template.procedures.map((named) => {
+		const found = ctx.loaded.procedures.find((p) => p.id === named.id);
+		const home = found?.home.kind;
+		const present =
+			named.from === "template" ? home === "template" : home === "project" || home === "skill";
+		return {
+			id: named.id,
+			from: named.from,
+			use: named.use,
+			present,
+			title: present ? (found?.title ?? "") : "",
+			path: present && found ? rel(ctx, found.dir) : "",
+		};
+	});
+	for (const own of ctx.loaded.procedures.filter((p) => p.home.kind === "template")) {
+		if (rows.some((row) => row.id === own.id)) continue;
+		rows.push({
+			id: own.id,
+			from: "template",
+			use: "",
+			present: true,
+			title: own.title,
+			path: rel(ctx, own.dir),
+		});
+	}
+	return rows;
+}
+
+function templateListCmd(ctx: Ctx, template: TemplateInfo, flags: Flags, rest: string[]): number {
+	const bad = onlyFlags(flags, ["--json"], "list");
+	if (bad) return usage(ctx, bad);
+	if (rest.length > 0) return usage(ctx, `list takes no arguments (got ${rest.join(" ")})`);
+	const rows = templateRows(ctx, template);
+	if (flags.json) {
+		ctx.io.out(
+			JSON.stringify(
+				{ template: rel(ctx, template.folder), name: template.name, procedures: rows },
+				null,
+				2,
+			),
+		);
+		return EXIT_OK;
+	}
+	ctx.io.out(`pod template ${template.name || "(unnamed)"} at ${rel(ctx, template.folder)}`);
+	if (rows.length === 0) {
+		ctx.io.out("  it names no procedures");
+		return EXIT_OK;
+	}
+	for (const row of rows) {
+		const use = row.use ? ` [${row.use}]` : "";
+		const where = row.from === "template" ? "its own" : "linked from the repo";
+		ctx.io.out(
+			row.present
+				? `  ${row.id}${use}  ${row.title}  (${where}: ${row.path})`
+				: `  ${row.id}${use}  MISSING (${where}): ${row.from === "template" ? `add procedures/<area>/${row.id}-<slug>/ to the template` : "this repo does not have it; copy it in or write one"}`,
 		);
 	}
 	return EXIT_OK;
@@ -1151,6 +1307,8 @@ function showCmd(ctx: Ctx, flags: Flags, procedure: Procedure): number {
 			`  note: this procedure is ${procedure.status}${procedure.supersededBy ? `; use ${procedure.supersededBy}` : ""}`,
 		);
 	}
+	if (procedure.home.kind === "template")
+		io.out(`from: the pod template's own, ${rel(ctx, procedure.dir)}`);
 	if (procedure.who) io.out(`who: ${procedure.who}`);
 	if (procedure.when) io.out(`when: ${procedure.when}`);
 	io.out(`key: ${key}`);
@@ -2050,6 +2208,100 @@ function reportCmd(ctx: Ctx, flags: Flags, rest: string[]): number {
 
 // ---------------------------------------------------------------------------------------------------------------
 // Real side effects
+
+// ---------------------------------------------------------------------------------------------------------------
+// A pod's close procedure (PRD 010 req-01)
+
+export interface RunThrough {
+	done: boolean;
+	code: number;
+	/** The step it stopped at, when it did. */
+	stoppedAt?: string;
+}
+
+/** Run each step not yet done, in order, as `proc <proc> <step>` would, until all are done or one stops. */
+export function runThrough(ctx: Ctx, procedure: Procedure, key: string): RunThrough {
+	const parsed = parseFlags(["--key", key]);
+	if (!parsed.ok) return { done: false, code: EXIT_USAGE };
+	for (let guard = 0; guard <= procedure.steps.length; guard++) {
+		const next = stepStates(readProgress(ctx.root), procedure, key).find((s) => s.state === "next");
+		if (!next) return { done: true, code: EXIT_OK };
+		const step = procedure.steps.find((s) => s.id === next.id);
+		if (!step) return { done: false, code: EXIT_FAIL, stoppedAt: next.id };
+		const code = stepCmd(ctx, parsed.flags, procedure, step);
+		if (code !== EXIT_OK) return { done: false, code, stoppedAt: step.id };
+		if (!recordOf(readProgress(ctx.root), procedure.id, key, step.id))
+			return { done: false, code: EXIT_FAIL, stoppedAt: step.id };
+	}
+	return { done: false, code: EXIT_FAIL };
+}
+
+/**
+ * `pij pod down <pod>` through the pij CLI: when the pod's template names a close procedure, run it to its end
+ * here, in the caller's process, then ask pij-rs for down. If it stops early, down closes nothing: a brake (removing
+ * it only closes more), with `--skip-close-procedure` to go on without it. `args` is the whole command line, `rest`
+ * what follows `pod`. Launches one `pij-rs pod show`, the procedure's own steps, then the down itself.
+ */
+export function podDown(
+	args: string[],
+	rest: string[],
+	io: Io,
+	pijRs: string,
+	options: Options = {},
+): number {
+	const forward = (extra: string[]) =>
+		io.exec(pijRs, [...args, ...extra], io.cwd, io.env, true).status;
+	const words = rest.slice(1);
+	if (words.some((w) => w === "--help" || w === "-h" || w === "--skip-close-procedure"))
+		return forward([]);
+	const pod = words.find((w) => !w.startsWith("-"));
+	if (pod === undefined) return forward([]);
+	const shown = io.exec(pijRs, ["--json", "pod", "show", pod], io.cwd, io.env, false);
+	let close: unknown;
+	try {
+		const answer: unknown = JSON.parse(shown.stdout);
+		close = isObj(answer) && isObj(answer.data) ? answer.data.close_procedure : undefined;
+	} catch {
+		close = undefined;
+	}
+	if (!isObj(close) || typeof close.id !== "string" || typeof close.template !== "string")
+		return forward([]);
+	const id = close.id;
+	const folder = close.template;
+	const key = str(close.key) ?? `pod-${pod}`;
+	const runIo: Io = args.includes("--json") ? { ...io, out: io.err } : io;
+	const skip = `pij pod down ${pod} --skip-close-procedure`;
+	const ctx = context(runIo, { ...options, template: folder });
+	if (typeof ctx === "string") {
+		io.err(
+			`refused: pod down ${pod}: its close procedure ${id} cannot run: ${ctx}; nothing was closed.`,
+		);
+		io.err(`  go on without it: ${skip}`);
+		return EXIT_REFUSED;
+	}
+	const procedure = findProcedure(ctx.loaded.procedures, id);
+	if (procedure === undefined || Array.isArray(procedure)) {
+		io.err(
+			`refused: pod down ${pod}: its template names close procedure ${id}, which is in neither ${folder}/procedures nor this repo; nothing was closed.`,
+		);
+		io.err(`  see what it names: ${ctx.entry} list --template ${folder}`);
+		io.err(`  go on without it: ${skip}`);
+		return EXIT_REFUSED;
+	}
+	io.err(`pod down ${pod}: running the template's close procedure ${id} first (key ${key})`);
+	const run = runThrough(ctx, procedure, key);
+	if (!run.done) {
+		io.err(
+			`refused: pod down ${pod}: close procedure ${id} stopped${run.stoppedAt ? ` at step ${run.stoppedAt}` : ""}; nothing was closed.`,
+		);
+		io.err(
+			`  resume: ${ctx.entry} ${id}${run.stoppedAt ? ` ${run.stoppedAt}` : ""} --template ${folder} --key ${key}`,
+		);
+		io.err(`  then: pij pod down ${pod}   (or go on without it: ${skip})`);
+		return run.code === EXIT_OK ? EXIT_REFUSED : run.code;
+	}
+	return forward(["--close-procedure-ran"]);
+}
 
 export function realIo(): Io {
 	// A reader that closes early (`pij proc list | head -1`) is not an error.

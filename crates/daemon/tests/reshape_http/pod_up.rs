@@ -1139,3 +1139,113 @@ async fn a_canary_settling_after_down_writes_and_sends_nothing() {
     assert_eq!(told, 0, "no degraded FYI for a pod that is down");
     rig.server.abort();
 }
+
+/// Plan 253 ac-0001, ac-0002: a template names its own procedures and links
+/// the repo's; `plan` lists each with whether it is there and warns, with the
+/// fix, about one that is not; `show` names the close procedure the pij CLI
+/// runs before down; down records whether it ran, was skipped, or did not run.
+#[tokio::test]
+async fn a_template_names_its_procedures_and_down_records_its_close_procedure() {
+    let repo = repo("pij-pod-procedures");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let file = repo.main.join("pods/build/pod-template.dd.json");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    document["sections"].as_array_mut().unwrap().push(json!({
+        "name": "procedures",
+        "value": [
+            {"id": "PROC-pod-0001", "from": "template", "use": "close"},
+            {"id": "PROC-fleet-0002", "from": "repo", "use": "up"},
+            {"id": "PROC-meta-0001", "from": "repo"},
+        ],
+    }));
+    std::fs::write(&file, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+    let own = repo
+        .main
+        .join("pods/build/procedures/pod/PROC-pod-0001-close-the-run");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("procedure.dd.json"), "{}").unwrap();
+
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &["plan", "pods/build", "--set", "subject=planning"],
+    )
+    .await;
+    assert_eq!(planned["ok"], true, "{planned}");
+    let present: Vec<(String, bool)> = planned["data"]["procedures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["id"].as_str().unwrap().to_string(),
+                row["present"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        present,
+        [
+            ("PROC-pod-0001".to_string(), true),
+            ("PROC-fleet-0002".to_string(), false),
+            ("PROC-meta-0001".to_string(), true),
+        ],
+        "the template's own is in its folder; a skill area ships with pij: {planned}"
+    );
+    assert!(
+        abouts(&planned).contains(&"procedure PROC-fleet-0002".to_string()),
+        "{planned}"
+    );
+
+    let up = pod(
+        rig.addr,
+        &repo,
+        &[
+            "up",
+            "pods/build",
+            "--set",
+            "subject=planning",
+            "--no-start",
+        ],
+    )
+    .await;
+    assert_eq!(up["ok"], true, "{up}");
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    let close = &shown["data"]["close_procedure"];
+    assert_eq!(close["id"], "PROC-pod-0001", "{shown}");
+    assert_eq!(close["key"], "pod-build");
+    assert_eq!(
+        std::fs::canonicalize(close["template"].as_str().unwrap()).unwrap(),
+        std::fs::canonicalize(repo.main.join("pods/build")).unwrap()
+    );
+
+    let down = pod(rig.addr, &repo, &["down", "build"]).await;
+    assert_eq!(down["ok"], true, "{down}");
+    assert!(
+        down["data"]["warnings"]
+            .to_string()
+            .contains("close procedure PROC-pod-0001 did not run"),
+        "{down}"
+    );
+    let ran = pod(rig.addr, &repo, &["down", "build", "--close-procedure-ran"]).await;
+    assert_eq!(ran["ok"], true, "{ran}");
+    let skipped = pod(
+        rig.addr,
+        &repo,
+        &["down", "build", "--skip-close-procedure"],
+    )
+    .await;
+    assert_eq!(skipped["ok"], true, "{skipped}");
+    let log = pod(rig.addr, &repo, &["show", "build"]).await["data"]["log"].to_string();
+    for line in [
+        "close procedure PROC-pod-0001 not run",
+        "close procedure PROC-pod-0001 ran (key pod-build)",
+        "close procedure PROC-pod-0001 skipped (--skip-close-procedure)",
+    ] {
+        assert!(log.contains(line), "{line}: {log}");
+    }
+    rig.server.abort();
+}

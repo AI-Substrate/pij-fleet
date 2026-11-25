@@ -75,7 +75,7 @@
 					"statement": "A pod template may include procedures about the pod itself (how to stand it up, run it and close it), which travel with the template, and may link procedures that live in the main repo. A procedure about the work, true whoever runs it, stays in the repo. A template's own procedures and seed text carry what is particular to its runs and that pij does not do itself: for example the procedure that creates a run's branch and worktree (`pod up` creates neither), or a seed line asking the seats, while in training, not to read earlier runs (pij walls nothing off).",
 					"actor": "template author",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A template with one procedure of its own and one linked from the repo runs both by id, and adopting the template into another repo brings its own procedure and reports the linked one as missing. `pij pod down` runs the template's close procedure, then the freeze.",
 					"source": "operator rulings 2026-11-25 on procedures and seats"
 				},
@@ -189,6 +189,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "req-01 done_when: pod down runs the template's close procedure, then the freeze (pm-001 ruling 2026-11-25 on PRD 008 req-06: the close steps live with the template's procedures, not in 008)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #347 (s01): req-01 shipped."
 				}
 			]
 		}

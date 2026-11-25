@@ -74,6 +74,35 @@ pub struct Deliverable {
     pub needs: Vec<(String, Vec<String>)>,
 }
 
+/// Where a procedure a template names lives (PRD 010 req-01).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProcedureFrom {
+    /// In the template's own folder, `procedures/<area>/PROC-<area>-NNNN-<slug>/`,
+    /// so it travels with the template.
+    Template,
+    /// Linked: in the repo's procedures (or shipped with the pij skill).
+    Repo,
+}
+
+/// A procedure a template names (PRD 010 req-01).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcedureRef {
+    /// `PROC-<area>-NNNN`.
+    pub id: String,
+    /// Where it lives.
+    pub from: ProcedureFrom,
+    /// What the pod uses it for: `up`, `run` or `close`; empty for none.
+    /// `pij pod down` runs the `close` one first, through the pij CLI.
+    pub used_for: String,
+}
+
+/// The procedure use `pij pod down` runs before the freeze.
+pub const CLOSE_USE: &str = "close";
+/// The uses a template's procedure may name.
+pub const PROCEDURE_USES: [&str; 3] = ["up", "run", CLOSE_USE];
+/// Procedure areas the pij skill ships, present wherever pij is installed.
+pub const SKILL_PROCEDURE_AREAS: [&str; 2] = ["meta", "docs"];
+
 /// A read, checked pod template.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Template {
@@ -95,6 +124,10 @@ pub struct Template {
     pub deliverables: Vec<Deliverable>,
     /// How its slots feed each other (req-01, req-02): `(from, to, what)`.
     pub wiring: Vec<(String, String, String)>,
+    /// The procedures it names, its own and linked (PRD 010 req-01).
+    pub procedures: Vec<ProcedureRef>,
+    /// The folder it was read from; empty when parsed from bytes alone.
+    pub folder: PathBuf,
 }
 
 fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
@@ -151,7 +184,20 @@ pub fn read(path: &Path, shown: &str) -> Result<Template, Refusal> {
     };
     let bytes = std::fs::read(&file)
         .map_err(|error| refuse(shown, format!("cannot read {}: {error}", file.display())))?;
-    parse(&bytes, shown)
+    let mut template = parse(&bytes, shown)?;
+    template.folder = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    Ok(template)
+}
+
+/// `PROC-<area>-NNNN` split into its area, or `None` for another shape.
+fn procedure_area(id: &str) -> Option<&str> {
+    let rest = id.strip_prefix("PROC-")?;
+    let (area, number) = rest.split_once('-')?;
+    let area_ok = area.starts_with(|c: char| c.is_ascii_lowercase())
+        && area
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    (area_ok && number.len() == 4 && number.chars().all(|c| c.is_ascii_digit())).then_some(area)
 }
 
 /// Parse and check a template's bytes: its schema, unique slot ids in the name
@@ -298,6 +344,43 @@ pub fn parse(bytes: &[u8], source: &str) -> Result<Template, Refusal> {
         .map(|row| (text(&row["from"]), text(&row["to"]), text(&row["what"])))
         .filter(|(from, to, _)| !from.is_empty() && !to.is_empty())
         .collect();
+    let mut procedures: Vec<ProcedureRef> = Vec::new();
+    for row in rows(&document, "procedures") {
+        let id = text(&row["id"]);
+        if procedure_area(&id).is_none() {
+            return Err(refuse(
+                source,
+                format!("procedure {id:?} is not a procedure id (PROC-<area>-NNNN)"),
+            ));
+        }
+        if procedures.iter().any(|known| known.id == id) {
+            return Err(refuse(source, format!("procedure {id} is named twice")));
+        }
+        let from = match row["from"].as_str() {
+            Some("template") => ProcedureFrom::Template,
+            Some("repo") => ProcedureFrom::Repo,
+            _ => {
+                return Err(refuse(
+                    source,
+                    format!("procedure {id}: from must be template or repo"),
+                ));
+            }
+        };
+        let used_for = text(&row["use"]);
+        if !used_for.is_empty() && !PROCEDURE_USES.contains(&used_for.as_str()) {
+            return Err(refuse(
+                source,
+                format!(
+                    "procedure {id}: use must be one of {}",
+                    PROCEDURE_USES.join(", ")
+                ),
+            ));
+        }
+        if used_for == CLOSE_USE && procedures.iter().any(|known| known.used_for == CLOSE_USE) {
+            return Err(refuse(source, "it names more than one close procedure"));
+        }
+        procedures.push(ProcedureRef { id, from, used_for });
+    }
     Ok(Template {
         wiring,
         source: source.to_string(),
@@ -308,7 +391,95 @@ pub fn parse(bytes: &[u8], source: &str) -> Result<Template, Refusal> {
         slots,
         consulted,
         deliverables,
+        procedures,
+        folder: PathBuf::new(),
     })
+}
+
+impl Template {
+    /// The procedure `pij pod down` runs before the freeze, if it names one.
+    pub fn close_procedure(&self) -> Option<&ProcedureRef> {
+        self.procedures
+            .iter()
+            .find(|procedure| procedure.used_for == CLOSE_USE)
+    }
+}
+
+/// Whether `procedure` is where `template` says, read from the files: the
+/// template's own under `<folder>/procedures/<area>/`, a linked one in the
+/// repo's procedures home (`.pij-procedures.json`'s `home`, else
+/// `docs/project/procedures`) or the pij skill's (its areas are shipped with
+/// pij, so present wherever it is installed). A few directory reads.
+pub fn procedure_present(template: &Template, repo: &Path, procedure: &ProcedureRef) -> bool {
+    let Some(area) = procedure_area(&procedure.id) else {
+        return false;
+    };
+    let in_home = |home: &Path| {
+        let prefix = format!("{}-", procedure.id);
+        std::fs::read_dir(home.join(area)).is_ok_and(|entries| {
+            entries.flatten().any(|entry| {
+                entry.file_name().to_string_lossy().starts_with(&prefix)
+                    && entry.path().join("procedure.dd.json").is_file()
+            })
+        })
+    };
+    match procedure.from {
+        ProcedureFrom::Template => in_home(&template.folder.join("procedures")),
+        ProcedureFrom::Repo => {
+            SKILL_PROCEDURE_AREAS.contains(&area)
+                || in_home(&repo.join(procedures_home(repo)))
+                || in_home(&repo.join("skills/pij/procedures"))
+        }
+    }
+}
+
+/// A repo's procedures home, relative to it: `.pij-procedures.json`'s `home`
+/// when it is a plain relative path, else `docs/project/procedures`.
+fn procedures_home(repo: &Path) -> String {
+    std::fs::read(repo.join(".pij-procedures.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|config| config["home"].as_str().map(str::to_string))
+        .filter(|home| !home.starts_with('/') && !home.split('/').any(|part| part == ".."))
+        .map_or_else(
+            || "docs/project/procedures".to_string(),
+            |home| home.trim_end_matches('/').to_string(),
+        )
+}
+
+/// A warning for each procedure the template names that is not where it
+/// says (PRD 010 req-01): `plan` prints them, `up` logs them. Warnings only.
+pub fn procedure_checks(
+    template: &Template,
+    present: &dyn Fn(&ProcedureRef) -> bool,
+) -> Vec<Warning> {
+    template
+        .procedures
+        .iter()
+        .filter(|procedure| !present(procedure))
+        .map(|procedure| match procedure.from {
+            ProcedureFrom::Template => Warning {
+                about: format!("procedure {}", procedure.id),
+                text: format!(
+                    "the template names it as its own, and {} has no procedures/<area>/{}-<slug>/",
+                    template.source, procedure.id
+                ),
+                fix: format!(
+                    "write {}/procedures/<area>/{}-<slug>/procedure.dd.json (PRD 005's layout), or change its from to repo",
+                    template.folder.display(),
+                    procedure.id
+                ),
+            },
+            ProcedureFrom::Repo => Warning {
+                about: format!("procedure {}", procedure.id),
+                text: "the template links it from the repo, and this repo does not have it".to_string(),
+                fix: format!(
+                    "copy {} into this repo's procedures, or write one: pij proc new <area> <slug> --title <t>",
+                    procedure.id
+                ),
+            },
+        })
+        .collect()
 }
 
 /// `--set <name>=<value>` checked against the template's parameters: the
@@ -1023,6 +1194,112 @@ mod tests {
             Some("docs-keeper")
         );
         assert_eq!(template.hash.len(), 64);
+    }
+
+    fn with_procedures(procedures: &Value) -> Vec<u8> {
+        let mut document: Value = serde_json::from_slice(&template_bytes("branch")).unwrap();
+        document["sections"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name": "procedures", "value": procedures}));
+        serde_json::to_vec(&document).unwrap()
+    }
+
+    /// Plan 253 ac-0001: a template's procedures are read with where they
+    /// live; a bad id, an unknown from or use, or two close procedures refuse.
+    #[test]
+    fn a_template_reads_its_procedures_and_refuses_two_close_ones() {
+        let template = parse(
+            &with_procedures(&json!([
+                {"id": "PROC-pod-0001", "from": "template", "use": "close"},
+                {"id": "PROC-fleet-0002", "from": "repo"},
+            ])),
+            "pods/build",
+        )
+        .unwrap();
+        assert_eq!(template.procedures[1].from, ProcedureFrom::Repo);
+        assert_eq!(template.close_procedure().unwrap().id, "PROC-pod-0001");
+        for (bad, why) in [
+            (
+                json!([{"id": "pod-0001", "from": "template"}]),
+                "not a procedure id",
+            ),
+            (
+                json!([{"id": "PROC-pod-0001", "from": "elsewhere"}]),
+                "from must be",
+            ),
+            (
+                json!([{"id": "PROC-pod-0001", "from": "repo", "use": "later"}]),
+                "use must be",
+            ),
+            (
+                json!([
+                    {"id": "PROC-pod-0001", "from": "repo", "use": "close"},
+                    {"id": "PROC-pod-0002", "from": "repo", "use": "close"},
+                ]),
+                "more than one close procedure",
+            ),
+        ] {
+            let refused = parse(&with_procedures(&bad), "pods/build").unwrap_err();
+            assert!(refused.message.contains(why), "{why}: {refused}");
+        }
+    }
+
+    /// Plan 253 ac-0002: a procedure is present where the template says, and
+    /// a linked one missing from the repo warns with its fix.
+    #[test]
+    fn a_linked_procedure_missing_from_the_repo_warns() {
+        let scratch = std::env::temp_dir().join(format!(
+            "pij-pod-procedures-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let repo = scratch.join("repo");
+        let folder = scratch.join("tpl");
+        std::fs::create_dir_all(folder.join("procedures/pod/PROC-pod-0001-close")).unwrap();
+        std::fs::write(
+            folder.join("procedures/pod/PROC-pod-0001-close/procedure.dd.json"),
+            "{}",
+        )
+        .unwrap();
+        std::fs::create_dir_all(repo.join("work/fleet/PROC-fleet-0002-branch")).unwrap();
+        std::fs::write(
+            repo.join("work/fleet/PROC-fleet-0002-branch/procedure.dd.json"),
+            "{}",
+        )
+        .unwrap();
+        std::fs::write(repo.join(".pij-procedures.json"), r#"{"home": "work"}"#).unwrap();
+        let mut template = parse(
+            &with_procedures(&json!([
+                {"id": "PROC-pod-0001", "from": "template"},
+                {"id": "PROC-fleet-0002", "from": "repo"},
+                {"id": "PROC-fleet-0003", "from": "repo"},
+                {"id": "PROC-pod-0004", "from": "template"},
+            ])),
+            "tpl",
+        )
+        .unwrap();
+        template.folder = folder;
+        let present = |procedure: &ProcedureRef| procedure_present(&template, &repo, procedure);
+        let found: Vec<bool> = template.procedures.iter().map(present).collect();
+        assert_eq!(found, [true, true, false, false]);
+        let warned = procedure_checks(&template, &present);
+        assert_eq!(
+            warned.iter().map(|w| w.about.as_str()).collect::<Vec<_>>(),
+            ["procedure PROC-fleet-0003", "procedure PROC-pod-0004"]
+        );
+        assert!(warned[0].fix.contains("pij proc new"), "{:?}", warned[0]);
+        assert!(
+            warned[1]
+                .fix
+                .contains("procedures/<area>/PROC-pod-0004-<slug>"),
+            "{:?}",
+            warned[1]
+        );
+        std::fs::remove_dir_all(&scratch).unwrap();
     }
 
     #[test]
