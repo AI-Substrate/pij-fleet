@@ -3098,6 +3098,16 @@
 					"seat": "pij-strict-reindeer",
 					"to": "2026-11-25T04:02:48.787Z",
 					"why": "#350 F281 fix single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T04:22:57.821Z",
+					"harness": "copilot",
+					"harness_session": "9234f9b6-2b67-4a18-b11c-0effa28b69a9",
+					"instance_key": "351",
+					"machine": "studio",
+					"seat": "pij-official-aardwolf",
+					"why": "one C34 review of #351 (009 s04) at fd47101"
 				}
 			]
 		}
