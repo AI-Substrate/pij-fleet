@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "review worktrees have no node_modules; the debug pij-rs in the shared target is unstamped",
+				"tags": [
+					"mutation",
+					"review",
+					"shared-target"
+				],
+				"title": "Mutation-check TS gates in an archive copy with node_modules symlinked"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Review worktrees have no node_modules. For a TS gate mutation: T=$(mktemp -d); git archive HEAD | tar -x -C $T/a; ln -s <main checkout>/node_modules $T/a/node_modules; mutate; nice -n 19 node_modules/.bin/vitest run <test>. Copy the built debug pij-rs into $T right after shared-build (another tree can swap it). The debug build reports '(unstamped)', so its --version can't prove which tree built it. Record $T and rm only that path at the end (F262)."
+		}
+	]
+}

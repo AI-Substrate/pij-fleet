@@ -197,5 +197,6 @@
 - [2026-11-22 Tmux batch transport and persistent failure progress](2026-11-22-tmux-batch-transport-and-persistent.dd.md): Before batching tmux commands or judging shutdown cancellation, ownership and cost proof (review, tmux, batching, recovery, cost, f267)
 - [2026-11-23 Claim scan: literal kinds and metadata errors](2026-11-23-claim-scan-literal-kinds-and-metadata.dd.md): task-end (claims, scan, c34)
 - [2026-11-24 PR 343 procedures runner: block on relaunch argv secrets](2026-11-24-pr-343-procedures-runner-block-on.dd.md): When reviewing procedure scripts, tmux respawn-pane commands, or progress stores keyed by user input (review, procedures, secrets, argv, prototype)
+- [2026-11-25 Mutation-check TS gates in an archive copy with node\_modules symlinked](2026-11-25-mutation-check-ts-gates-in-an-archive.dd.md): review worktrees have no node\_modules; the debug pij-rs in the shared target is unstamped (mutation, review, shared-target)
 - [2026-11-25 PR 344 seat types at e56bcb4](2026-11-25-pr-344-seat-types-at-e56bcb4.dd.md): Read when reviewing seat types, role\_type pointers, /v1/seats cost or batched mutation checks (review, types, mutation, cost)
 <!-- /pij:generated -->
