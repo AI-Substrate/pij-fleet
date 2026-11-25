@@ -30,7 +30,9 @@ _No entries._
 
 ## Members
 
-_No entries._
+| slot | role | instance | seat | state | keep_open | canary |
+| --- | --- | --- | --- | --- | --- | --- |
+| probe | performance | receipt | pij-developed-parakeet | — | — | none asked |
 
 <a id="consulted"></a>
 
@@ -51,3 +53,4 @@ _No entries._
 | at | by | change |
 | --- | --- | --- |
 | 2026-11-25T07:22:51.598Z | pij-multiple-nightingale | up from /tmp/pij-receipt-pod.Firn (version 1, sha256 e037d5d19662) |
+| 2026-11-25T07:22:52.540Z | pij-multiple-nightingale | started pij-developed-parakeet |
