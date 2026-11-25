@@ -298,23 +298,28 @@ pub fn assemble(
     match types::of_role(document).and_then(|kind| types::get(kind).ok()) {
         Some(def) => {
             let shown = def.show();
+            // PRD 009 req-06: the type's purpose, lifecycle, keeps and rules
+            // are its `pij docs` page; the first turn names it and carries only
+            // what the page cannot: the role's own changes to those rules.
             let mut text = format!(
-                "You are a {} seat ({}).\n\n{}\n\nLifecycle: {}\nKeeps: {}\n\nRules of your type:\n",
+                "You are a {} seat ({}): {}\nCarries authority: {}.\nYour type in full: pij docs get {}\n",
                 def.id,
                 shown["title"].as_str().unwrap_or(&def.id),
-                shown["purpose"].as_str().unwrap_or_default(),
-                shown["lifecycle"].as_str().unwrap_or_default(),
-                shown["keeps"].as_str().unwrap_or_default(),
+                def.line(),
+                if def.authority() { "yes" } else { "no" },
+                types::docs_page(&def.id),
             );
-            for rule in &def.rules {
-                text.push_str(&format!(
-                    "- {} ({}){}\n",
-                    rule.text,
-                    if rule.fixed { "fixed" } else { "default" },
+            let changes: Vec<String> = def
+                .rules
+                .iter()
+                .filter_map(|rule| {
                     changed(document, &rule.id)
-                        .map(|why| format!("; your role changes it: {why}"))
-                        .unwrap_or_default()
-                ));
+                        .map(|why| format!("- {} ({}): {why}\n", rule.text, rule.id))
+                })
+                .collect();
+            if !changes.is_empty() {
+                text.push_str("\nYour role changes these rules of your type:\n");
+                text.push_str(&changes.concat());
             }
             if let Some(seed) = &sources.seed {
                 text.push('\n');
@@ -519,9 +524,11 @@ mod tests {
                 .contains("seed templates/types/reviewer/v1/seed.md (shipped)")
         );
         assert!(
-            parts[0]
-                .text
-                .contains("your role changes it: keeps the call's context")
+            parts[0].text.contains(
+                "Your role changes these rules of your type:\n- Is compacted after every job, after writing its memory note. (compact-after-job): keeps the call's context\n"
+            ),
+            "{}",
+            parts[0].text
         );
         assert!(
             parts[1].text.contains("Takes notes for acme."),
@@ -533,6 +540,44 @@ mod tests {
         assert_eq!(parts[3].source, "--focus by pij-brisk-marten");
         assert!(text.starts_with("# First turn: role notes\n"));
         assert_eq!(text.matches("\nsource: ").count(), parts.len());
+    }
+
+    /// PRD 009 req-06: the type part names the type's `pij docs` page instead
+    /// of carrying its definition, and keeps only the role's own rule changes.
+    #[test]
+    fn the_type_part_names_its_page_and_carries_only_the_roles_rule_changes() {
+        let mut knowledge = document();
+        knowledge["sections"][0]["value"]["type"] = json!("knowledge");
+        knowledge["sections"][0]["value"]["keeps"] = json!("notes/area.md");
+        knowledge["sections"][2]["value"] = json!([]);
+        let (_, parts) = assemble(&sources(knowledge), "", &[], &Creator::default());
+        let text = &parts[0].text;
+        let def = types::get("knowledge").unwrap();
+        assert!(
+            text.starts_with(&format!(
+                "You are a knowledge seat (Knowledge): {}\nCarries authority: no.\nYour type in full: pij docs get types/knowledge\n",
+                def.line()
+            )),
+            "{text}"
+        );
+        for rule in &def.rules {
+            assert!(!text.contains(&rule.text), "the page holds {}", rule.id);
+        }
+        assert!(!text.contains("Your role changes"), "no changes, no list");
+        assert!(text.contains(def.seed.trim_end()), "the seed stays");
+        let (_, reviewer) = assemble(&sources(document()), "", &[], &Creator::default());
+        let independent = &types::get("reviewer").unwrap().rules[0];
+        assert_eq!(independent.id, "independent");
+        assert!(
+            !reviewer[0].text.contains(&independent.text),
+            "{}",
+            reviewer[0].text
+        );
+        assert!(
+            reviewer[0]
+                .text
+                .contains("(compact-after-job): keeps the call's context")
+        );
     }
 
     #[test]

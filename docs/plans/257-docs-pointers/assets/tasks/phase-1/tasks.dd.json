@@ -1,0 +1,37 @@
+{
+  "dd": { "schema": "builder/plan" },
+  "sections": [
+    { "name": "meta", "value": { "title": "Pointers shipped", "slug": "phase-1", "status": "draft", "summary": "" } },
+    { "name": "summary", "value": "" },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Page ids in the type catalog; refusal messages end with their page; the first turn's type part names its page; pages updated for PRD 007",
+          "phase": "ph-0001",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002",
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "#done_when/tk-0001"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "types, first_turn, reshape_http, docs tests and the bundled-docs check pass",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0002"
+          }
+        ]
+      }
+    }
+  ]
+}

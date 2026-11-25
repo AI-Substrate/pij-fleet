@@ -119,7 +119,7 @@
 					"state": "in-progress",
 					"done_when": "`pij docs list` names each of those pages, and the concepts page defines every one of the seven terms.",
 					"source": "operator, 2026-11-25: we don't document the fleet and its semantics and constructs very well",
-					"note": "In progress: every page but pods shipped with #348 (plan 246). The pods page waits on workstream 008 step s02 and comes in a follow-up PR."
+					"note": "In progress: every page but pods shipped with #348 (plan 246). The pods page waits on workstream 008 step s02 (no pod commands on main when s04 shipped)."
 				},
 				{
 					"id": "req-06",
@@ -127,7 +127,7 @@
 					"statement": "A refusal that turns on a concept names the page that explains it, and a seat's first turn names the page for its type instead of carrying the full text.",
 					"actor": "any seat",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "`pij directory add` refused for a missing type prints `pij docs get types`, and a knowledge seat's first turn names `pij docs get types/knowledge`.",
 					"source": "design conversation 2026-11-25"
 				},

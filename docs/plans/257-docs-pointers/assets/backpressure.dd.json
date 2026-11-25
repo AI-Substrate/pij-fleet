@@ -1,0 +1,42 @@
+{
+  "dd": { "schema": "builder/backpressure" },
+  "sections": [
+    { "name": "meta", "value": { "title": "Plan 257 backpressure", "plan": "../plan.dd.json#meta", "certainty": "Confident" } },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "types.rs tests: the missing-type and unknown-type refusals end `Read: pij docs get types`, the knowledge field refusal ends `Read: pij docs get types/knowledge`, the coder fixed-rule refusal ends `Read: pij docs get types/coder`; the existing code and `next` assertions are unchanged and pass.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon --lib community::types"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "first_turn.rs the_type_part_names_its_page_and_carries_only_the_roles_rule_changes: a knowledge seat's first turn starts with its line, `Carries authority: no.` and `Your type in full: pij docs get types/knowledge`, carries none of its rules' text and keeps its seed; a reviewer role that changes compact-after-job carries that change and not the unchanged `independent` rule. reshape_http role_start passes unchanged.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon --lib community::first_turn"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "docs.rs tests and `just docs-bundle-check` on the rebuilt binary (every page equals its source); a reviewer reads the pages against PRD 007's API section.",
+          "state": "checked",
+          "probe": "just docs-bundle-check"
+        }
+      ]
+    },
+    { "name": "sensors", "value": [{ "id": "sn-0001", "name": "done gate", "command": "harness checks", "dimension": "correctness" }] }
+  ]
+}

@@ -1798,6 +1798,7 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
 `watcher`, `human-window`. pij ships each as a `pij/type` definition and a seed
 (`templates/types/<type>/v<n>/`), compiled into the daemon.
 
+- Each type refusal's message ends with the page that explains it (PRD 009 req-06): `Read: pij docs get types` for a missing or unknown type, `Read: pij docs get types/<type>` for a field or rule; codes and next steps are as below.
 - `add` refuses a role with no type (`E-RS-TYPE-MISSING`, listing the ten, with a next step naming `--type`, `--from template:<name>` and `retype`, or on the edit path `edit --set type=`), an
   unknown type (`E-RS-TYPE-UNKNOWN`), and a role missing what its type requires
   (`E-RS-TYPE-FIELD`: `--keeps` for knowledge, `--sole-writer-of` for steward).
@@ -1838,7 +1839,10 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
 - `directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>]
   [--packet <file>] [--instance <key>]` (plan 241) returns `first_turn` (the
   whole text) and `parts` (`heading`, `source`, `text`), in order: the type
-  (definition and seed), the role (filled), the parameters, the caller's focus
+  (its line, whether it carries authority, `Your type in full: pij docs get
+  types/<type>`, the rules the role changes with their reasons, and the seed;
+  the rest of the definition is that page, PRD 009 req-06, plan 257), the role
+  (filled), the parameters, the caller's focus
   and packet as creator, and the role's memory index. A parameter the role does
   not declare refuses `E-RS-PARAM-UNKNOWN` (naming those it declares); a
   required one left out refuses `E-RS-PARAM-MISSING` (naming each `--set`). It
