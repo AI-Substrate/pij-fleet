@@ -1,0 +1,29 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "Open before changing who pij tells about a close/stop outcome, adding a verb the shim forwards, or building on pij pod (008 s03+)",
+				"tags": [
+					"close-stop",
+					"notices",
+					"spine",
+					"pod",
+					"shim",
+					"prd-008",
+					"lane-a"
+				],
+				"title": "close --stop notices (#352) and the pod verbs: diagnose from the spine, pick recipients from context holdings"
+			}
+		},
+		{
+			"name": "body",
+			"value": "- Diagnose a live misbehaviour from the spine first: `sqlite3 -readonly \"file:$HOME/.pij-rs/pij.sqlite?mode=ro\"`, table spine_events(seq, at, kind, seat, payload). Each memory.turn row records ended, waited_ms and then (who was told). #352's \"the 300 s bound never fired\" was really turns ending in about 10 s with no note. The `projects` and `prime_designation` tables answer \"which prime\".\n- To find who to tell about a seat, read its context holdings (`context_assignments`: open plus released in this context), never `open_assignments`. A steward often releases roles seconds before the close, and an empty list then falls through to the machine's designated prime of another project. Tell the closer too: a held close answers before its outcome. `--stop` asks the memory turn only of a seat that holds an open role.\n- A verb the shim forwards must be added in five places: crates/cli governance.rs path; harness/scripts/pij-native-verbs.json (kept sorted); the generation-routing.ts list AND its nativeCommand type union AND the generation-routing.test.ts list; the `clap_exposes_every_ruled_verb` list in cli main.rs; and a SKILL.md CLI-verb coverage row. Also add the route to route-inventory.json, add the Endpoint (bump `ALL: [Self; N]`), and write a docs/how/pij-rs-api.md section.\n- Pods (008 s02): /v1/pod is in http/pod.rs, with its pure parts in community/pod.rs. up starts slots through `super::launch_seat` with SpawnRequest{no_wait, caller, parent: actor, as_role}, then parses the Response JSON (data.id, details.warnings, meta on refusal). The canary waits for `pod.canary` spine events on one subscription made before the sends. Tests: tests/reshape_http/pod_up.rs; the fake tmux needs `--session work`.\n- Plan JSON under docs/plans is 2-space indented, while docs/project is tabs (biome). Re-save plans with indent=2 or the diff balloons. Restacking after a squash merge: `git rebase --onto origin/main <old base tip>`.\n"
+		}
+	]
+}
