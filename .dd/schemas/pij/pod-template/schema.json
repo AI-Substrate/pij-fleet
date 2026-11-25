@@ -1,0 +1,217 @@
+{
+  "dd_schema": 1,
+  "description": "A pij pod template (PRD 008): what a pod is made from. Parameters set once for the group; slots, each a seat the pod starts in a role; how the slots feed each other; the outside roles it consults; its deliverables, each with an owner role, stages and a role it is written back to. A pod command names a template by its path; pij does not enforce where it lives.",
+  "enums": {
+    "need": {
+      "values": [
+        "required",
+        "optional"
+      ]
+    },
+    "yes_no": {
+      "values": [
+        "yes",
+        "no"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "version"
+        ],
+        "fields": {
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "need"
+          ],
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "need": {
+              "type": "enum",
+              "enum": "need"
+            },
+            "describe": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "slots": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "role"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "instance": {
+              "type": "string"
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "not_model_of": {
+              "type": "string"
+            },
+            "keep_open": {
+              "type": "enum",
+              "enum": "yes_no"
+            },
+            "seed": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "wiring": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "from",
+            "to"
+          ],
+          "fields": {
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            },
+            "what": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "consulted": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "role"
+          ],
+          "fields": {
+            "role": {
+              "type": "string"
+            },
+            "before_up": {
+              "type": "enum",
+              "enum": "yes_no"
+            },
+            "why": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "deliverables": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "owner"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "owner": {
+              "type": "string"
+            },
+            "stages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "write_back": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "by",
+            "why"
+          ],
+          "fields": {
+            "date": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "why": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}

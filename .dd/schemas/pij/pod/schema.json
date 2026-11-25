@@ -1,0 +1,139 @@
+{
+  "dd_schema": 1,
+  "description": "A running pod's record (PRD 008), written only by pij under community/pods/<pod>/ on the governance branch: the template it came from, its filled parameters, the seat in each slot, and a log of what changed. Seat facts (folder, sessions, process) stay in pij's database.",
+  "enums": {
+    "pod_state": {
+      "values": [
+        "up",
+        "closing",
+        "closed"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "pod",
+          "template",
+          "state",
+          "created_by",
+          "created_at"
+        ],
+        "fields": {
+          "pod": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "template_version": {
+            "type": "string"
+          },
+          "template_hash": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "work_folder": {
+            "type": "string"
+          },
+          "fresh": {
+            "type": "string"
+          },
+          "state": {
+            "type": "enum",
+            "enum": "pod_state"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "value"
+          ],
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "members": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "slot",
+            "role",
+            "seat"
+          ],
+          "fields": {
+            "slot": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "instance": {
+              "type": "string"
+            },
+            "seat": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "keep_open": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "log": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "at",
+            "by",
+            "change"
+          ],
+          "fields": {
+            "at": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "change": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}

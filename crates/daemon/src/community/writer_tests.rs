@@ -635,6 +635,8 @@ fn memory_note(title: &str) -> crate::community::memory::NoteFields {
         hook: format!("why {title}"),
         body: "what was learned\n".to_string(),
         slug: None,
+        subject: None,
+        by: None,
     }
 }
 

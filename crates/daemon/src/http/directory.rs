@@ -29,8 +29,9 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 38] = [
+const SINGLE: [&str; 39] = [
     "why",
+    "subject",
     "signal",
     "answer",
     "focus",
@@ -94,7 +95,8 @@ const REPEATED: [&str; 22] = [
     "remove-output-kind",
 ];
 /// Flags a `memory` call may carry (plan 201).
-const MEMORY: [&str; 9] = [
+const MEMORY: [&str; 10] = [
+    "subject",
     "slug",
     "title",
     "tags",
@@ -136,6 +138,8 @@ struct Arguments {
     shipped: bool,
     /// `--first-turn` on `show`: print a role's first turn (PRD 007 req-03).
     first_turn: bool,
+    /// `--fresh` on `show`: leave earlier memory out (PRD 008 req-12).
+    fresh: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -222,6 +226,16 @@ impl Arguments {
                     ));
                 }
                 call.shipped = true;
+                continue;
+            }
+            if flag == "fresh" {
+                if call.leaf != "show" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--fresh belongs to `show --first-turn` and `spawn --as`",
+                    ));
+                }
+                call.fresh = true;
                 continue;
             }
             if flag == "first-turn" {
@@ -396,14 +410,14 @@ impl Arguments {
                 || call.single.keys().any(|flag| {
                     !matches!(
                         flag.as_str(),
-                        "project" | "actor" | "focus" | "packet" | "instance"
+                        "project" | "actor" | "focus" | "packet" | "instance" | "subject"
                     )
                 })
                 || call.repeated.keys().any(|flag| flag != "set"))
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "usage: pij directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>] [--packet <file>] [--instance <key>] [--project <slug>]",
+                "usage: pij directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>] [--packet <file>] [--instance <key>] [--subject <s>] [--fresh] [--project <slug>]",
             ));
         }
         if call.leaf == "suggest"
@@ -432,6 +446,15 @@ impl Arguments {
                 "E-RS-ARG",
                 format!(
                     "directory {}: --signal and --answer belong to `suggest`",
+                    call.leaf
+                ),
+            ));
+        }
+        if !matches!(call.leaf.as_str(), "show" | "memory") && call.single.contains_key("subject") {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --subject belongs to `memory` and `show --first-turn`",
                     call.leaf
                 ),
             ));
@@ -1552,6 +1575,8 @@ async fn show(
             .get("packet")
             .map(|file| read_packet(caller, &file, &repo))
             .transpose()?,
+        subject: call.get("subject"),
+        fresh: call.fresh,
     };
     let instance = call.get("instance").unwrap_or_default();
     let role_id = &call.positions[0];
@@ -2481,8 +2506,13 @@ async fn memory(
         let role_id = positions[0];
         let root = crate::community::root::find(&repo)?;
         let mut data = match call.get("note") {
-            Some(note) => memory::read_note(&root.worktree, role_id, &note)?,
-            None => memory::read_index(&root.worktree, role_id)?,
+            Some(note) => memory::read_note(
+                &root.worktree,
+                role_id,
+                call.get("subject").as_deref(),
+                &note,
+            )?,
+            None => memory::read_index(&root.worktree, role_id, call.get("subject").as_deref())?,
         };
         data["project"] = json!(project);
         return Ok(data);
@@ -2520,6 +2550,8 @@ async fn memory(
         hook: call.get("hook").unwrap_or_default(),
         body,
         slug: call.get("slug"),
+        subject: call.get("subject"),
+        by: Some(actor.to_string()),
     };
     // Refuse a bad note before taking the writer lock.
     memory::note(&holders::today(), &fields)?;

@@ -226,6 +226,12 @@ pub struct AsRole {
     /// `--packet <file>`, read by the daemon relative to the caller's folder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub packet: Option<String>,
+    /// A pod's subject: the first turn reads the role's notes for it (PRD 008).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    /// `--fresh`: leave earlier memory out of the first turn (PRD 008 req-12).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fresh: bool,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.

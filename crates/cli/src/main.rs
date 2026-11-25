@@ -4854,6 +4854,8 @@ fn parse_as_role(
         set: set.to_vec(),
         focus: focus.clone(),
         packet: packet.clone(),
+        subject: None,
+        fresh: false,
     })
 }
 

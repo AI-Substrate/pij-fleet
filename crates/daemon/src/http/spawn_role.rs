@@ -114,6 +114,8 @@ pub(super) async fn prepare(
             seat: creator.to_string(),
             focus: as_role.focus.clone(),
             packet,
+            subject: as_role.subject.clone(),
+            fresh: as_role.fresh,
         },
     )
     .map_err(refuse("building the first turn"))?;
