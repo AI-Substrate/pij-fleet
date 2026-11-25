@@ -24,10 +24,11 @@
 					"title": "Procedures in a template",
 					"state": "planned",
 					"delivers": ["../prds/010-pod-templates.dd.json#requirements/req-01"],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-templates"],
 					"depends_on": ["008-pods.dd.json#steps/s01"],
 					"needs": ["role:coder", "role:reviewer"],
-					"done_when": "A template runs a procedure of its own and one linked from the repo, and adopting it elsewhere reports the linked one as missing."
+					"done_when": "A template runs a procedure of its own and one linked from the repo, and adopting it elsewhere reports the linked one as missing.",
+					"plan": "docs/plans/253-template-procedures"
 				},
 				{
 					"id": "s02",
@@ -38,30 +39,36 @@
 						"../prds/010-pod-templates.dd.json#requirements/req-03",
 						"../prds/010-pod-templates.dd.json#requirements/req-06"
 					],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-templates"],
 					"depends_on": ["008-pods.dd.json#steps/s01"],
 					"needs": ["role:coder", "role:reviewer", "role:performance"],
-					"done_when": "`pij community init` and `pij pod adopt` copy shipped originals into governance with their version, the repo copy wins and is named, `template-diff` applies nothing, and none of them launches a seat."
+					"done_when": "`pij community init` and `pij pod adopt` copy shipped originals into governance with their version, the repo copy wins and is named, `template-diff` applies nothing, and none of them launches a seat.",
+					"plan": "docs/plans/254-shipped-templates-adopt-init"
 				},
 				{
 					"id": "s03",
 					"title": "Export a pod and save a role as a template",
 					"state": "planned",
 					"delivers": ["../prds/010-pod-templates.dd.json#requirements/req-04"],
-					"builds": [],
+					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-templates"],
 					"depends_on": ["008-pods.dd.json#steps/s03"],
 					"needs": ["role:coder", "role:reviewer"],
-					"done_when": "A running pod with a seat added exports to a template that `plan` reads."
+					"done_when": "A running pod with a seat added exports to a template that `plan` reads.",
+					"plan": "docs/plans/255-export-and-role-templates"
 				},
 				{
 					"id": "s04",
 					"title": "The build pod and the live-call pod",
 					"state": "planned",
 					"delivers": ["../prds/010-pod-templates.dd.json#requirements/req-05"],
-					"builds": [],
+					"builds": [
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-templates",
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-docs"
+					],
 					"depends_on": ["#steps/s01", "008-pods.dd.json#steps/s02"],
 					"needs": ["role:coder", "role:reviewer", "role:docs-system"],
-					"done_when": "`pij pod templates` lists both, and each stands up and comes down on a test project."
+					"done_when": "`pij pod templates` lists both, and each stands up and comes down on a test project.",
+					"plan": "docs/plans/256-build-and-live-call-pods"
 				}
 			]
 		},
@@ -77,6 +84,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Owner moves from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010 (operator's approval, 2026-11-25)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Each step names its plan (253 to 256) and the blueprint 005 components it builds; s04 also rewrites the prime's community route (c-docs). Amended scope follows PRD 010's changelog (Jordan's ruling 2026-11-25, round 2; pod dogfood input 2026-11-25)."
 				}
 			]
 		}
