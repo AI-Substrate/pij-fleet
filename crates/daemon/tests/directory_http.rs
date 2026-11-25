@@ -1808,11 +1808,15 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
 mod review;
 
 /// Every FYI held for `recipient`, as `(sender, body)`, oldest first.
+/// The FYIs held for `recipient`, oldest first, leaving out PRD 007's creator
+/// notes (`pij: <seat> added role ...` / `... started <seat> in role ...`),
+/// which every add by a seat other than the prime now holds for the prime;
+/// `reshape::role_start` tests those.
 async fn fyis(rig: &Rig, recipient: &str) -> Vec<(String, String)> {
     let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
         .await
         .unwrap();
-    let rows = sqlx::query_as(
+    let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT sender, body FROM fyis WHERE recipient = ?1 ORDER BY held_at_ms, id",
     )
     .bind(recipient)
@@ -1820,7 +1824,12 @@ async fn fyis(rig: &Rig, recipient: &str) -> Vec<(String, String)> {
     .await
     .unwrap();
     pool.close().await;
-    rows
+    rows.into_iter()
+        .filter(|(_, body)| {
+            !(body.starts_with("pij: ")
+                && (body.contains(" added role ") || body.contains(" in role ")))
+        })
+        .collect()
 }
 
 /// Plan 201: a compact to a role holder is held for its memory turn and
