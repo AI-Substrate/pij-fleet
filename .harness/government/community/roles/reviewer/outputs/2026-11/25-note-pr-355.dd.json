@@ -1,0 +1,31 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"kind": "note",
+				"role": "reviewer",
+				"subject": "pr:355",
+				"writer": "pij-surprised-quelea",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": []
+		},
+		{
+			"name": "body",
+			"value": "Light states-only review of #355 at 82d3034: pass-with-notes. Checked diff scope (docs only), receipt vs done_when verbs, req/step state consistency, changelog hygiene. ddocs-check can't run in a review worktree without node_modules; rely on CI. Governance-target launch cost is cited from PRD 008 req-09, not measured."
+		}
+	]
+}
