@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "Read when reviewing first-turn authority, type docs or private guard mutation batches",
+				"tags": [
+					"review",
+					"types",
+					"first-turn",
+					"mutation"
+				],
+				"title": "PR 351 first-turn authority at fd47101"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Review #351 at fd47101cacd81a1a26e36b2b68bea3d6c98a1c05 blocks on B351-R1-01: first_turn::assemble states authority using TypeDef::authority, but assignment authority comes from holders::seat_role_for(role id). A valid noncanonical PA-typed role is a worker yet is told yes; role pa typed worker is told no. This is incorrect onboarding text, not a permission change. The fix belongs to the author within the approved work.\n\nProof: 25 exact-head focused baseline tests passed; all 11 pointer pages resolved; the existing docs-bundle sensor compared all 14 pages; all removed type fields and seeds remained on the pages; refusal codes, next steps and control flow were unchanged. The main guard killed both restoring unchanged rules and suppressing role changes, while its unmodified control passed. A separate private authority probe failed on both role/type mismatches. No new periodic loop or launch; added steady-state launches 0/s. Public additions were privacy-clean.\n\nUseful mutation method: copy the existing module into two cfg(test)-only private variants, mutate each independently, and select the same guard name plus its original control in one shared-build invocation. This avoids one lock acquisition and a rebuild per mutant. Use a private git archive with byte-identical Cargo.lock and --locked --offline, the resolver's normal shared target and the default 25 GiB floor. Copy any binary used later while holding shared-build's lock; otherwise another tree can replace it.\n\nDifficulties: local boot/quick checks lacked TS dependencies and the ambient Biome could not read the repository config; use exact-head CI, never a symlinked node_modules. The first mutant attempt exhausted its 180-second lock-acquisition budget without running cargo; the one-build batch retry used a longer acquisition budget and the same lock/floor. The request's pij verdict alias is unported here; pij output verdict is the supported writer and --answers correlates the role request. No review PROC was listed. Older C34 memories still described two rounds, but RULINGS.md:38 now requires one reviewer and one round.\n\nmagicWand: extend the existing first-turn test with role-id/type mismatch cases so its authority sentence cannot silently regress. That is the concrete missing sensor exposed by this review; no new framework or permission feature is needed.\n"
+		}
+	]
+}
