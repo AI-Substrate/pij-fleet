@@ -3111,6 +3111,16 @@
 					"seat": "pij-official-aardwolf",
 					"to": "2026-11-25T04:40:42.340Z",
 					"why": "one C34 review of #351 (009 s04) at fd47101"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T04:59:25.647Z",
+					"harness": "copilot",
+					"harness_session": "bc9736e7-ad4e-46e5-a42f-216a97d941bb",
+					"instance_key": "352",
+					"machine": "studio",
+					"seat": "pij-potential-coral",
+					"why": "one C34 review of #352 (close --stop fix) at 7baacf2"
 				}
 			]
 		}
