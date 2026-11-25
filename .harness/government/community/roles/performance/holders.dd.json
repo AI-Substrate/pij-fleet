@@ -862,6 +862,15 @@
 					"seat": "pij-responsible-locust",
 					"to": "2026-11-22T01:12:53.255Z",
 					"why": "#334 F279 R1 verdict (fresh seat; C35-approved)"
+				},
+				{
+					"assigned_by": "pij-multiple-nightingale",
+					"from": "2026-11-25T07:22:52.227Z",
+					"harness": "copilot",
+					"instance_key": "receipt",
+					"machine": "studio",
+					"seat": "pij-developed-parakeet",
+					"why": "started in the role by pij-multiple-nightingale (pij spawn --as)"
 				}
 			]
 		}
