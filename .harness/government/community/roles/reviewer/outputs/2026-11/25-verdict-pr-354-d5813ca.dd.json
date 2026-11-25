@@ -1,0 +1,52 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a211ac-391d-79b2-ae3c-4e6ff3ce5716",
+				"date": "2026-11-25",
+				"head": "d5813cada7341fbda7f2816c3d6679f48800db4f",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/actions/runs/45570030237",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:354",
+				"writer": "pij-graceful-ocelot",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": []
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "CLI docs tests in private exact-head archive",
+					"exit_code": 0,
+					"log": "12 passed before isolation incident"
+				},
+				{
+					"command": "offline docs retrieval and docs-bundle-check in private archive",
+					"exit_code": 0,
+					"log": "pods byte equality; 15 bundled pages match"
+				},
+				{
+					"command": "harness checks in private archive",
+					"exit_code": 1,
+					"log": "INVALID PROOF: inherited Git environment reached fixture writers; metadata repaired with prime; no full-gate results relied on"
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Review #354\n\n**Result: block.** Exact head `d5813cada7341fbda7f2816c3d6679f48800db4f`, compared with its parent/main `387362db777476a26a789f9e5e15b356e046cc6b`. One reviewer, one round under amended C34. The three blocks are false instructions or descriptions of normal-use behavior, not requests to harden the pod implementation.\n\n## Findings\n\n**B354-R1-01 -- block: the advertised views require JSON.**\n`docs/cli/pods.md:48-55,86` documents ordinary `pod show` as displaying the member model, owner holders, deliverable stages and log, and promises a closed pod reads `closed`. Ordinary `pod sessions` is also said to show session transcripts. The daemon supplies those fields, but the text renderer drops them. An actual binary built from the private exact-head archive, against a synthetic local HTTP fixture, returned all these fields with `--json` and omitted them without it; a closed pod with a working keep-open knowledge member printed no pod state at all. `crates/cli/src/main.rs:2306-2315` selects that renderer; `crates/cli/src/pod.rs:56-95,140-153,186-219` omits the fields. Document `--json` for the full views and qualify what ordinary text displays. This docs-only repair is sufficient; no unrelated rendering feature is requested. `activity` likewise prints transcript locations, not transcript contents.\n\n**B354-R1-02 -- block: unfiltered history does not include every seat.**\n`docs/cli/pods.md:55` says `pij sessions --history` lists history \"for every seat\". Without `--seat`, `crates/daemon/src/http/shim.rs:113-118` explicitly excludes tombstoned seats. A closed seat's history remains available when named with `--seat <id>`; `pod sessions` also names its recorded members individually. Say \"all non-tombstoned seats\" and give the explicit-seat command for closed seats.\n\n**B354-R1-03 -- block: the no-start joining command is unported.**\n`docs/cli/pods.md:39` instructs `pij spawn --as role:<id>[/<instance>] --pod <pod>`. The shim's spawn route always refuses `E-RS-UNPORTED` (`.omp/extensions/pij/core/generation-routing.ts:371-374`). The deployed command, safely probed with `--help`, reproduced that refusal. Native `pij-rs spawn --help` confirms `--as` and `--pod` are supported, with the role's harness used when omitted. Change this example to `pij-rs spawn --as role:<id>[/<instance>] --pod <pod>`.\n\n**B354-R1-04 -- nonblocking state note.**\nPRD 009 req-05's listing criterion is satisfied: all first pages, including pods, are bundled. Workstream 009 s03 is marked complete and adds a dependency on 008 s02, but `docs/project/workstreams/008-pods.dd.json:39-41` still marks s02 in-progress at this head. The pod behavior is on main in #346; acknowledge the outstanding prerequisite or reconcile its state against actual completion receipts, rather than treating \"merged\" as an existing complete-state receipt.\n\n## Coverage and validation\n\nAll 11 pod verbs and their documented flags were checked against the deployed help and the unchanged main implementation. Template paths are caller-relative, never searched; template/parameter integrity refusals are distinct from advisory checks. The secret guard precedes pod parameter writes. The canary uses one subscription and a single 15-minute deadline; a later member confirmation recovers a degraded slot. The degraded check is a **one-directional safety brake**, not a policy: removing it only sends more. It skips `set` to degraded members and write-back when any live destination holder is a degraded member of this pod; other sends are untouched. Down uses one git status read, the existing close-stop handler per non-keep-open member, and never touches consulted roles. History reads at most 256 KiB per listed session and reports `unknown` when unavailable; the page should mention that qualification. PRD 010 procedures and shipped templates are clearly Coming.\n\nReviewer proofs: private archive from the exact head; shared-build lock, niceness 19, four jobs, incremental disabled, unchanged 25 GiB floor. CLI docs tests: **12 passed**. Private built binary `docs get pods`: **byte-for-byte match**, with an unreachable daemon address. Direct Node execution of `harness/scripts/docs-bundle-check.ts`: **15 pages matched**. The archive binary is version-unstamped; compiled source equality and the archive basis, not its version text, establish this proof. Isolated real-CLI rendering probe: **both documented-output discrepancies reproduced**, JSON retained the fields. `git diff --check`: **passed**. `just pr-freeze 354`: **FINAL at this exact head**.\n\nExact-head CI run **45570030237**: check (22), check (24), rust-lint and rust-test **passed**. Both Node jobs ran `just docs-bundle-check` and reported 15 matching pages. CI's project-docs command can report ddocs unavailable as a warning; that is not local schema proof.\n\nFull private-archive `harness checks`: **failed and NOT valid proof**. Missing/incompatible TypeScript tooling prevented local TS gates; worse, my exported Git environment reached nested fixture tests, which changed shared Git config, created a fixture ref and made empty commits on the detached review HEAD. I stopped and reported this. The prime repaired the shared config/ref; with explicit approval I cleared all Git environment variables, compare-and-swap restored this review HEAD to the requested SHA, verified the source checkout clean, and deleted the exact private archive. Main's head was unchanged. No full-gate results are relied on; the focused pre-incident docs proofs and exact-head CI above are the validation basis. No dependencies were installed or symlinked.\n\n**Security/privacy:** no added personal names, account paths, credentials, dependency sources or executable behavior. **Cost:** no new recurring loop, poll, timer, hook, sweep or launch site; 0 additional steady-state launches/s, no poll interval and no per-seat scaling. The documented pod operations already exist on main and are unchanged.\n\nAuthor fixes these documentation claims; the prime verifies the fix range-diff and merges under C34, without another reviewer round.\n"
+		}
+	]
+}
