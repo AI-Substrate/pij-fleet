@@ -203,5 +203,6 @@
 - [2026-11-25 PR 344 seat types at e56bcb4](2026-11-25-pr-344-seat-types-at-e56bcb4.dd.md): Read when reviewing seat types, role\_type pointers, /v1/seats cost or batched mutation checks (review, types, mutation, cost)
 - [2026-11-25 PR 351 first-turn authority at fd47101](2026-11-25-pr351-first-turn-authority.dd.md): Read when reviewing first-turn authority, type docs or private guard mutation batches (review, types, first-turn, mutation)
 - [2026-11-25 Open role eligibility and close-stop notices](2026-11-25-pr352-close-stop.dd.md): Use all-project open holdings for stop eligibility, context holdings for notices, and private archives for mutation proof. (lifecycle, close-stop, review-proof)
+- [2026-11-25 PR 354: docs truth and Git test isolation](2026-11-25-pr354-docs-truth-git-isolation.dd.md): Read before reviewing pod CLI docs or running fixture tests in a private archive. (review, pods, docs, isolation, c34)
 - [2026-11-25 Rollback after a landed commit is a half-write](2026-11-25-rollback-after-a-landed-commit-is-a-half.dd.md): When a rollback follows a governance commit, check what the commit already landed (review, rollback, governance)
 <!-- /pij:generated -->
