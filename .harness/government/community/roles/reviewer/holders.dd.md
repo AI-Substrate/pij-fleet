@@ -261,3 +261,4 @@
 | — | pij-potential-coral | copilot | bc9736e7-ad4e-46e5-a42f-216a97d941bb | studio | 352 | 2026-11-25T04:59:25.647Z | 2026-11-25T05:08:38.813Z | pij-steady-otter | pij-steady-otter | one C34 review of #352 (close --stop fix) at 7baacf2 | close |
 | — | pij-varying-ptarmigan | copilot | 4c3e827a-bae0-4645-ad03-f7bc0774800c | studio | 346 | 2026-11-25T06:31:43.858Z | 2026-11-25T06:44:28.720Z | pij-steady-otter | pij-steady-otter | one C34 review of #346 (PRD 008 pods) at 7b2cc29 | close |
 | — | pij-graceful-ocelot | copilot | f8676636-ae62-405b-85da-5c3b9988fea5 | studio | 354 | 2026-11-25T07:47:08.651Z | 2026-11-25T07:59:09.764Z | pij-steady-otter | pij-steady-otter | one C34 review of #354 (009 pods page) at d5813ca | close |
+| — | pij-low-marlin | copilot | ee58cc56-23a2-45c9-9ffe-1b1b0bf99fb8 | studio | 347 | 2026-11-25T08:41:14.971Z | — | pij-steady-otter | — | one C34 review of #347 (PRD 010) at 5dc9cc2 | — |

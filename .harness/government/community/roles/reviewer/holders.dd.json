@@ -3150,6 +3150,16 @@
 					"seat": "pij-graceful-ocelot",
 					"to": "2026-11-25T07:59:09.764Z",
 					"why": "one C34 review of #354 (009 pods page) at d5813ca"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T08:41:14.971Z",
+					"harness": "copilot",
+					"harness_session": "ee58cc56-23a2-45c9-9ffe-1b1b0bf99fb8",
+					"instance_key": "347",
+					"machine": "studio",
+					"seat": "pij-low-marlin",
+					"why": "one C34 review of #347 (PRD 010) at 5dc9cc2"
 				}
 			]
 		}
