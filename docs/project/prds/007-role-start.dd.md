@@ -12,7 +12,7 @@
 | title | PRD 007: starting and stopping a seat in a role |
 | status | draft |
 | updated | 2026-11-25 |
-| owner | pij-autonomous-parrot |
+| owner | pm-001 |
 | summary | Spawning a seat with a role named on it gives a registered seat that has already been told what it needs, so nobody rewrites the same brief. Any seat can create the seat the work needs, and the prime is told. |
 
 <a id="why"></a>
@@ -85,3 +85,4 @@ Starting a role holder takes three manual steps today: spawn, `pij directory ass
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-autonomous-parrot | First draft. |
+| 2026-11-25 | pij-multiple-nightingale | Owner moved from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010. |
