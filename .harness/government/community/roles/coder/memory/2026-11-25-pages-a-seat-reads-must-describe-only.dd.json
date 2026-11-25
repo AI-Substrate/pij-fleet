@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "Writing or editing a pij docs page, concepts.md, a type page or any text a seat is told",
+				"tags": [
+					"prd-009",
+					"docs",
+					"review"
+				],
+				"title": "Pages a seat reads must describe only what main ships"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PRD 009's goal is that the docs a seat reads match the pij it runs, and both reviews of #348/#351 turned on breaking it. Before pushing a page: (1) every construct in the present tense must exist on main (pods, pod templates, per-instance memory were described as present and were not: parked in a \"Coming\" section tagged with their PRD); (2) when a dependency PRD merges, grep the pages for \"planned (PRD N)\" and update them in the next PR (007 made three stale at once); (3) don't state one fleet's framing as universal (the factory/product framing is the build-fleet case; operating fleets build nothing); (4) where a rule is under the operator's review, say how main works today plus one line that it may change; (5) every command a page cites must exist with that grammar: check the help text in crates/core/src/directory.rs or pij-rs-api.md, not memory. The bundled-docs gate only proves a page equals its file, never that it is true.\n"
+		}
+	]
+}
