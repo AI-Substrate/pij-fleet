@@ -51,14 +51,34 @@ function track(child: ChildProcess): ChildProcess {
 	return child;
 }
 
-function groupAlive(group: number): boolean {
-	try {
-		process.kill(-group, 0);
-		return true;
-	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
-	}
+/** What teardown does to process groups; a test swaps it for a mock. */
+interface GroupSignals {
+	/** The groups of these running leaders and their live descendants, read now. */
+	groupsOf(leaders: number[]): number[];
+	alive(group: number): boolean;
+	signal(group: number, signal: "SIGTERM" | "SIGKILL"): void;
+	now(): number;
+	tick(): Promise<void>;
 }
+
+const realSignals: GroupSignals = {
+	groupsOf: fixtureGroups,
+	alive(group) {
+		try {
+			process.kill(-group, 0);
+			return true;
+		} catch (error) {
+			return (error as NodeJS.ErrnoException).code === "EPERM";
+		}
+	},
+	signal(group, signal) {
+		try {
+			process.kill(-group, signal);
+		} catch {}
+	},
+	now: Date.now,
+	tick: () => new Promise((r) => setTimeout(r, 100)),
+};
 
 /**
  * The groups of every fixture still running and of each of its descendants
@@ -67,8 +87,10 @@ function groupAlive(group: number): boolean {
  */
 function fixtureGroups(leaders: number[]): number[] {
 	if (leaders.length === 0) return [];
-	const rows = spawnSync("/bin/ps", ["-A", "-o", "pid=,ppid=,pgid="])
-		.stdout.toString()
+	const rows = (
+		spawnSync("/bin/ps", ["-A", "-o", "pid=,ppid=,pgid="], { timeout: scaled(5_000) }).stdout ?? ""
+	)
+		.toString()
 		.trim()
 		.split("\n")
 		.map((row) => row.trim().split(/\s+/).map(Number));
@@ -93,27 +115,36 @@ function fixtureGroups(leaders: number[]): number[] {
  * each tick (as the script's drain does), KILL past the script's own KILL
  * escalation. Returns the groups still alive after, which teardown fails on.
  */
-async function stopFixtures(): Promise<number[]> {
+function stopFixtures(): Promise<number[]> {
 	const started = fixtures.splice(0);
-	const running = () =>
+	return stopGroups(() =>
 		started.flatMap((child) =>
 			child.pid !== undefined && child.exitCode === null && child.signalCode === null
 				? [child.pid]
 				: [],
-		);
-	const groups = new Set(fixtureGroups(running()));
-	const killAt = Date.now() + scaled(DRAIN_MS + 5_000);
+		),
+	);
+}
+
+/**
+ * A group recorded from a running fixture's tree stays ours after its leader
+ * exits, but only until it is first seen gone: its number can then be reused
+ * by a group that is not ours, so it is retired, and comes back only if a
+ * running fixture's tree names it again (B350-R1-01, rule 6).
+ */
+async function stopGroups(
+	running: () => number[],
+	io: GroupSignals = realSignals,
+): Promise<number[]> {
+	const groups = new Set<number>();
+	const killAt = io.now() + scaled(DRAIN_MS + 5_000);
 	const giveUpAt = killAt + scaled(2_000);
 	for (;;) {
-		for (const group of fixtureGroups(running())) groups.add(group);
-		const alive = [...groups].filter(groupAlive);
-		if (alive.length === 0 || Date.now() > giveUpAt) return alive;
-		for (const group of alive) {
-			try {
-				process.kill(-group, Date.now() < killAt ? "SIGTERM" : "SIGKILL");
-			} catch {}
-		}
-		await new Promise((r) => setTimeout(r, 100));
+		for (const group of io.groupsOf(running())) groups.add(group);
+		for (const group of groups) if (!io.alive(group)) groups.delete(group);
+		if (groups.size === 0 || io.now() > giveUpAt) return [...groups];
+		for (const group of groups) io.signal(group, io.now() < killAt ? "SIGTERM" : "SIGKILL");
+		await io.tick();
 	}
 }
 
@@ -729,6 +760,35 @@ describe("just shared-build", () => {
 		expect(Date.now() - sent, "drained only by KILL").toBeLessThan(DRAIN_MS);
 		expect(() => process.kill(dropperPid, 0)).toThrow();
 		expect(existsSync(f.lock)).toBe(false);
+	});
+
+	// B350-R1-01 (rule 6): mocked signals. Fixture 100 records its job's
+	// group 200 and exits; 200 is still stopped after (ours, recorded), then
+	// goes, then its number is reused while fixture 300 keeps teardown going:
+	// the reused 200 is never signalled.
+	it("teardown retires a group at its first absence and never signals its reused number", async () => {
+		let tick = 0;
+		const live = (group: number) =>
+			group === 100 ? tick < 1 : group === 200 ? tick < 2 || tick >= 3 : tick < 5;
+		const signalled: [number, number][] = [];
+		const io: GroupSignals = {
+			groupsOf: (leaders) => leaders.flatMap((l) => (l === 100 ? [100, 200] : [l])),
+			alive: live,
+			signal: (group) => {
+				signalled.push([tick, group]);
+			},
+			now: () => tick,
+			tick: async () => {
+				tick++;
+			},
+		};
+		const left = await stopGroups(() => [100, 300].filter((l) => live(l)), io);
+		expect(left).toEqual([]);
+		expect(signalled.filter(([, g]) => g === 200)).toEqual([
+			[0, 200],
+			[1, 200],
+		]);
+		expect(signalled.filter(([t]) => t >= 3).map(([, g]) => g)).toEqual([300, 300]);
 	});
 
 	// F281: a fixture a failed or timed-out test left running (lane A, three
