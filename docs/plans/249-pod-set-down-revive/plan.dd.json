@@ -1,0 +1,113 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Set, down, revive and reshape (workstream 008 s03)",
+        "slug": "pod-set-down-revive",
+        "ordinal": 249,
+        "status": "ready",
+        "summary": "`pij pod set` delivers a late parameter to the members that need it; `pij pod down` takes each member down through `pij close --stop` (PRD 007), spares keep-open members with a warning, records the work branch's head and warns when the run is unfrozen; `pij pod up <pod>` brings a closed pod back under revive's rules; members are added and released while it runs.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "`pij pod set` delivers a late parameter to the members that need it; `pij pod down` takes each member down through `pij close --stop` (PRD 007), spares keep-open members with a warning, records the work branch's head and warns when the run is unfrozen; `pij pod up <pod>` brings a closed pod back under revive's rules; members are added and released while it runs."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Taking a pod down is one command that really stops it, the same way as one seat, and records where its work stood."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Write-back and staged deliverables (plan 252)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`pij pod set <pod> <name>=<value>` records the value in the pod folder and sends it to the members whose slots name it, and only them.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`pij pod down <pod>`, for each member not marked keep-open runs the same path as `pij close <seat> --stop` (plan 245): memory first, the recorded process stopped, the prime told of any seat that did not answer, cold seats not woken. A keep-open member (knowledge by default) is named in a warning and left running. Consulted roles are not touched. The pod reads closing until every member is down.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "note": "A template's close steps run with PRD 010 req-01 (pm-001 ruling 2026-11-25); #346 review B346-R1-10 reworded this claim."
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Freeze: when the pod names a work folder, down records its branch and head commit in the pod's log and warns that the run is unfrozen when the folder has uncommitted work. Only a warning: down never refuses on it.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "`pij pod up <pod>` on a closed pod revives its members one at a time under today's revive rules (resume, cheap start, the cold warning). `pij pod add <pod> <role|seat>` and `pij pod release <pod> <seat>` reshape a running pod and log it; the template is never changed by a run.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost: down is close --stop per member plus at most two git reads in the work folder; set is one delivery per member that needs the value. No loop, poll or timer.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0005"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Set, down, revive and reshape (workstream 008 s03)",
+          "brief": "One phase on PR #346.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "close --stop (crates/daemon/src/http/lifecycle.rs, memory_turn.rs); revive (http/revive.rs)."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A member does not answer ready.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "It is left running and the prime is told, as for one seat."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: down: close --stop per member plus two git reads; set: one delivery per member that needs it. No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

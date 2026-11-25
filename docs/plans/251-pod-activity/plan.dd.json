@@ -1,0 +1,100 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Pod activity view (workstream 008 s05)",
+        "slug": "pod-activity",
+        "ordinal": 251,
+        "status": "ready",
+        "summary": "`pij pod activity <pod>` shows, read only, what a pod did: its members' state changes, outputs, sends and transcript locations, in order. Any seat may read it.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "`pij pod activity <pod>` shows, read only, what a pod did: its members' state changes, outputs, sends and transcript locations, in order. Any seat may read it."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Anyone can see what a pod did without asking its members."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Access control: there is no observer role, no membership test and no hidden pod."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`pij pod activity <pod> [--since <time>]` reads the members' state changes, outputs and sends (between members and to consulted roles) from the event log, and each member's transcript location, in time order. It writes nothing and launches nothing.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Any seat may run it, whether or not it is in the pod or holds a role there.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Cost: indexed event-log reads per member when asked. No launch, loop, poll or timer.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Pod activity view (workstream 008 s05)",
+          "brief": "One phase on PR #346.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "The event log's per-seat indexes; outputs (community/output.rs); the pod folder (plan 247)."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A long-running pod has many events.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "`--since` bounds it; the default is the pod's current run."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: indexed reads per member when asked; no launch, loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

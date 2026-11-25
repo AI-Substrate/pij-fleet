@@ -1,0 +1,119 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan, up and show, with warnings (workstream 008 s02)",
+        "slug": "pod-plan-up-show",
+        "ordinal": 248,
+        "status": "ready",
+        "summary": "`pij pod plan` prints the whole pod and every warning with its fix and writes nothing; `pij pod up` starts each slot through `spawn --as`, canaries each slot's tools, warns and still starts; `pij pod show` reads the pod folder and the database.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "`pij pod plan` prints the whole pod and every warning with its fix and writes nothing; `pij pod up` starts each slot through `spawn --as`, canaries each slot's tools, warns and still starts; `pij pod show` reads the pod folder and the database."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Plan, confirm, up: a recurring group of seats in one command, with every problem named and nothing silently refused."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Down, set, revive and reshape (plan 249)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`pij pod plan <template-path> --set <name>=<value>...` prints each slot's seat with its model and first turn, each consulted role and whether it has a live holder, each deliverable and its owner, and each warning with the command that fixes it: a consulted role needed before up with no live holder (`pij spawn --as role:<id>`), a reviewing slot on its author's model, a deliverable whose owner role is missing (`pij directory add ...`), and the tools each slot will be checked for. It writes nothing and launches nothing.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`pij pod up <template-path> --set ...` creates the pod folder, then starts each slot as `pij spawn --as role:<id>` does (plan 242), once per slot. Each warning is printed with its fix and written to the pod's log; up never refuses on one. It creates no branch or worktree. `--no-start` creates the pod only; `pij spawn --as role:<id> --pod <pod>` starts one member into it.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "Tool canary: after a slot's seat starts, pij sends it one message asking it to confirm each tool the slot names, and waits a bounded time on a subscription for the answer. A slot that does not confirm every tool is degraded, shown with the missing tools and the fix in up's report, the log and show; pij hands it no pod work (a brake on pij's own dispatch, not a gate on the prime, whose messages still reach it).",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "`pij pod show <pod>` lists members with their types, seats and states (from the database), consulted roles, deliverables with owners, and degraded slots with their fixes.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "Cost: up launches one spawn per slot and nothing for a consulted role; plan and show launch nothing; the canary is one message and one bounded wait per new seat. No loop, poll or timer.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "note": "the live spawn-counter receipt is taken after deploy"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Plan, up and show, with warnings (workstream 008 s02)",
+          "brief": "One phase on PR #346.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "spawn --as (crates/daemon/src/http/spawn_role.rs) and the first turn (plan 241); live seats and holders from the store; the memory turn's bounded wait (http/memory_turn.rs) is the model for the canary's wait."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A seat never answers the canary.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "The wait is bounded; the slot is degraded with the fix and the pod still runs."
+        },
+        {
+          "risk": "Warnings are ignored.",
+          "likelihood": "Medium",
+          "impact": "Medium",
+          "mitigation": "Each is in the pod's log and show, with its fix."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: up: one spawn per slot, one canary message and one bounded wait per new seat; plan, show: no launch. No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

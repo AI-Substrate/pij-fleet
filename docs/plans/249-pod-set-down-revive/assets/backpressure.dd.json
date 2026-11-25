@@ -1,0 +1,74 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 249 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: set reaches one member of three.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_set"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: down gives each member the same result as close --stop alone, spares a keep-open member with a warning, leaves a consulted holder untouched.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_down"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test on a scratch repo: the head is recorded; uncommitted work warns and down proceeds.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_freeze"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP tests: a closed pod comes back with the same members; add and release are logged.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_revive"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC5",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "The spawn counter across down: git reads counted.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_down_cost"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

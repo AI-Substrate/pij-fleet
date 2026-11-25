@@ -334,7 +334,7 @@ function readQuery(
 			return { ok: false, reason: `unsupported read argument ${token}` };
 		}
 		const inline = matched?.[2];
-		const value = inline ?? (name === "here" ? "true" : argv[++index]);
+		const value = inline ?? (name === "here" || name === "history" ? "true" : argv[++index]);
 		if (value === undefined || value === "" || (inline === undefined && value.startsWith("--"))) {
 			return { ok: false, reason: `--${name} requires a value` };
 		}

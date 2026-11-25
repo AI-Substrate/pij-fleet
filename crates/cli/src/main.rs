@@ -332,6 +332,9 @@ enum Command {
         /// With --as: a file whose text joins the seat's first turn.
         #[arg(long, requires = "as_role")]
         packet: Option<String>,
+        /// With --as: start the seat as a member of this pod (`pij pod up --no-start`).
+        #[arg(long, requires = "as_role")]
+        pod: Option<String>,
         /// Explicitly allow a harness retired by this machine's daemon policy.
         #[arg(long)]
         allow_retired: bool,
@@ -716,6 +719,12 @@ enum Command {
     /// The community directory: `directory add` (plan 190), `--help` (plan 195).
     #[command(disable_help_flag = true)]
     Directory {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Pods: a group of seats started together from a template (PRD 008).
+    #[command(disable_help_flag = true)]
+    Pod {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -1502,6 +1511,24 @@ async fn run(cli: Cli) -> ExitCode {
     {
         return directory_help(args);
     }
+    if let Command::Pod { args } = &cli.command
+        && (args.is_empty() || pij_core::directory::wants_help(args))
+    {
+        let verb = pij_core::directory::verb(args);
+        return match pij_core::pod::help(verb) {
+            Some(text) => {
+                println!("{text}");
+                ExitCode::SUCCESS
+            }
+            None => {
+                eprintln!(
+                    "pij pod: unknown verb {:?}; run `pij pod --help`",
+                    verb.unwrap_or_default()
+                );
+                ExitCode::from(2)
+            }
+        };
+    }
     if let Command::Output { args } | Command::Outputs { args } = &cli.command
         && pij_core::directory::wants_help(args)
     {
@@ -2272,6 +2299,18 @@ async fn run(cli: Cli) -> ExitCode {
                 // An assign or release, single or `--batch` (plan 212, F56, F57).
                 Some(data) if is_holding(data) || data["holdings"].is_array() => {
                     println!("{}", render_holdings(data));
+                    ExitCode::SUCCESS
+                }
+                _ => emit(&response, as_json),
+            }
+        }
+        Command::Pod { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let response =
+                pij_cli::governance::governance(&client, "pod", &args, &caller_context()).await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                Some(data) if data.get("pod").is_some() && data.get("confirmed").is_none() => {
+                    println!("{}", pij_cli::pod::render(data));
                     ExitCode::SUCCESS
                 }
                 _ => emit(&response, as_json),
@@ -4722,6 +4761,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         set,
         focus,
         packet,
+        pod,
         allow_retired,
         bin,
         model,
@@ -4744,7 +4784,7 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
     };
     let as_role = as_role
         .as_deref()
-        .map(|target| parse_as_role(target, set, focus, packet))
+        .map(|target| parse_as_role(target, set, focus, packet, pod))
         .transpose()?;
     // With --as and no --harness, `main` asks the role for its harness and
     // calls `fill_role_harness`; until then the request carries OMP.
@@ -4834,6 +4874,7 @@ fn parse_as_role(
     set: &[String],
     focus: &Option<String>,
     packet: &Option<String>,
+    pod: &Option<String>,
 ) -> Result<AsRole, PijError> {
     let refuse = |message: String| PijError::Adapter {
         adapter: "spawn".to_string(),
@@ -4854,6 +4895,9 @@ fn parse_as_role(
         set: set.to_vec(),
         focus: focus.clone(),
         packet: packet.clone(),
+        subject: None,
+        fresh: false,
+        pod: pod.clone(),
     })
 }
 
@@ -5353,6 +5397,7 @@ impl Command {
             Command::Orchestration { .. } => "pij orchestration",
             Command::Spine { .. } => "pij spine",
             Command::Directory { .. } => "pij directory",
+            Command::Pod { .. } => "pij pod",
             Command::Output { .. } => "pij output",
             Command::Outputs { .. } => "pij outputs",
             Command::Claim { .. } => "pij claim",
@@ -6619,6 +6664,7 @@ PEC notice";
                 "orchestration",
                 "spine",
                 "directory",
+                "pod",
                 "output",
                 "outputs",
                 "claim",

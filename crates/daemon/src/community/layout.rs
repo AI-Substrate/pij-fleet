@@ -30,7 +30,7 @@ pub fn schema_copies() -> Vec<(PathBuf, &'static [u8])> {
 }
 
 /// pij's own schemas, compiled in so the copies always match this build.
-const SCHEMAS: [(&str, &[u8]); 5] = [
+const SCHEMAS: [(&str, &[u8]); 7] = [
     (
         "role",
         include_bytes!("../../../../.dd/schemas/pij/role/schema.json"),
@@ -50,6 +50,14 @@ const SCHEMAS: [(&str, &[u8]); 5] = [
     (
         "external",
         include_bytes!("../../../../.dd/schemas/pij/external/schema.json"),
+    ),
+    (
+        "pod",
+        include_bytes!("../../../../.dd/schemas/pij/pod/schema.json"),
+    ),
+    (
+        "pod-template",
+        include_bytes!("../../../../.dd/schemas/pij/pod-template/schema.json"),
     ),
 ];
 

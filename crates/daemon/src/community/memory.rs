@@ -45,6 +45,38 @@ pub struct NoteFields {
     /// `--slug`: the file name's slug, instead of one derived from the title
     /// (plan 209, F34).
     pub slug: Option<String>,
+    /// `--subject`: the pod subject the note is filed under (PRD 008 req-12),
+    /// in its own folder and INDEX; `None` files it at the role, as before.
+    pub subject: Option<String>,
+    /// The seat that wrote it (PRD 008 req-07), recorded in the note.
+    pub by: Option<String>,
+}
+
+/// A subject outside the one name grammar (PRD 008 req-12).
+///
+/// # Errors
+/// `E-RS-ARG` naming the grammar.
+pub fn check_subject(subject: &str) -> Result<(), Refusal> {
+    if pij_core::render::is_name(subject) {
+        return Ok(());
+    }
+    Err(Refusal::new(
+        "E-RS-ARG",
+        "a subject is 1-32 lowercase letters, digits or '-', not starting with '-'",
+    ))
+}
+
+/// The folder a role's notes for `subject` live in: the role's memory folder,
+/// or `subjects/<subject>/` under it (PRD 008 req-12).
+fn subject_dir(paths: &RolePaths, subject: Option<&str>) -> Result<PathBuf, Refusal> {
+    let dir = memory_dir(paths);
+    match subject {
+        None => Ok(dir),
+        Some(subject) => {
+            check_subject(subject)?;
+            Ok(dir.join("subjects").join(subject))
+        }
+    }
 }
 
 /// The file-name slug for `title`: lowercase ASCII letters and digits, with
@@ -115,7 +147,10 @@ pub fn note_slug(fields: &NoteFields) -> Result<String, Refusal> {
 /// # Errors
 /// A bad role id, a bad `--slug`, or a title with no slug.
 pub fn note_path(role: &str, date: &str, fields: &NoteFields) -> Result<PathBuf, Refusal> {
-    Ok(memory_dir(&RolePaths::new(role)?).join(format!("{date}-{}{NOTE}", note_slug(fields)?)))
+    Ok(
+        subject_dir(&RolePaths::new(role)?, fields.subject.as_deref())?
+            .join(format!("{date}-{}{NOTE}", note_slug(fields)?)),
+    )
 }
 
 /// The pij/memory document for `fields`, dated `date`.
@@ -152,10 +187,18 @@ pub fn note(date: &str, fields: &NoteFields) -> Result<Value, Refusal> {
             "--body <text> or --body-file <path> is required",
         ));
     }
+    let mut meta = json!({"date": date, "title": title, "tags": tags, "hook": hook});
+    if let Some(by) = &fields.by {
+        meta["by"] = json!(by);
+    }
+    if let Some(subject) = &fields.subject {
+        check_subject(subject)?;
+        meta["subject"] = json!(subject);
+    }
     Ok(json!({
         "dd": {"schema": "pij/memory"},
         "sections": [
-            {"name": "meta", "value": {"date": date, "title": title, "tags": tags, "hook": hook}},
+            {"name": "meta", "value": meta},
             {"name": "body", "value": fields.body},
         ],
         "references": [],
@@ -189,10 +232,12 @@ pub fn files(
     if std::fs::symlink_metadata(worktree.join(&path)).is_ok() {
         return Err(exists);
     }
-    let mut notes = notes_in(&worktree.join(memory_dir(&paths)));
+    let dir = subject_dir(&paths, fields.subject.as_deref())?;
+    let index_path = dir.join(INDEX);
+    let mut notes = notes_in(&worktree.join(&dir));
     notes.push((stem(&path), document.clone()));
     notes.sort_by(|a, b| a.0.cmp(&b.0));
-    let existing = std::fs::read_to_string(worktree.join(&paths.memory_index)).ok();
+    let existing = std::fs::read_to_string(worktree.join(&index_path)).ok();
     Ok(vec![
         NewFile {
             path,
@@ -201,7 +246,7 @@ pub fn files(
             existing: Existing::Refuse(exists),
         },
         NewFile {
-            path: paths.memory_index,
+            path: index_path,
             bytes: index(role_id, existing.as_deref(), &notes).into_bytes(),
             document: false,
             existing: Existing::Replace,
@@ -249,16 +294,19 @@ pub fn index(role_id: &str, existing: Option<&str>, notes: &[(String, Value)]) -
 ///
 /// # Errors
 /// [`E_ROLE_MISSING`].
-pub fn read_index(worktree: &Path, role_id: &str) -> Result<Value, Refusal> {
+pub fn read_index(worktree: &Path, role_id: &str, subject: Option<&str>) -> Result<Value, Refusal> {
     let paths = RolePaths::new(role_id)?;
     require_role(worktree, role_id, &paths, false)?;
-    let index = std::fs::read_to_string(worktree.join(&paths.memory_index))
+    let dir = subject_dir(&paths, subject)?;
+    let index_path = dir.join(INDEX);
+    let index = std::fs::read_to_string(worktree.join(&index_path))
         .unwrap_or_else(|_| RolePaths::empty_memory_index(role_id));
     Ok(json!({
         "role": role_id,
-        "path": paths.memory_index.display().to_string(),
+        "subject": subject,
+        "path": index_path.display().to_string(),
         "index": index,
-        "notes": note_names(&worktree.join(memory_dir(&paths))),
+        "notes": note_names(&worktree.join(&dir)),
     }))
 }
 
@@ -268,7 +316,12 @@ pub fn read_index(worktree: &Path, role_id: &str) -> Result<Value, Refusal> {
 /// # Errors
 /// [`E_ROLE_MISSING`], [`E_NOTE_MISSING`], or `E-RS-ARG` for a name that is
 /// not a plain file name or matches more than one note.
-pub fn read_note(worktree: &Path, role_id: &str, wanted: &str) -> Result<Value, Refusal> {
+pub fn read_note(
+    worktree: &Path,
+    role_id: &str,
+    subject: Option<&str>,
+    wanted: &str,
+) -> Result<Value, Refusal> {
     let paths = RolePaths::new(role_id)?;
     require_role(worktree, role_id, &paths, false)?;
     if wanted.is_empty() || wanted.contains(['/', '\\']) || wanted.starts_with('.') {
@@ -277,7 +330,7 @@ pub fn read_note(worktree: &Path, role_id: &str, wanted: &str) -> Result<Value, 
             format!("--note {wanted:?} must be a note's file name or slug"),
         ));
     }
-    let dir = memory_dir(&paths);
+    let dir = subject_dir(&paths, subject)?;
     let names = note_names(&worktree.join(&dir));
     let exact: Vec<&String> = names
         .iter()
@@ -504,7 +557,49 @@ mod tests {
             hook: "why to open it".to_string(),
             body: "what I learned\n".to_string(),
             slug: None,
+            subject: None,
+            by: None,
         }
+    }
+
+    /// PRD 008 req-07, req-12: a pod member's note names its seat and is filed
+    /// under its subject, with its own INDEX; the role's INDEX is untouched,
+    /// and another subject reads none of it.
+    #[test]
+    fn a_subject_note_is_filed_apart_and_names_its_seat() {
+        let dir = scratch("subject");
+        let mut note = fields("Acme call");
+        note.subject = Some("acme".to_string());
+        note.by = Some("pij-brisk-marten".to_string());
+        let written = files(&dir, "qa", "2026-11-25", &note).unwrap();
+        let base = PathBuf::from(".harness/government/community/roles/qa/memory/subjects/acme");
+        assert_eq!(written[0].path, base.join("2026-11-25-acme-call.dd.json"));
+        assert_eq!(written[1].path, base.join("INDEX.md"));
+        let meta =
+            &serde_json::from_slice::<Value>(&written[0].bytes).unwrap()["sections"][0]["value"];
+        assert_eq!(meta["by"], "pij-brisk-marten");
+        assert_eq!(meta["subject"], "acme");
+        for file in &written {
+            std::fs::create_dir_all(dir.join(&file.path).parent().unwrap()).unwrap();
+            std::fs::write(dir.join(&file.path), &file.bytes).unwrap();
+        }
+        let acme = read_index(&dir, "qa", Some("acme")).unwrap();
+        assert!(
+            acme["index"].as_str().unwrap().contains("Acme call"),
+            "{acme}"
+        );
+        let other = read_index(&dir, "qa", Some("globex")).unwrap();
+        assert!(
+            !other["index"].as_str().unwrap().contains("Acme call"),
+            "{other}"
+        );
+        let role = read_index(&dir, "qa", None).unwrap();
+        assert!(
+            !role["index"].as_str().unwrap().contains("Acme call"),
+            "{role}"
+        );
+        assert!(read_index(&dir, "qa", Some("../x")).is_err());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     fn scratch(name: &str) -> PathBuf {
@@ -735,7 +830,7 @@ mod tests {
         std::fs::write(dir.join("2026-11-06-seen-it.dd.md"), "rendered").unwrap();
         std::fs::write(dir.join("2026-11-04-hand.md"), "by hand").unwrap();
 
-        let view = read_index(&top, "qa").unwrap();
+        let view = read_index(&top, "qa", None).unwrap();
         assert_eq!(
             view["notes"],
             json!(["2026-11-04-hand.md", "2026-11-06-seen-it.dd.json"])
@@ -747,19 +842,28 @@ mod tests {
             "2026-11-06-seen-it",
             "2026-11-06-seen-it.dd.json",
         ] {
-            let read = read_note(&top, "qa", wanted).unwrap();
+            let read = read_note(&top, "qa", None, wanted).unwrap();
             assert_eq!(read["meta"]["title"], "Seen it", "{wanted}");
             assert_eq!(read["body"], "what I learned\n");
         }
-        assert_eq!(read_note(&top, "qa", "hand").unwrap()["text"], "by hand");
         assert_eq!(
-            read_note(&top, "qa", "nope").unwrap_err().code,
+            read_note(&top, "qa", None, "hand").unwrap()["text"],
+            "by hand"
+        );
+        assert_eq!(
+            read_note(&top, "qa", None, "nope").unwrap_err().code,
             E_NOTE_MISSING
         );
         for bad in ["../x", ".hidden", ""] {
-            assert_eq!(read_note(&top, "qa", bad).unwrap_err().code, "E-RS-ARG");
+            assert_eq!(
+                read_note(&top, "qa", None, bad).unwrap_err().code,
+                "E-RS-ARG"
+            );
         }
-        assert_eq!(read_index(&top, "ghost").unwrap_err().code, E_ROLE_MISSING);
+        assert_eq!(
+            read_index(&top, "ghost", None).unwrap_err().code,
+            E_ROLE_MISSING
+        );
         std::fs::remove_dir_all(top).unwrap();
     }
 }

@@ -2167,3 +2167,7 @@ mod types;
 /// PRD 007 (plans 240, 241): role parameters and the first turn.
 #[path = "role_start.rs"]
 mod role_start;
+
+/// PRD 008 s02 (plan 248): pod plan, up, show and the tool canary.
+#[path = "pod_up.rs"]
+mod pod_up;

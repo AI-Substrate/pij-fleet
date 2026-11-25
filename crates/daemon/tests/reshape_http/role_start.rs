@@ -128,7 +128,7 @@ async fn show_first_turn_fills_parameters_and_refuses_as_a_spawn_would() {
 
 const FIRST_TURNS: &str = ".harness/government/community/roles/notes/first-turns";
 
-async fn add_notes(addr: SocketAddr, repo: &Repo) {
+pub(super) async fn add_notes(addr: SocketAddr, repo: &Repo) {
     let added = directory(
         addr,
         repo,
@@ -155,7 +155,7 @@ async fn add_notes(addr: SocketAddr, repo: &Repo) {
     assert_eq!(added["ok"], true, "{added}");
 }
 
-async fn spawn(addr: SocketAddr, repo: &Repo, as_role: Option<Value>) -> Value {
+pub(super) async fn spawn(addr: SocketAddr, repo: &Repo, as_role: Option<Value>) -> Value {
     let mut body = json!({
         "harness": "omp",
         "cwd": repo.main,
@@ -178,7 +178,7 @@ async fn spawn(addr: SocketAddr, repo: &Repo, as_role: Option<Value>) -> Value {
         .unwrap()
 }
 
-fn launches(tmux: &FakeTmux) -> usize {
+pub(super) fn launches(tmux: &FakeTmux) -> usize {
     tmux.calls()
         .iter()
         .filter(|call| call.starts_with("new_window:"))

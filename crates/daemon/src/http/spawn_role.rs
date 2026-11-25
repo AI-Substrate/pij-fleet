@@ -38,6 +38,7 @@ pub(super) struct Prepared {
     warnings: Vec<String>,
     role_type: Option<String>,
     why: String,
+    pod: Option<String>,
 }
 
 /// The warning a spawn with no role carries (PRD 007 req-07): it launches as
@@ -98,6 +99,9 @@ pub(super) async fn prepare(
         .await
         .map_err(refuse("finding the project from the spawn's folder"))?;
     let root = crate::community::root::find(&repo).map_err(refuse("finding governance"))?;
+    if let Some(pod) = &as_role.pod {
+        super::pod::recorded(&root.worktree, &project, pod).map_err(refuse("finding the pod"))?;
+    }
     let packet = as_role
         .packet
         .as_deref()
@@ -114,6 +118,8 @@ pub(super) async fn prepare(
             seat: creator.to_string(),
             focus: as_role.focus.clone(),
             packet,
+            subject: as_role.subject.clone(),
+            fresh: as_role.fresh,
         },
     )
     .map_err(refuse("building the first turn"))?;
@@ -143,6 +149,7 @@ pub(super) async fn prepare(
         warnings: start.warnings,
         role_type: start.role_type,
         why: focus_line,
+        pod: as_role.pod,
     })
 }
 
@@ -168,13 +175,14 @@ pub(super) async fn commit(
         mut warnings,
         role_type,
         why,
+        pod,
     } = prepared;
     let directory = &state.services.directory;
     let path = crate::community::layout::RolePaths::new(&role)?.first_turn(seat.id.as_str());
     let landed = directory
         .assign_landing(vec![AssignRequest {
             project: project.clone(),
-            repo,
+            repo: repo.clone(),
             role: role.clone(),
             instance: instance.clone(),
             seat: seat.clone(),
@@ -249,7 +257,28 @@ pub(super) async fn commit(
         ),
     )
     .await;
+    // PRD 008 req-04: a member started into a pod. The seat has landed, so
+    // a failure here is a warning naming the fix, never a rollback.
+    let pod = match pod {
+        None => Value::Null,
+        Some(pod) => {
+            match super::pod::join(
+                state, &project, &repo, &pod, &role, &instance, &seat.id, &creator,
+            )
+            .await
+            {
+                Ok(joined) => joined,
+                Err(refusal) => {
+                    warnings.push(format!(
+                        "the seat started but pij could not record it in pod {pod} ({refusal}); see pij pod show {pod}"
+                    ));
+                    Value::Null
+                }
+            }
+        }
+    };
     Ok(json!({
+        "pod": pod,
         "prime_told": prime_told,
         "role": {
             "project": project,

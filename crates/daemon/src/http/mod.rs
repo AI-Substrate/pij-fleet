@@ -21,6 +21,7 @@ mod identity;
 mod lifecycle;
 pub mod memory_turn;
 mod output;
+mod pod;
 mod report;
 mod requests;
 mod revive;
@@ -246,6 +247,8 @@ enum Endpoint {
     Spine,
     /// `pij directory add` (plan 190): the community directory's writer.
     Directory,
+    /// `pij pod` (PRD 008): pods started from a template.
+    Pod,
     /// `pij output` (plan 200): a role's output, through the writer.
     Output,
     /// `pij outputs` (plan 200): a project's outputs by subject or role.
@@ -267,7 +270,7 @@ enum Endpoint {
 }
 
 impl Endpoint {
-    const ALL: [Self; 63] = [
+    const ALL: [Self; 64] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -322,6 +325,7 @@ impl Endpoint {
         Self::Orchestration,
         Self::Spine,
         Self::Directory,
+        Self::Pod,
         Self::Output,
         Self::Outputs,
         Self::Claim,
@@ -384,6 +388,7 @@ impl Endpoint {
             Self::Orchestration => "/v1/orchestration",
             Self::Spine => "/v1/spine",
             Self::Directory => "/v1/directory",
+            Self::Pod => "/v1/pod",
             Self::Output => "/v1/output",
             Self::Outputs => "/v1/outputs",
             Self::Claim => "/v1/claim",
@@ -444,6 +449,7 @@ impl Endpoint {
             | Self::Orchestration
             | Self::Spine
             | Self::Directory
+            | Self::Pod
             | Self::Output
             | Self::Outputs
             | Self::Claim
@@ -703,6 +709,7 @@ fn router_with_optional_federation(
                     | Endpoint::Orchestration
                     | Endpoint::Spine
                     | Endpoint::Directory
+                    | Endpoint::Pod
                     | Endpoint::Output
                     | Endpoint::Outputs
                     | Endpoint::Claim
@@ -785,6 +792,7 @@ fn router_with_optional_federation(
             Endpoint::Orchestration => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Spine => router.route(endpoint.path(), post(governance::handle)),
             Endpoint::Directory => router.route(endpoint.path(), post(directory::handle)),
+            Endpoint::Pod => router.route(endpoint.path(), post(pod::handle)),
             Endpoint::Output | Endpoint::Outputs => {
                 router.route(endpoint.path(), post(output::handle))
             }

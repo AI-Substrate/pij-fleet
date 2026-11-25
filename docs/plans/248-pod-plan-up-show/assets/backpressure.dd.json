@@ -1,0 +1,65 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 248 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: plan names each warning with its fix and moves no commit.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_plan"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: up on three slots starts three seats, logs warnings, creates no branch; --no-start launches none.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_up"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: a slot that does not confirm a tool is degraded with its fix, gets no pod work, and a prime's message still reaches it.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_canary"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "The spawn counter before and after up and plan.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_cost",
+          "note": "the live spawn-counter receipt is taken after deploy"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

@@ -53,7 +53,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::response::Response;
 use pij_core::model::{Destination, Harness, Msg, SeatDescriptor, SeatId};
 use pij_core::ports::SeatFilter;
@@ -93,7 +93,40 @@ struct SessionRow {
 /// Add a GET `Endpoint::ShimSessions` row at `/v1/shim/sessions` and route it
 /// directly to this handler. The TypeScript composer unions these rows with its
 /// legacy rows; rs does not translate them again.
-pub(crate) async fn shim_sessions(State(state): State<AppState>) -> Response {
+pub(crate) async fn shim_sessions(
+    State(state): State<AppState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    // PRD 008 req-13: `pij sessions --history [--seat <id>] [--limit <n>]`.
+    if query
+        .get("history")
+        .is_some_and(|history| history == "true")
+    {
+        let limit = match query.get("limit").map(|limit| limit.parse::<usize>()) {
+            None => crate::session_history::DEFAULT_LIMIT,
+            Some(Ok(limit)) if limit > 0 => limit,
+            Some(_) => return refused(SESSIONS, "--limit takes a whole number above 0"),
+        };
+        let seats = match query.get("seat") {
+            Some(seat) => vec![SeatId::from(seat.as_str())],
+            None => match state.services.registry.list(SeatFilter::default()).await {
+                Ok(seats) => seats
+                    .into_iter()
+                    .filter(|seat| seat.tombstoned_at.is_none())
+                    .map(|seat| seat.id)
+                    .collect(),
+                Err(error) => return internal(SESSIONS, error),
+            },
+        };
+        let mut history = Vec::new();
+        for seat in seats {
+            history.push(seat_history(&state, &seat, limit).await);
+        }
+        return envelope(
+            axum::http::StatusCode::OK,
+            &pij_core::model::Envelope::ok(SESSIONS, serde_json::json!({"history": history})),
+        );
+    }
     let seats = match state.services.registry.list(SeatFilter::default()).await {
         Ok(seats) => seats,
         Err(error) => return internal(SESSIONS, error),
@@ -124,6 +157,41 @@ pub(crate) async fn shim_sessions(State(state): State<AppState>) -> Response {
         axum::http::StatusCode::OK,
         &pij_core::model::Envelope::ok(SESSIONS, SessionRows { rows }),
     )
+}
+
+/// One seat's sessions, newest first, at most `limit` (plan 250): one
+/// indexed event-log read, then at most one capped transcript tail per
+/// session listed, off the reactor.
+pub(crate) async fn seat_history(
+    state: &AppState,
+    seat: &SeatId,
+    limit: usize,
+) -> serde_json::Value {
+    let events = match state
+        .services
+        .spine
+        .all_matching(seat, &crate::session_history::KINDS)
+        .await
+    {
+        Ok(events) => events,
+        Err(error) => {
+            return serde_json::json!({"seat": seat, "error": error.to_string()});
+        }
+    };
+    let mut sessions = crate::session_history::fold(&events);
+    let total = sessions.len();
+    sessions.reverse();
+    sessions.truncate(limit);
+    let shown = tokio::task::spawn_blocking(move || {
+        let roots = crate::history_roots();
+        sessions
+            .iter()
+            .map(|session| crate::session_history::shown(session, &roots))
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
+    serde_json::json!({"seat": seat, "sessions": shown, "total": total})
 }
 
 fn git_common_dir(folder: &Path) -> String {

@@ -584,6 +584,15 @@
 		},
 		{
 			"method": "POST",
+			"path": "/v1/pod",
+			"authority": "seat-authority",
+			"class": "role-and-holder",
+			"grants_by": ["seat"],
+			"guard": ["R"],
+			"note": "Any resolved seat plans, starts, shows or answers a pod's canary (PRD 008: warnings, never a gate); its slots start through the spawn path with the caller as parent and creator."
+		},
+		{
+			"method": "POST",
 			"path": "/v1/output",
 			"authority": "seat-authority",
 			"class": "outputs",

@@ -37,6 +37,7 @@ pub mod names;
 pub mod orchestration;
 pub mod outputs;
 pub mod pa_digest;
+pub mod pod;
 pub mod ports;
 pub mod program;
 pub mod projects;

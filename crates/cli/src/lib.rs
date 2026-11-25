@@ -21,6 +21,7 @@ pub mod fleet_report;
 pub mod governance;
 pub mod lifecycle;
 pub mod peers;
+pub mod pod;
 pub mod role;
 pub mod roster;
 pub mod statusline;

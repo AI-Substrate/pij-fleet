@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 247 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1,AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Schema validation tests for a template from the main repo and from governance; an undeclared parameter refuses.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_template"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Writer test: the pod folder holds what it should and no seat paths; a hand edit refuses naming the path.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_folder"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4,AC5",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Memory per subject and --fresh: unit tests on the first turn's memory part.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon pod_memory"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

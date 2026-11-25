@@ -37,6 +37,11 @@ pub struct Creator {
     pub focus: Option<String>,
     /// `--packet <file>`: the file's name as given, and its text.
     pub packet: Option<(String, String)>,
+    /// A pod's subject (PRD 008 req-12): the memory part reads the role's
+    /// notes for it, not the role's own.
+    pub subject: Option<String>,
+    /// `--fresh` (PRD 008 req-12): leave earlier memory out, and say so.
+    pub fresh: bool,
 }
 
 /// Everything [`assemble`] reads, gathered by [`load`] (or a test).
@@ -62,7 +67,7 @@ pub struct Sources {
 /// [`super::directory::E_ROLE_MISSING`] for a role with no readable document;
 /// a brief that is not a readable file in the worktree
 /// ([`super::E_BRIEF_MISSING`]); an unreadable seed.
-pub fn load(worktree: &Path, id: &str) -> Result<Sources, Refusal> {
+pub fn load(worktree: &Path, id: &str, subject: Option<&str>) -> Result<Sources, Refusal> {
     let paths = RolePaths::new(id)?;
     let bytes = std::fs::read(worktree.join(&paths.document)).map_err(|_| {
         Refusal::new(
@@ -92,12 +97,14 @@ pub fn load(worktree: &Path, id: &str) -> Result<Sources, Refusal> {
                 .ok()
                 .map(|text| (path.to_string(), text))
         });
-    let memory = memory::read_index(worktree, id).ok().and_then(|index| {
-        Some((
-            index["path"].as_str()?.to_string(),
-            index["index"].as_str()?.to_string(),
-        ))
-    });
+    let memory = memory::read_index(worktree, id, subject)
+        .ok()
+        .and_then(|index| {
+            Some((
+                index["path"].as_str()?.to_string(),
+                index["index"].as_str()?.to_string(),
+            ))
+        });
     Ok(Sources {
         role: id.to_string(),
         document,
@@ -143,7 +150,10 @@ pub fn start(
         super::layout::check_instance(instance)?;
     }
     refuse_secrets(sets, creator)?;
-    let sources = load(worktree, id)?;
+    if let Some(subject) = &creator.subject {
+        memory::check_subject(subject)?;
+    }
+    let sources = load(worktree, id, creator.subject.as_deref())?;
     let filled = role::fill_parameters(id, &sources.document, sets)?;
     let (first_turn, parts) = assemble(&sources, instance, &filled, creator);
     let warnings = sources
@@ -233,15 +243,33 @@ pub fn secret_line(text: &str) -> Option<usize> {
         .map(|index| index + 1)
 }
 
+/// Whether one `--set` value looks like a secret. The long-run check counts
+/// `/` as a key character, so a whole absolute path with one capital letter
+/// would read as a secret: a path is checked one segment at a time (#346
+/// review, B346-R1-01).
+pub fn secret_value(value: &str) -> bool {
+    if value.starts_with('/') || value.starts_with("~/") {
+        secret_line(&value.replace('/', "\n")).is_some()
+    } else {
+        secret_line(value).is_some()
+    }
+}
+
 /// Refuse a first turn whose creator text looks like a secret: the parts
 /// the creator adds (`--set` values, `--focus`, `--packet`) are committed to
 /// the governance branch, which may be public. A BRAKE: it only ever commits
 /// less. The refusal names where, never the text.
 fn refuse_secrets(sets: &[(String, String)], creator: &Creator) -> Result<(), Refusal> {
-    let mut parts: Vec<(String, &str)> = sets
-        .iter()
-        .map(|(name, value)| (format!("--set {name}"), value.as_str()))
-        .collect();
+    if let Some((name, _)) = sets.iter().find(|(_, value)| secret_value(value)) {
+        return Err(Refusal::new(
+            E_SECRET,
+            format!(
+                "--set {name} looks like a secret (a key, token or password); the first turn is committed to the governance branch"
+            ),
+        )
+        .with_next("Take the secret out and point the seat at where it lives instead"));
+    }
+    let mut parts: Vec<(String, &str)> = Vec::new();
     if let Some(focus) = &creator.focus {
         parts.push(("--focus".to_string(), focus));
     }
@@ -432,13 +460,33 @@ pub fn assemble(
             text: format!("{}\n", packet.trim_end()),
         });
     }
-    if let Some((path, index)) = &sources.memory {
+    let about = creator
+        .subject
+        .as_deref()
+        .map(|subject| format!(" about {subject}"))
+        .unwrap_or_default();
+    let subject_flag = creator
+        .subject
+        .as_deref()
+        .map(|subject| format!(" --subject {subject}"))
+        .unwrap_or_default();
+    if creator.fresh {
         parts.push(Part {
-            heading: format!("What role {} remembers", sources.role),
+            heading: format!("What role {} remembers{about}", sources.role),
+            source: format!("--fresh by {}", creator.seat),
+            text: format!(
+                "This seat starts fresh: earlier notes are left out on purpose. Write what you learn with `pij directory memory add {}{subject_flag} ...`.\n",
+                sources.role
+            ),
+        });
+    } else if let Some((path, index)) = &sources.memory {
+        parts.push(Part {
+            heading: format!("What role {} remembers{about}", sources.role),
             source: path.clone(),
             text: format!(
-                "{}\n\nRead a note with `pij directory memory {} --note <slug>`.\n",
+                "{}\n\nRead a note with `pij directory memory {}{subject_flag} --note <slug>`; write one with `pij directory memory add {}{subject_flag} ...`.\n",
                 index.trim_end(),
+                sources.role,
                 sources.role
             ),
         });
@@ -502,6 +550,7 @@ mod tests {
             seat: "pij-brisk-marten".into(),
             focus: Some("Start with the agenda.".into()),
             packet: Some(("packet.md".into(), "Bring last week's actions.".into())),
+            ..Creator::default()
         };
         let (text, parts) = assemble(&sources(document()), "", &filled, &creator);
         let headings: Vec<&str> = parts.iter().map(|part| part.heading.as_str()).collect();
@@ -608,6 +657,33 @@ mod tests {
         assert!(authority("pm-2", "coder").starts_with("Carries authority: yes"));
     }
 
+    /// PRD 008 req-12: `--fresh` leaves the memory index out and says so; a
+    /// subject's turn tells the seat to file its notes under that subject.
+    #[test]
+    fn a_fresh_first_turn_leaves_memory_out_and_a_subject_is_named() {
+        let fresh = Creator {
+            seat: "pij-a".into(),
+            subject: Some("acme".into()),
+            fresh: true,
+            ..Creator::default()
+        };
+        let (text, parts) = assemble(&sources(document()), "", &[], &fresh);
+        let memory = parts.last().unwrap();
+        assert_eq!(memory.heading, "What role notes remembers about acme");
+        assert!(memory.text.contains("starts fresh"), "{}", memory.text);
+        assert!(memory.text.contains("--subject acme"), "{}", memory.text);
+        assert!(!text.contains("first call"), "no earlier note: {text}");
+        let kept = Creator {
+            subject: Some("acme".into()),
+            ..Creator::default()
+        };
+        let (text, _) = assemble(&sources(document()), "", &[], &kept);
+        assert!(
+            text.contains("first call") && text.contains("--subject acme --note"),
+            "{text}"
+        );
+    }
+
     #[test]
     fn a_secret_looking_line_is_found_and_ordinary_text_is_not() {
         assert_eq!(secret_line("first\napi_key = sk-live-abcdef123"), Some(2));
@@ -629,12 +705,26 @@ mod tests {
         let creator = Creator {
             seat: "pij-a".into(),
             focus: Some("ok\nSECRET=abcdefgh12".into()),
-            packet: None,
+            ..Creator::default()
         };
         let refused = refuse_secrets(&[], &creator).unwrap_err();
         assert_eq!(refused.code, E_SECRET);
         assert!(refused.message.starts_with("--focus, line 2"), "{refused}");
         assert!(!refused.message.contains("abcdefgh12"), "never echoes it");
+    }
+
+    /// #346 review B346-R1-01: a `--set` path with capital letters is not a
+    /// secret; a secret held in one of its segments still is.
+    #[test]
+    fn a_path_value_is_checked_one_segment_at_a_time() {
+        assert!(!secret_value("/Users/Someone/Work/pij-laneA/T/pij-run-123"));
+        assert!(secret_value("/tmp/aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA"));
+        assert!(secret_value("API_TOKEN=abcd1234EFGH5678"));
+        let creator = Creator {
+            seat: "pij-a".into(),
+            ..Creator::default()
+        };
+        assert!(refuse_secrets(&[("work-folder".into(), "/Users/A/B".into())], &creator).is_ok());
     }
 
     #[test]

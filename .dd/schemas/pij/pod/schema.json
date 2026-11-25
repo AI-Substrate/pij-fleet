@@ -1,0 +1,252 @@
+{
+  "dd_schema": 1,
+  "description": "A running pod's record (PRD 008), written only by pij under community/pods/<pod>/ on the governance branch: the template it came from, its filled parameters, the seat in each slot, and a log of what changed. Seat facts (folder, sessions, process) stay in pij's database.",
+  "enums": {
+    "pod_state": {
+      "values": [
+        "up",
+        "closing",
+        "closed"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "pod",
+          "template",
+          "state",
+          "created_by",
+          "created_at"
+        ],
+        "fields": {
+          "pod": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "template_version": {
+            "type": "string"
+          },
+          "template_hash": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "work_folder": {
+            "type": "string"
+          },
+          "fresh": {
+            "type": "string"
+          },
+          "state": {
+            "type": "enum",
+            "enum": "pod_state"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "value"
+          ],
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "members": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "slot",
+            "role",
+            "seat"
+          ],
+          "fields": {
+            "slot": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "instance": {
+              "type": "string"
+            },
+            "seat": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "keep_open": {
+              "type": "string"
+            },
+            "canary": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "log": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "at",
+            "by",
+            "change"
+          ],
+          "fields": {
+            "at": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "change": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "consulted": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "role"
+          ],
+          "fields": {
+            "role": {
+              "type": "string"
+            },
+            "before_up": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "deliverables": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "owner"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "owner": {
+              "type": "string"
+            },
+            "stages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "write_back": {
+              "type": "string"
+            },
+            "stage_needs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "stage",
+                  "slots"
+                ],
+                "fields": {
+                  "stage": {
+                    "type": "string"
+                  },
+                  "slots": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "stages": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "deliverable",
+            "stage",
+            "output",
+            "by",
+            "at"
+          ],
+          "fields": {
+            "deliverable": {
+              "type": "string"
+            },
+            "stage": {
+              "type": "string"
+            },
+            "output": {
+              "type": "string"
+            },
+            "from": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "by": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "write_back": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
