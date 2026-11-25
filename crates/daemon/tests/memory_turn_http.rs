@@ -1650,3 +1650,93 @@ async fn close_stop_never_signals_a_recycled_pid() {
     assert!(!tombstoned(&rig, "holder").await);
     rig.server.abort();
 }
+
+/// Close --stop notice fix, T1: a role released during a held `close --stop`
+/// still names its project. The seat's turn ends with no note, so it is left
+/// open, and the project's prime and the closer are told; the machine's
+/// designated prime, outside that project, is not.
+#[tokio::test]
+async fn close_stop_left_open_tells_the_project_prime_and_the_closer_never_another_prime() {
+    let (rig, live) = stop_rig().await;
+    designate_project_prime(&rig, "plain").await;
+    let mut elsewhere = SeatDescriptor::new("elsewhere", Harness::Omp, "/abs/other");
+    elsewhere.pane = Some("%elsewhere".to_string());
+    rig.registry.put(elsewhere).await.unwrap();
+    pij_store::SqliteOrchestration::new(pij_store::open(&rig._store.path()).await.unwrap())
+        .designate_prime(&pij_core::orchestration::PrimeDesignation {
+            seat: "elsewhere".into(),
+            designated_by: "prime".into(),
+            designated_at: 1,
+            state: pij_core::orchestration::PrimeState::Current,
+        })
+        .await
+        .expect("designation");
+
+    let held = post(rig.addr, "/v1/close", close_stop("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    set_holdings(
+        &rig,
+        &[("holder", "pm-001", Some("2026-11-25T04:04:22.125Z"))],
+    )
+    .await;
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event(&rig, "holder").await;
+    let then = turn["then"].as_str().unwrap();
+    assert!(then.starts_with("not stopped, left open"), "{turn}");
+    assert!(live.terminated().is_empty());
+    for (seat, told) in [("plain", 1), ("prime", 1), ("elsewhere", 0)] {
+        assert_eq!(
+            rig.queue.pending_fyi_count(&seat.into()).await.unwrap(),
+            told,
+            "{seat}: {turn}"
+        );
+    }
+    rig.server.abort();
+}
+
+/// Close --stop notice fix, T2: a seat whose roles are all released holds
+/// none, so `close --stop` asks no memory turn: it is closed and its recorded
+/// process stopped at once.
+#[tokio::test]
+async fn close_stop_of_a_seat_with_no_open_role_closes_and_stops_without_a_turn() {
+    let (rig, live) = stop_rig().await;
+    set_holdings(
+        &rig,
+        &[("holder", "pm-001", Some("2026-11-25T04:04:22.125Z"))],
+    )
+    .await;
+    let closed = post(rig.addr, "/v1/close", close_stop("holder", "prime")).await;
+    assert_eq!(closed["ok"], true, "{closed}");
+    assert!(closed["data"]["held"].is_null(), "{closed}");
+    assert_eq!(closed["data"]["stopped"]["stopped"], true, "{closed}");
+    assert!(tombstoned(&rig, "holder").await);
+    assert_eq!(live.terminated(), [920_002]);
+    assert!(
+        rig.bus
+            .latest_matching(&"holder".into(), &["memory.turn"])
+            .await
+            .unwrap()
+            .is_none()
+    );
+    rig.server.abort();
+}
+
+/// Close --stop notice fix, T3: without `--stop`, a seat whose roles were
+/// released in this context is still asked about them before its close.
+#[tokio::test]
+async fn a_plain_close_still_asks_about_roles_released_in_this_context() {
+    let (rig, live) = stop_rig().await;
+    set_holdings(
+        &rig,
+        &[("holder", "pm-001", Some("2026-11-25T04:04:22.125Z"))],
+    )
+    .await;
+    let held = post(rig.addr, "/v1/close", close("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    take_turn(&rig, "holder", &prompt).await;
+    assert_eq!(turn_event(&rig, "holder").await["then"], "closed");
+    assert!(live.terminated().is_empty());
+    rig.server.abort();
+}

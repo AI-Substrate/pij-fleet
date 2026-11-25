@@ -539,8 +539,12 @@ async fn handle(
                     )
                 })
                 .flatten();
+            // A POLICY (close --stop notice fix): `--stop` asks the memory
+            // turn of a role holder only. A seat whose roles are all released
+            // holds none, so it is closed and stopped at once; a plain close
+            // still asks about roles released in this context.
             let turn = match &pending {
-                None if live => {
+                None if live && !(call.stop && holds_no_open_role(&state, &target).await) => {
                     memory_turn::turn_for(&state, &target, memory_turn::Action::Close).await
                 }
                 _ => None,
@@ -568,9 +572,11 @@ async fn handle(
                     let told = tell_primes(
                         &state,
                         &target,
+                        &actor.id,
                         format!(
-                            "pij: pij close --stop left {} running: {why}",
-                            pij_core::render::seat(target.as_str())
+                            "pij: pij close --stop left {} running: {why}. {}",
+                            pij_core::render::seat(target.as_str()),
+                            close_hint(&target)
                         ),
                     )
                     .await;
@@ -649,6 +655,23 @@ async fn stoppable(state: &AppState, seat: &SeatDescriptor) -> std::result::Resu
     }
 }
 
+/// Whether the store says `seat` holds no open role. A read that fails says
+/// it may hold one, so the memory turn is still asked.
+async fn holds_no_open_role(state: &AppState, seat: &SeatId) -> bool {
+    state
+        .services
+        .directory
+        .store()
+        .open_assignments(seat.as_str())
+        .await
+        .is_ok_and(|rows| rows.is_empty())
+}
+
+/// How to close a seat `close --stop` left open, without stopping it.
+fn close_hint(seat: &SeatId) -> String {
+    format!("`pij close {seat}` closes it and leaves its process")
+}
+
 /// The wake price when the cold-wake guard would refuse a normal send to
 /// `seat`, else `None` (a read that fails counts as warm: the turn is asked).
 async fn cold_price(state: &AppState, seat: &SeatDescriptor) -> Option<String> {
@@ -699,6 +722,7 @@ pub(super) async fn stop_process(state: &AppState, seat: &SeatDescriptor) -> Val
 pub(super) async fn not_ready(
     state: &AppState,
     seat: &SeatDescriptor,
+    closer: &SeatId,
     report: &memory_turn::Report,
 ) -> String {
     let why = report
@@ -708,23 +732,29 @@ pub(super) async fn not_ready(
     let told = tell_primes(
         state,
         &seat.id,
+        closer,
         format!(
-            "pij: pij close --stop left {} open and running: {why}",
-            pij_core::render::seat(seat.id.as_str())
+            "pij: pij close --stop left {} open and running: {why}. {}",
+            pij_core::render::seat(seat.id.as_str()),
+            close_hint(&seat.id)
         ),
     )
     .await;
-    format!("not stopped, left open: {why} (prime told: {told})")
+    format!("not stopped, left open: {why} (told: {told})")
 }
 
-/// Hold one FYI for the prime of each project `seat` holds a role in, else
-/// the machine's designated prime. Told even when that prime ran the close:
-/// a held close answers before the outcome is known.
-async fn tell_primes(state: &AppState, seat: &SeatId, body: String) -> Value {
+/// Hold one FYI for the prime of each project `seat` held a role in during
+/// this context (open, or released since its last compactions: the roles its
+/// memory turn names), else the machine's designated prime; and one for
+/// `closer`, unless it is one of those primes or the seat itself. Told even
+/// when a prime ran the close: a held close answers before the outcome is
+/// known. A POLICY: these facts decide who hears; nothing else is sent.
+async fn tell_primes(state: &AppState, seat: &SeatId, closer: &SeatId, body: String) -> Value {
     let store = state.services.directory.store();
     let mut projects: Vec<String> = store
-        .open_assignments(seat.as_str())
+        .context_assignments(seat.as_str())
         .await
+        .map(|context| context.rows)
         .unwrap_or_default()
         .into_iter()
         .map(|row| row.project)
@@ -732,17 +762,11 @@ async fn tell_primes(state: &AppState, seat: &SeatId, body: String) -> Value {
     projects.sort();
     projects.dedup();
     if projects.is_empty() {
-        return super::routes::tell_prime(
-            &state.services,
-            "",
-            &SeatId::from(pij_core::BG_ACTOR),
-            body,
-        )
-        .await;
+        projects.push(String::new());
     }
-    let mut told = Vec::new();
+    let mut primes = Vec::new();
     for project in projects {
-        told.push(
+        primes.push(
             super::routes::tell_prime(
                 &state.services,
                 &project,
@@ -752,7 +776,13 @@ async fn tell_primes(state: &AppState, seat: &SeatId, body: String) -> Value {
             .await,
         );
     }
-    json!(told)
+    let a_prime = primes.iter().any(|told| told["prime"] == closer.as_str());
+    let closer_told = if a_prime || closer == seat {
+        json!({"sent": false, "reason": "the closer is told above, or is the seat"})
+    } else {
+        super::routes::tell_seat(&state.services, closer, body).await
+    };
+    json!({"primes": primes, "closer": closer_told})
 }
 
 /// Why a close did not land. `Changed`: the row moved between the caller's
