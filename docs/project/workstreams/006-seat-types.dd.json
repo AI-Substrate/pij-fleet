@@ -56,7 +56,7 @@
 				{
 					"id": "s03",
 					"title": "pij shows and uses the type",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/006-seat-types.dd.json#requirements/req-04",
 						"../prds/006-seat-types.dd.json#requirements/req-05"
@@ -108,6 +108,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s02 complete (plan 236)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s03 complete (plan 237)."
 				}
 			]
 		}

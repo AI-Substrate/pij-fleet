@@ -404,6 +404,8 @@ impl DirectoryService {
                 u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
             });
         let cutoff = picture::idle_cutoff(now_ms);
+        // PRD 006 req-04: (seat, role, instance, type) per live typed holding.
+        let mut typed: Vec<picture::TypedHolding> = Vec::new();
         for (index, (id, document)) in ids.iter().zip(&documents).enumerate() {
             let retired = standings[index].retired();
             let meta = document["sections"]
@@ -502,6 +504,14 @@ impl DirectoryService {
                     .copied()
                     .filter(|row| row.to.is_none() && live_seats.contains(&row.seat))
                     .collect();
+                if let Some(kind) = meta["type"].as_str() {
+                    typed.extend(live_holders.iter().map(|row| picture::TypedHolding {
+                        seat: row.seat.clone(),
+                        role: id.clone(),
+                        instance: row.instance.clone(),
+                        kind: kind.to_string(),
+                    }));
+                }
                 // Read only when two-live-holders fires (plan 215, F90; F272:
                 // per-PR instances are not duplicates).
                 let open: HashMap<String, u64> = if holders_mode == "one"
@@ -684,6 +694,7 @@ impl DirectoryService {
                 )
         });
         let prompts = shown;
+        actions.extend(picture::two_types(project, &typed));
         let mut view = serde_json::json!({
             "project": project, "prime": prime, "prime_document": prime_document,
             "roles": roles, "pending": pending,

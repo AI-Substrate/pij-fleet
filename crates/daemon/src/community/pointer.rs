@@ -2,6 +2,7 @@
 //! (plan 190, AC7). Two git launches, on demand only.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use pij_store::CommunityPointer;
 
@@ -10,8 +11,14 @@ use super::layout::{COMMUNITY, is_document};
 use super::root::GovernanceRoot;
 use super::{E_GOV_GIT, Refusal};
 
-/// The pointers a write records: one per community document it committed.
-pub fn for_write(project: &str, paths: &[String], commit: &str) -> Vec<CommunityPointer> {
+/// The pointers a write records: one per community document it committed,
+/// each role document with its type read from `worktree` (PRD 006, plan 237).
+pub fn for_write(
+    project: &str,
+    paths: &[String],
+    commit: &str,
+    worktree: &Path,
+) -> Vec<CommunityPointer> {
     paths
         .iter()
         .filter(|path| is_document(path))
@@ -19,8 +26,28 @@ pub fn for_write(project: &str, paths: &[String], commit: &str) -> Vec<Community
             project: project.to_string(),
             path: path.clone(),
             commit: commit.to_string(),
+            role_type: role_type_at(worktree, path),
         })
         .collect()
+}
+
+/// `<prefix><role><suffix>`: how a role document's pointer path is built, for
+/// the store's join from holdings to types.
+pub fn role_document_affixes() -> (String, String) {
+    (format!("{COMMUNITY}/roles/"), "/role.dd.json".to_string())
+}
+
+/// A role document's `meta.type` in `worktree`, or `None` for any other
+/// document, an unreadable one or an untyped role. One file read, no launch.
+fn role_type_at(worktree: &Path, path: &str) -> Option<String> {
+    let (prefix, suffix) = role_document_affixes();
+    let id = path.strip_prefix(&prefix)?.strip_suffix(&suffix)?;
+    if id.contains('/') {
+        return None;
+    }
+    let document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(worktree.join(path)).ok()?).ok()?;
+    super::types::of_role(&document).map(str::to_string)
 }
 
 /// Every community document at the branch head, with the commit that last
@@ -81,6 +108,7 @@ pub fn from_branch_head(
                 project: project.to_string(),
                 path: path.to_string(),
                 commit: commit.to_string(),
+                role_type: role_type_at(&root.worktree, path),
             })
         })
         .collect())
@@ -154,7 +182,12 @@ mod tests {
                 .write(&scratch.main, role(id, body), "write")
                 .unwrap();
             store
-                .record_community_pointers(&for_write("pij", &written.paths, &written.commit))
+                .record_community_pointers(&for_write(
+                    "pij",
+                    &written.paths,
+                    &written.commit,
+                    &written.root.worktree,
+                ))
                 .await
                 .unwrap();
         }

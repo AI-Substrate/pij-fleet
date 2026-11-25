@@ -296,3 +296,107 @@ async fn types_print_and_a_repo_owns_its_seed() {
     assert_eq!(bad["details"]["code"], "E-RS-TYPE-UNKNOWN", "{bad}");
     server.abort();
 }
+
+async fn seats(addr: SocketAddr) -> Vec<Value> {
+    let listed: Value = reqwest::Client::new()
+        .get(format!("http://{addr}/v1/seats"))
+        .bearer_auth(KEY)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    listed["data"]["seats"].as_array().unwrap().clone()
+}
+
+fn listed<'a>(seats: &'a [Value], id: &str) -> &'a Value {
+    seats
+        .iter()
+        .find(|seat| seat["id"] == id)
+        .unwrap_or_else(|| panic!("{id} not listed: {seats:?}"))
+}
+
+/// Plan 237 (s03): a seat's type in `pij list --json` beside every old field;
+/// a seat holding two types is a view action; `edit --type` refreshes the
+/// list's type in the same call and the rebuild recomputes it.
+#[tokio::test]
+async fn the_list_and_the_view_show_each_seats_type() {
+    let repo = repo("pij-types-list");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    for argv in [
+        &["builder", "--type", "coder"][..],
+        &["expert", "--type", "knowledge", "--keeps", "docs/area.md"][..],
+    ] {
+        let done = added(rig.addr, &repo, argv).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+    for (role, seat) in [
+        ("builder", "pij-holder"),
+        ("expert", "pij-holder"),
+        ("expert", "pij-second"),
+    ] {
+        let done = directory(rig.addr, &repo, &["assign", role, seat, "--why", "w"]).await;
+        assert_eq!(done["ok"], true, "{done}");
+    }
+
+    let before = seats(rig.addr).await;
+    let holder = listed(&before, "pij-holder");
+    assert_eq!(holder["types"], json!(["coder", "knowledge"]), "{holder}");
+    assert_eq!(holder["type"], Value::Null, "two types: no one label");
+    assert_eq!(holder["role"], "worker", "authority unchanged: {holder}");
+    assert_eq!(listed(&before, "pij-second")["type"], "knowledge");
+    assert_eq!(listed(&before, "pij-dormant")["type"], Value::Null);
+    assert_eq!(listed(&before, "pij-dormant")["types"], json!([]));
+
+    let view = directory(rig.addr, &repo, &[]).await;
+    let two: Vec<&Value> = view["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|action| action["condition"] == "two-types")
+        .collect();
+    assert_eq!(two.len(), 1, "{view}");
+    assert_eq!(two[0]["seat"], "pij-holder");
+
+    let retyped = directory(
+        rig.addr,
+        &repo,
+        &["edit", "expert", "--set", "type=worker", "--why", "w"],
+    )
+    .await;
+    assert_eq!(retyped["ok"], true, "{retyped}");
+    assert_eq!(
+        listed(&seats(rig.addr).await, "pij-second")["type"],
+        "worker"
+    );
+
+    // A stale pointer (as a hand edit of the branch would leave) is
+    // recomputed by the rebuild.
+    let (prefix, suffix) = pij_daemon::community::pointer::role_document_affixes();
+    let stale: Vec<_> = rig
+        .store
+        .community_pointers("fleet")
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|pointer| pointer.path == format!("{prefix}expert{suffix}"))
+        .map(|mut pointer| {
+            pointer.role_type = Some("steward".into());
+            pointer
+        })
+        .collect();
+    rig.store.record_community_pointers(&stale).await.unwrap();
+    assert_eq!(
+        listed(&seats(rig.addr).await, "pij-second")["type"],
+        "steward"
+    );
+    let rebuilt = directory(rig.addr, &repo, &["rebuild"]).await;
+    assert_eq!(rebuilt["ok"], true, "{rebuilt}");
+    assert_eq!(
+        listed(&seats(rig.addr).await, "pij-second")["type"],
+        "worker"
+    );
+    rig.server.abort();
+}

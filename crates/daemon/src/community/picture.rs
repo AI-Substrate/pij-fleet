@@ -542,6 +542,93 @@ pub fn actions_weighing(
     out
 }
 
+/// One live holding of a typed role (PRD 006 req-04).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TypedHolding {
+    /// The holding seat.
+    pub seat: String,
+    /// The role id.
+    pub role: String,
+    /// The holding's instance key, empty for none.
+    pub instance: String,
+    /// The role's seat type.
+    pub kind: String,
+}
+
+/// PRD 006 req-04: one action per seat whose live holdings are of two or more
+/// types, since their rules conflict (a coder is compacted after each job; an
+/// expert is kept). It names every role and prints the release of each holding
+/// past the first type's, for its role to be assigned to another seat.
+pub fn two_types(project: &str, holdings: &[TypedHolding]) -> Vec<Value> {
+    let mut seats: Vec<&str> = holdings.iter().map(|held| held.seat.as_str()).collect();
+    seats.sort_unstable();
+    seats.dedup();
+    let mut out = Vec::new();
+    for seat in seats {
+        let mut mine: Vec<&TypedHolding> =
+            holdings.iter().filter(|held| held.seat == seat).collect();
+        mine.sort_by(|a, b| (&a.kind, &a.role, &a.instance).cmp(&(&b.kind, &b.role, &b.instance)));
+        let Some(first) = mine.first().map(|held| held.kind.as_str()) else {
+            continue;
+        };
+        if mine.iter().all(|held| held.kind == first) {
+            continue;
+        }
+        let shown_seat = pij_core::render::seat(seat);
+        let roles: Vec<Value> = mine
+            .iter()
+            .map(|held| json!({"role": held.role, "instance": pij_core::render::name(&held.instance), "type": held.kind}))
+            .collect();
+        let named: Vec<String> = mine
+            .iter()
+            .map(|held| {
+                format!(
+                    "{} ({})",
+                    pij_core::render::name(&held.role),
+                    pij_core::render::word(&held.kind)
+                )
+            })
+            .collect();
+        let commands: Vec<String> = mine
+            .iter()
+            .filter(|held| held.kind != first)
+            .filter(|held| {
+                pij_core::model::is_canonical_seat_id(&held.seat)
+                    && (held.instance.is_empty() || pij_core::render::is_name(&held.instance))
+            })
+            .map(|held| {
+                let address = if held.instance.is_empty() {
+                    held.role.clone()
+                } else {
+                    format!("{}/{}", held.role, held.instance)
+                };
+                command(&[
+                    "pij",
+                    "directory",
+                    "release",
+                    &address,
+                    &held.seat,
+                    "--why",
+                    "<why>",
+                    "--project",
+                    project,
+                ])
+            })
+            .collect();
+        out.push(json!({
+            "seat": seat,
+            "roles": roles,
+            "condition": "two-types",
+            "says": format!(
+                "{shown_seat} holds roles of more than one type: {}; their rules conflict, so release the others and assign each to its own seat",
+                named.join(", ")
+            ),
+            "commands": commands,
+        }));
+    }
+    out
+}
+
 /// F193: `waiting` requests for `holder`'s role (or its instance) queued while
 /// `holder` is live and can take them. A release and re-assign delivers them
 /// (the assign drains the queue), printed only for keys that print (F132).
@@ -2008,6 +2095,36 @@ mod tests {
             step_needs(&read_step_docs(&dir)),
             vec![("docs".to_string(), vec!["001-new s02".to_string()])],
             "workstreams win once they hold a document"
+        );
+    }
+
+    #[test]
+    fn a_seat_holding_two_types_is_one_action_naming_both_roles() {
+        let held = |seat: &str, role: &str, kind: &str| TypedHolding {
+            seat: seat.into(),
+            role: role.into(),
+            instance: String::new(),
+            kind: kind.into(),
+        };
+        let holdings = [
+            held("pij-brisk-marten", "expert", "knowledge"),
+            held("pij-brisk-marten", "builder", "coder"),
+            held("pij-calm-heron", "builder", "coder"),
+            held("pij-calm-heron", "reviewer", "coder"),
+        ];
+        let actions = two_types("fleet", &holdings);
+        assert_eq!(actions.len(), 1, "{actions:?}");
+        let action = &actions[0];
+        assert_eq!(action["seat"], "pij-brisk-marten");
+        assert_eq!(action["condition"], "two-types");
+        let says = action["says"].as_str().unwrap();
+        assert!(
+            says.contains("builder (coder)") && says.contains("expert (knowledge)"),
+            "{says}"
+        );
+        assert_eq!(
+            action["commands"],
+            json!(["pij directory release expert pij-brisk-marten --why '<why>' --project fleet"])
         );
     }
 }

@@ -48,11 +48,11 @@ A seat's type appears in `pij list --json` and `pij directory`, beside every exi
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | Migration 0052 adds a nullable `role_type` to `community_assignments`. Assign stamps it from the role document the assign already reads. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | The stamp is a cache of the role document's `meta.type`, refreshed at every point pij changes a type: `edit --type` restamps the role's open holdings in the same call; `retype --apply` (plan 238) does the same; the governance rebuild recomputes every row. A hand edit of the governance branch is the only way it can go stale, and the next rebuild refreshes it; `pij directory` reads the documents themselves, so the view is never stale. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Each seat in `pij list --json` gains `type` (the one type of its open holdings; with none, `prime` for the designated prime, `project-manager` for a `pm` seat, `pa` for a `pa` seat, else null; with two different types, null) and `types` (every distinct type it holds, sorted). Each holder row and role row in `pij directory --json` gains `type`. No existing field is removed or renamed, and the human list shows the type. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | A seat whose open holdings carry two different types is a `pij directory` action naming both roles and the release line that splits them. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | Every existing permission test passes unchanged: a knowledge-role seat and a coder-role seat show different types and the same worker authority. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | Migration 0052 adds a nullable `role_type` to `community_pointers`: the pointer of a role document carries its `meta.type`. One row per role, not per holding, so an assign writes nothing new and `Assignment` is unchanged. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | The column is a cache of the role document's `meta.type`, refreshed at every point pij writes it: each directory write records its documents' pointers with the type read from the worktree (add, edit, retire, merge, retype), and `pij directory rebuild` recomputes every pointer from the branch head. Only a hand edit of the governance branch can leave it stale, until the next rebuild. `pij directory` reads the documents themselves, so the view is never stale. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Each seat in `pij list --json` (`/v1/seats`) gains `type` (the one type of its open holdings; with none, `prime` for a prime seat, `project-manager` for a `pm` seat, `pa` for a `pa` seat, else null; with two different types, null) and `types` (every distinct type it holds, sorted). Each role row in `pij directory --json` carries `type`. No existing field is removed or renamed. The human `pij list` gains a TYPE column (`-` for null) in both the Rust and the TS renderer, pinned by the shared golden. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | A seat whose open holdings carry two different types is a `pij directory` action naming both roles and the release line that splits them. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | Every existing permission test passes unchanged: a knowledge-role seat and a coder-role seat show different types and the same worker authority. | [x] checked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -60,7 +60,7 @@ A seat's type appears in `pij list --json` and `pij directory`, beside every exi
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | pij shows and uses the type (workstream 006 s03) | One phase on PR #344. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | pij shows and uses the type (workstream 006 s03) | One phase on PR #344. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 
@@ -78,7 +78,7 @@ _No fields._
 
 ## Research Context
 
-Seats are listed by GET /v1/seats (crates/daemon/src/http/mod.rs) and joined to their seat role by `join_roles` (http/role.rs); community holdings are `community_assignments` (crates/store/src/community.rs). The view is built in community/directory.rs and its actions in community/picture.rs. The OMP and Copilot extensions read `pij list` JSON; new fields are additive.
+Seats are listed by GET /v1/seats (crates/daemon/src/http/mod.rs) and joined to their seat role by `join_roles` (http/role.rs); community holdings are `community_assignments` (crates/store/src/community.rs). The view is built in community/directory.rs and its actions in community/picture.rs. The OMP and Copilot extensions read `pij list` JSON; new fields are additive. Design change from the first cut: the type rides the role document's pointer (`community_pointers`, written after every directory commit and rebuilt from the branch head) rather than a column on every holding, which would have touched every `Assignment` literal and needed a restamp on each type edit.
 
 <a id="risks"></a>
 
@@ -92,6 +92,6 @@ Seats are listed by GET /v1/seats (crates/daemon/src/http/mod.rs) and joined to 
 
 ## Execution Guardrails
 
-- Cost: migration 0052: one ALTER at boot. One extra column written per assign and per restamp (edit --type, retype --apply, rebuild). `pij list` reads the column from the holding rows it already joins: 0 launches, no file read. No loop, poll or timer.
+- Cost: migration 0052 is one ALTER at boot. Each directory write already records its pointers; it now also reads each role document it committed once (in-process, no launch). `pij list` adds one indexed store query (open holdings joined to pointers) per call, no file read and no launch. No loop, poll or timer, nothing per seat per tick.
 - No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.
 - Builds nice-19 through `just shared-build`, one at a time.

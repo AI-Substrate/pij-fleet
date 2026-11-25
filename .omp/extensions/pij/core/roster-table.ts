@@ -5,7 +5,7 @@
  * `crates/testkit/fixtures/golden/cli/list-sized.{json,txt}` pins both.
  */
 
-const HEADERS = ["SEAT", "HARNESS", "STATE", "CTX", "IDLE", "CACHE"] as const;
+const HEADERS = ["SEAT", "TYPE", "HARNESS", "STATE", "CTX", "IDLE", "CACHE"] as const;
 
 function record(value: unknown): Record<string, unknown> {
 	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
@@ -47,6 +47,8 @@ export function renderRosterTable(payload: unknown): string {
 			mark: marker === "❄" || marker === "⚠" ? `${marker} ` : "  ",
 			cells: [
 				machine !== undefined && columns === undefined ? `${id}@${machine}` : id,
+				// PRD 006: the seat's one type, `-` for none or two.
+				str(seat.type) ?? "-",
 				alt === undefined ? harness : `${harness} alt:${alt}`,
 				lapse === undefined ? state : `${state}, ${lapse}`,
 				column(0),

@@ -1143,10 +1143,21 @@ The FYI flush and `revive --cheap` are actions, so they need the seat's own evid
 
 `GET`/`POST /v1/seats?sizes=true` adds the same `sessionStatus` and derived fields to each **local** row, plus `sizeColumns` (`[CTX, IDLE, CACHE, ❄-or-⚠-or-empty]`). It is opt-in, so federation fan-in and extension rosters don't pay for it. The local seats are read in parallel with a 200 ms wait each. A seat that does not answer in time shows `?`, and its read keeps going in the background, so the next list is warm. Both `pij list` (shim) and `pij-rs list` ask for sizes. Their human output is one table (golden [`cli/list-sized.txt`](../../crates/testkit/fixtures/golden/cli/list-sized.txt) from [`cli/list-sized.json`](../../crates/testkit/fixtures/golden/cli/list-sized.json)):
 ```
-  SEAT             HARNESS  STATE    CTX   IDLE  CACHE
-❄ pij-cold-claude  claude   idle     720k  2h    cold 1h
-  pij-warm-omp     omp      working  57k   3m    warm
+  SEAT             TYPE   HARNESS  STATE    CTX   IDLE  CACHE
+❄ pij-cold-claude  -      claude   idle     720k  2h    cold 1h
+  pij-warm-omp     coder  omp      working  57k   3m    warm
 ```
+
+**Seat type (PRD 006, plan 237).** Every `/v1/seats` row carries `type` and
+`types`. `types` is every distinct seat type of the roles the seat holds
+(sorted). `type` is the one of them when they agree; with none, the seat role's
+(`prime`, `pm` as `project-manager`, `pa`); `null` when it holds two types or
+nothing typed. It is read in one indexed store query per list: a role
+document's type rides its pointer (`community_pointers.role_type`, migration
+0052), written whenever pij commits the document and recomputed by
+`pij directory rebuild`. That column is a cache of the governance branch whose
+refresh points are those writes and the rebuild; only a hand edit of the branch
+can make it stale, until the next rebuild. Authority does not come from it.
 
 The one closed severity order is the exported
 [`pij_core::status::BADGE_SEVERITY`](../../crates/core/src/status.rs).

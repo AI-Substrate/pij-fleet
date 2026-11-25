@@ -110,7 +110,7 @@
 					"statement": "The prime's view marks a seat that holds roles of two different types and proposes the split, since their rules conflict (a coder is compacted after each job; an expert is kept).",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "With one seat assigned a coder role and a knowledge role, `pij directory` lists it as an action naming both roles.",
 					"source": "PRD 001 req-29 boundary review; operator, 2026-11-25"
 				},
@@ -120,7 +120,7 @@
 					"statement": "A seat has one label, its type, shown by `pij directory` and `pij list`. Only three types carry authority of their own: prime, project manager and PA keep exactly the powers those seats have today. The other seven carry none, which is what `worker` means today, so there is no separate worker label to keep in step. Who may govern a particular seat still comes from its recorded parent and the prime designation.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A seat assigned a knowledge role and a seat assigned a coder role show different types in `pij list --json` and neither has any power a plain worker lacks; a prime, a project manager and a PA can do everything they could before; and every existing permission test still passes.",
 					"source": "operator ruling 2026-11-25: just prime, pm and pa, simplify; code reading: every other role is stamped worker at assignment"
 				},
@@ -192,6 +192,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s02 (plan 236): req-01, req-03 and req-06 shipped; req-02 and req-08 in progress (their print and edit halves ship here; a seat receiving its type's definition and seed is PRD 007 s02's first turn)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s03 (plan 237): req-04 and req-05 shipped."
 				}
 			]
 		}

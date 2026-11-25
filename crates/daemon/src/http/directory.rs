@@ -1017,7 +1017,12 @@ async fn record_pointers(
     project: &str,
     written: &Written,
 ) -> Result<(), Refusal> {
-    let pointers = pointer::for_write(project, &written.paths, &written.commit);
+    let pointers = pointer::for_write(
+        project,
+        &written.paths,
+        &written.commit,
+        &written.root.worktree,
+    );
     state
         .services
         .governance
@@ -2137,7 +2142,12 @@ async fn memory(
         .directory
         .memory_add(&project, repo, &role_id, fields, actor)
         .await?;
-    let pointers = pointer::for_write(&project, &written.paths, &written.commit);
+    let pointers = pointer::for_write(
+        &project,
+        &written.paths,
+        &written.commit,
+        &written.root.worktree,
+    );
     state
         .services
         .governance

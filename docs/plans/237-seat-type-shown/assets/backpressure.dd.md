@@ -20,10 +20,10 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | crates/store tests: migration applies on a populated store and is additive; directory_http: assign stamps, edit --type restamps open rows, rebuild recomputes. | [ ] unchecked | — | — | cargo test -p pij-store migration && cargo test -p pij-daemon --test directory_http role_type |
-| bp-0002 | AC3 | ph-0001 | BUILD | computational | HTTP test on /v1/seats: type and types for one-type, two-type, pm, pa, prime and roleless seats; every old field still present. | [ ] unchecked | — | — | cargo test -p pij-daemon seats_type |
-| bp-0003 | AC4 | ph-0001 | BUILD | computational | picture.rs unit test: two-type seat yields one action naming both roles. | [ ] unchecked | — | — | cargo test -p pij-daemon --lib two_types |
-| bp-0004 | AC5 | ph-0001 | BUILD | computational | The existing permission tests, unchanged. | [ ] unchecked | — | — | just rust-check |
+| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | crates/store tests: migration applies on a populated store and is additive; directory_http: assign stamps, edit --type restamps open rows, rebuild recomputes. | [x] checked | — | — | cargo test -p pij-store migration && cargo test -p pij-daemon --test directory_http role_type |
+| bp-0002 | AC3 | ph-0001 | BUILD | computational | HTTP test on /v1/seats: type and types for one-type, two-type, pm, pa, prime and roleless seats; every old field still present. | [x] checked | — | — | cargo test -p pij-daemon seats_type |
+| bp-0003 | AC4 | ph-0001 | BUILD | computational | picture.rs unit test: two-type seat yields one action naming both roles. | [x] checked | — | — | cargo test -p pij-daemon --lib two_types |
+| bp-0004 | AC5 | ph-0001 | BUILD | computational | The existing permission tests, unchanged. | [x] checked | — | — | just rust-check |
 
 <a id="sensors"></a>
 

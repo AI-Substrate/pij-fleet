@@ -90,8 +90,8 @@
 					"id": "c-seat-type",
 					"name": "A seat's type in the list and the view",
 					"kind": "endpoint",
-					"where": "crates/daemon/src/http/mod.rs (/v1/seats), crates/daemon/src/http/directory.rs (/v1/directory), crates/store (community_assignments.role_type), crates/cli/src/main.rs, the OMP and Copilot list renderers",
-					"responsibility": "Each seat in `pij list --json` and each holder in `pij directory` gains `type` (the one type of the roles it holds, else from its seat role: the designated prime is `prime`, a `pm` seat `project-manager`, a `pa` seat `pa`; `null` otherwise) and `types` (every type it holds). No existing field is removed or renamed. The type is stamped on the holding at assign, as the harness and session are, so a list reads no governance file; `edit --type` restamps open holdings and the rebuild recomputes them.",
+					"where": "crates/daemon/src/http/mod.rs (/v1/seats), crates/daemon/src/community/pointer.rs, crates/store (community_pointers.role_type, migration 0052), crates/cli/src/roster.rs and .omp/extensions/pij/core/roster-table.ts",
+					"responsibility": "Each seat in `pij list --json` gains `type` (the one type of the roles it holds, else from its seat role: a prime seat is `prime`, a `pm` seat `project-manager`, a `pa` seat `pa`; `null` otherwise or for two types) and `types` (every type it holds), and the human list a TYPE column. No existing field is removed or renamed. A role document's type rides its pointer, so a list reads no governance file.",
 					"realises": ["../prds/006-seat-types.dd.json#requirements/req-05"],
 					"state": "planned"
 				},
@@ -254,8 +254,8 @@
 				},
 				{
 					"id": "d-4",
-					"decision": "The type is stamped on the holding row at assign, so `pij list` reads no governance file.",
-					"why": "`/v1/seats` serves every project and has no governance worktree to read; a per-call file read per role would grow with seats. The stamp follows the role: `edit --type` and `retype --apply` restamp open holdings and the governance rebuild recomputes every row.",
+					"decision": "A role document's type is cached on its pointer row (`community_pointers.role_type`), so `pij list` reads no governance file.",
+					"why": "`/v1/seats` serves every project and has no governance worktree to read; a file read per role per list would grow with seats. The pointer is already written after every directory commit and rebuilt from the branch head, so those are the cache's refresh points; only a hand edit of the branch can leave it stale, until the next rebuild. One row per role, so an assign writes nothing new.",
 					"realises": ["../prds/006-seat-types.dd.json#requirements/req-05"]
 				},
 				{
@@ -298,7 +298,7 @@
 				{
 					"id": "k-2",
 					"what": "A seat's type in `pij list` and `pij directory`.",
-					"rate": "0 launches: one extra column read from the holding rows the list already reads",
+					"rate": "0 launches: one indexed store query per `pij list` (open holdings joined to pointers); each directory write reads the role documents it committed once, in-process",
 					"scaling": "with the rows listed; no loop, poll or timer",
 					"component": ["#components/c-seat-type", "#components/c-mixed-types"]
 				},
@@ -334,6 +334,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "c-type-catalog's read is pure and stable for PRD 009; the concepts page is PRD 009's (#348)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "d-4 and c-seat-type: the type rides the role document's pointer (migration 0052), not each holding."
 				}
 			]
 		}
