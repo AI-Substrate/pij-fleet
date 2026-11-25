@@ -104,7 +104,7 @@
     {
       "name": "execution_guardrails",
       "value": [
-        "Cost: migration 0052 is one ALTER at boot. Each directory write already records its pointers; it now also reads each role document it committed once (in-process, no launch). `pij list` adds one indexed store query (open holdings joined to pointers) per call, no file read and no launch. No loop, poll or timer, nothing per seat per tick.",
+        "Cost: migration 0052 is one ALTER at boot. Each directory write already records its pointers; it now also reads each role document it committed once (in-process, no launch). Every `/v1/seats` call adds one indexed store query (open holdings joined to pointers), so it also rides the calls that poll the roster (federation fan-in, about once a second per peer, and the extension roster); never per seat, no file read, no launch. No loop, poll or timer is added.",
         "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
         "Builds nice-19 through `just shared-build`, one at a time."
       ]

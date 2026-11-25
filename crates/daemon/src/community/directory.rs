@@ -1427,10 +1427,11 @@ impl DirectoryService {
                 };
                 // A role written before types may stay untyped until retype;
                 // a typed one keeps a type and its rules (PRD 006 req-06).
-                super::types::check_role(
+                super::types::check_role_for(
                     &id,
                     &edited,
                     super::types::of_role(&current).is_some(),
+                    super::types::Verb::Edit,
                 )?;
                 if role::standing(&edited) != standing {
                     return Err(Refusal::new(

@@ -47,7 +47,11 @@ fn role_type_at(worktree: &Path, path: &str) -> Option<String> {
     }
     let document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(worktree.join(path)).ok()?).ok()?;
-    super::types::of_role(&document).map(str::to_string)
+    // A brake (review of #344, N3): a value that is not one of the ten is
+    // never stamped, so a hand-edited junk type shows as none.
+    super::types::of_role(&document)
+        .filter(|kind| super::types::get(kind).is_ok())
+        .map(str::to_string)
 }
 
 /// Every community document at the branch head, with the commit that last
@@ -140,6 +144,28 @@ fn read(root: &GovernanceRoot, args: &[&str]) -> Result<String, Refusal> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_a_shipped_type_is_stamped_on_a_role_documents_pointer() {
+        let dir = pij_testkit::fresh_dir("pointer-role-type");
+        let (prefix, suffix) = role_document_affixes();
+        for (id, kind) in [("good", "coder"), ("junk", "wizard")] {
+            let path = dir.join(format!("{prefix}{id}{suffix}"));
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let document = serde_json::json!({"sections": [{"name": "meta", "value": {"id": id, "type": kind}}]});
+            std::fs::write(&path, document.to_string()).unwrap();
+        }
+        assert_eq!(
+            role_type_at(&dir, &format!("{prefix}good{suffix}")).as_deref(),
+            Some("coder")
+        );
+        assert_eq!(role_type_at(&dir, &format!("{prefix}junk{suffix}")), None);
+        assert_eq!(
+            role_type_at(&dir, ".harness/government/community/ROUTES.md"),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use std::path::Path;
     use std::sync::Arc;
 

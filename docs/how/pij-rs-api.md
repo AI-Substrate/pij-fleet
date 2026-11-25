@@ -1158,6 +1158,12 @@ document's type rides its pointer (`community_pointers.role_type`, migration
 `pij directory rebuild`. That column is a cache of the governance branch whose
 refresh points are those writes and the rebuild; only a hand edit of the branch
 can make it stale, until the next rebuild. Authority does not come from it.
+TYPE is a label, never authority: a `pm` seat holding a coder role shows
+`coder` and keeps a project manager's powers, which come from its seat role
+(`role`) and the prime designation as before. The query is one per
+`/v1/seats` call, so it also rides the calls that poll the roster (federation
+fan-in, about once a second per peer, and the extension roster); it is never
+per seat and launches nothing.
 
 The one closed severity order is the exported
 [`pij_core::status::BADGE_SEVERITY`](../../crates/core/src/status.rs).
@@ -1792,7 +1798,7 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
 `watcher`, `human-window`. pij ships each as a `pij/type` definition and a seed
 (`templates/types/<type>/v<n>/`), compiled into the daemon.
 
-- `add` refuses a role with no type (`E-RS-TYPE-MISSING`, listing the ten), an
+- `add` refuses a role with no type (`E-RS-TYPE-MISSING`, listing the ten, with a next step naming `--type`, `--from template:<name>` and `retype`, or on the edit path `edit --set type=`), an
   unknown type (`E-RS-TYPE-UNKNOWN`), and a role missing what its type requires
   (`E-RS-TYPE-FIELD`: `--keeps` for knowledge, `--sole-writer-of` for steward).
   This holds for flags, `--file` and `--batch` alike. `add --from template:`
@@ -1813,7 +1819,7 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
   <path> --why <text>` writes the governance copy through the writer.
 - `directory retype` (plan 238) proposes a type for every active role with
   none: from its template (the catalog's table), else its id (`prime`, `pa`,
-  `pm`/`pm-<n>`, `coder*`, `reviewer*`, `security*`, `qa*`). It answers
+  `pm`/`pm-<n>`, and `coder`, `reviewer`, `security` or `qa` alone or before a `-`). It answers
   `proposed` and `undecided` (each with the `edit` that types it; a role whose
   proposed type needs a field it lacks is undecided) and writes nothing.
   `--apply --why <text>` writes every proposed type in one commit, re-planned

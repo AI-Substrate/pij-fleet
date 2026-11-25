@@ -198,7 +198,7 @@
 				{
 					"id": "k-2",
 					"what": "A seat's type in `pij list` and `pij directory`.",
-					"rate": "0 launches: one indexed store query per `pij list` (open holdings joined to pointers); each directory write reads the role documents it committed once, in-process",
+					"rate": "0 launches: one indexed store query per `/v1/seats` call (open holdings joined to pointers), so it also rides the calls that poll the roster (federation fan-in, about once a second per peer, and the extension roster); never per seat. Each directory write reads the role documents it committed once, in-process",
 					"scaling": "with the rows listed; no loop, poll or timer",
 					"component": ["#components/c-seat-type", "#components/c-mixed-types"]
 				}
@@ -226,6 +226,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "The components of PRDs 007, 008 and 010 move to the PRs that bring those PRDs (d-6), since coverage needs a building step for each."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "k-2 names the roster polls the list query rides (review of #344, N2)."
 				}
 			]
 		}

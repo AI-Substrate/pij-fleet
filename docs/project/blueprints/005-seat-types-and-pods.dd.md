@@ -58,7 +58,7 @@ Everything is built in the daemon's community module and its HTTP and CLI verbs,
 | id | what | rate | scaling | component |
 | --- | --- | --- | --- | --- |
 | k-1 | `pij directory add/edit/types/retype` and seed edits. | on demand only: in-process file reads and the single writer's governance commit (the same git and ddocs launches an add makes today); `types` launches nothing | with the commands a seat runs; none per seat or per tick | [c-directory-type](#components), [c-retype](#components), [c-seeds](#components) |
-| k-2 | A seat's type in `pij list` and `pij directory`. | 0 launches: one indexed store query per `pij list` (open holdings joined to pointers); each directory write reads the role documents it committed once, in-process | with the rows listed; no loop, poll or timer | [c-seat-type](#components), [c-mixed-types](#components) |
+| k-2 | A seat's type in `pij list` and `pij directory`. | 0 launches: one indexed store query per `/v1/seats` call (open holdings joined to pointers), so it also rides the calls that poll the roster (federation fan-in, about once a second per peer, and the extension roster); never per seat. Each directory write reads the role documents it committed once, in-process | with the rows listed; no loop, poll or timer | [c-seat-type](#components), [c-mixed-types](#components) |
 
 <a id="changelog"></a>
 
@@ -70,3 +70,4 @@ Everything is built in the daemon's community module and its HTTP and CLI verbs,
 | 2026-11-25 | pij-multiple-nightingale | c-type-catalog's read is pure and stable for PRD 009; the concepts page is PRD 009's (#348). |
 | 2026-11-25 | pij-multiple-nightingale | d-4 and c-seat-type: the type rides the role document's pointer (migration 0052), not each holding. |
 | 2026-11-25 | pij-multiple-nightingale | The components of PRDs 007, 008 and 010 move to the PRs that bring those PRDs (d-6), since coverage needs a building step for each. |
+| 2026-11-25 | pij-multiple-nightingale | k-2 names the roster polls the list query rides (review of #344, N2). |

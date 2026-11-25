@@ -188,7 +188,7 @@ governance copy (community/seeds/<type>.md) when there is one, else the one
 pij ships. Nothing here launches a seat.
 
 retype proposes a role's type from its template first, then its id (prime,
-pa, pm or pm-<n>, coder*, reviewer*, security*, qa*). It never guesses past
+pa, pm or pm-<n>, and coder, reviewer, security or qa alone or before a -). It never guesses past
 that: every other role, and one whose proposed type needs a field it lacks
 (knowledge: --keeps), is listed with the edit that types it. Typed and retired
 roles are left alone, so a second run finds nothing to do.";

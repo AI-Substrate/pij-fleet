@@ -329,20 +329,57 @@ pub fn of_role(document: &Value) -> Option<&str> {
 /// naming the flag; [`E_TYPE_RULE`] for a change to a fixed or unknown rule,
 /// or one with no reason.
 pub fn check_role(id: &str, document: &Value, require: bool) -> Result<(), Refusal> {
+    check_role_for(id, document, require, Verb::Add)
+}
+
+/// The verb a role check runs under, for the refusal's next step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verb {
+    /// `pij directory add`.
+    Add,
+    /// `pij directory edit`.
+    Edit,
+}
+
+/// [`check_role`], with the refusal's next step written for `verb`.
+///
+/// # Errors
+/// As [`check_role`]; also [`E_TYPE_MISSING`] for `type_changes` on a role
+/// with no type, whatever `require` says (review of #344, N5).
+pub fn check_role_for(
+    id: &str,
+    document: &Value,
+    require: bool,
+    verb: Verb,
+) -> Result<(), Refusal> {
     let Some(type_id) = of_role(document) else {
-        if !require {
+        let changes = section(document, "type_changes")
+            .and_then(Value::as_array)
+            .is_some_and(|rows| !rows.is_empty());
+        if !require && !changes {
             return Ok(());
         }
+        let why = if changes {
+            format!("role {id:?} changes rules of a type it does not name; give it a type first")
+        } else {
+            format!("role {id:?} names no type")
+        };
+        let next = match verb {
+            Verb::Add => format!(
+                "Name one: pij directory add {id} --type <type> ..., or --from template:<name> for a template that names one (pij directory types <type> explains each). An existing community: pij directory retype"
+            ),
+            Verb::Edit => format!(
+                "Name one: pij directory edit {id} --set type=<type> --why <text> (pij directory types <type> explains each), or pij directory retype"
+            ),
+        };
         return Err(Refusal::new(
             E_TYPE_MISSING,
             format!(
-                "role {id:?} names no type; every role is one of pij's ten seat types:\n{}",
+                "{why}; every role is one of pij's ten seat types:\n{}",
                 menu()
             ),
         )
-        .with_next(format!(
-            "Name one: pij directory add {id} --type <type> ... (pij directory types <type> explains each)"
-        )));
+        .with_next(next));
     };
     let def = get(type_id)?;
     for field in &def.requires {
@@ -404,14 +441,21 @@ pub fn check_role(id: &str, document: &Value, require: bool) -> Result<(), Refus
 
 /// The type `retype` would give a role written before types (PRD 006
 /// req-07, plan 238), and why: its template's (the catalog's table), else its
-/// id's (`prime`, `pa`, `pm` or `pm-<n>`, `coder*`, `reviewer*`, `security*`,
-/// `qa*`). `None` when neither names one.
+/// id's (`prime`, `pa`, `pm` or `pm-<n>`, and `coder`, `reviewer`, `security`
+/// or `qa`, alone or before a `-`). `None` when neither names one.
 pub fn propose(id: &str, template: Option<&str>) -> Option<(&'static str, String)> {
     if let Some(name) = template
         && let Some(kind) = template_type(name)
     {
         return Some((kind, format!("from template {name}")));
     }
+    // Review of #344, N6: `qa` or `qa-<anything>`, never `qanat`.
+    let named = |prefix: &str| {
+        id == prefix
+            || id
+                .strip_prefix(prefix)
+                .is_some_and(|rest| rest.starts_with('-'))
+    };
     let pm = id
         .strip_prefix("pm-")
         .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
@@ -420,10 +464,10 @@ pub fn propose(id: &str, template: Option<&str>) -> Option<(&'static str, String
         "pa" => "pa",
         "pm" => "project-manager",
         _ if pm => "project-manager",
-        _ if id.starts_with("coder") => "coder",
+        _ if named("coder") => "coder",
         _ if ["reviewer", "security", "qa"]
             .iter()
-            .any(|prefix| id.starts_with(prefix)) =>
+            .any(|prefix| named(prefix)) =>
         {
             "reviewer"
         }
@@ -582,6 +626,28 @@ mod tests {
             check_role("x", &unknown, true).unwrap_err().code,
             E_TYPE_UNKNOWN
         );
+        // Review of #344: the hint names every way out, per verb (N1), and a
+        // rule change needs a type even on an untyped role's edit (N5).
+        let add = check_role("x", &untyped, true).unwrap_err().next.unwrap();
+        assert!(
+            add.contains("--from template:") && add.contains("retype"),
+            "{add}"
+        );
+        let edit = check_role_for("x", &untyped, true, Verb::Edit)
+            .unwrap_err()
+            .next
+            .unwrap();
+        assert!(edit.contains("pij directory edit x --set type="), "{edit}");
+        let changes = role(
+            json!({}),
+            Some(json!([{"rule": "compact-after-job", "why": "w"}])),
+        );
+        assert_eq!(
+            check_role_for("x", &changes, false, Verb::Edit)
+                .unwrap_err()
+                .code,
+            E_TYPE_MISSING
+        );
     }
 
     #[test]
@@ -720,5 +786,16 @@ mod tests {
             ]
         );
         assert_eq!(propose("pm-x", None), None, "pm-<n> only");
+        // Review of #344, N6: a prefix counts alone or before a hyphen.
+        assert_eq!(propose("qanat", None), None);
+        assert_eq!(propose("coders", None), None);
+        assert_eq!(
+            propose("qa-web", None).map(|(kind, _)| kind),
+            Some("reviewer")
+        );
+        assert_eq!(
+            propose("security", None).map(|(kind, _)| kind),
+            Some("reviewer")
+        );
     }
 }
