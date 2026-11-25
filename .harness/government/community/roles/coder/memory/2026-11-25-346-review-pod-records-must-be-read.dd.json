@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"by": "pij-multiple-nightingale",
+				"date": "2026-11-25",
+				"hook": "Open before changing any pij pod verb, or any read-modify-write of a governance file",
+				"tags": [
+					"pods",
+					"governance",
+					"review",
+					"secrets"
+				],
+				"title": "#346 review: pod records must be read inside the writer; secrets in --set"
+			}
+		},
+		{
+			"name": "body",
+			"value": "#346 (PRD 008 pods) got BLOCK with 8 findings and merged after one fix range (7b2cc29b..028355eb). Lessons:\n- Read-modify-write of a governance file: build it INSIDE the writer's serialized closure. Use directory.write_built and the pod mutate() helper, never open() then save(); concurrent verbs otherwise lose updates. Test: tokio::join! of two sets, then both values survive.\n- Anything committed to governance (public) runs first_turn::secret_value on every --set, used or not, before ANY write. secret_line counted '/' as a key char, so absolute paths with capitals were false positives (fixed: paths are checked per segment).\n- A one-shot subscriber that settles state needs a later re-entry path (pod confirm → recover()), or a printed fix can't work.\n- A record field that set can change (subject, work-folder) needs ONE current source: update meta in the same write, and read through pod::work_folder.\n- Record the template as resolved (repo-relative), not as typed (caller-relative).\n- The text CLI renderer must handle both warning shapes (strings and {line}) and member `outcome`. Reviewers probe the text, not only the JSON.\n- Mutants: run them all in one shared-build with copies in /tmp, then restore. Each must fail exactly its own test.\n- The integration test binary for reshape_http is `directory_http` (filter pod_up).\n"
+		}
+	]
+}

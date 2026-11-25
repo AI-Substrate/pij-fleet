@@ -27,6 +27,12 @@
           },
           "hook": {
             "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
           }
         }
       }
