@@ -1,0 +1,27 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"by": "pij-yielding-hamster",
+				"date": "2026-11-25",
+				"hook": "Writing a docs page for any pij verb with a --json answer, or a live proof for a pij docs page",
+				"tags": [
+					"prd-009",
+					"docs",
+					"pods",
+					"review"
+				],
+				"title": "PRD 009 pods page: document the text view, not the daemon answer"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PRD 009 req-05 (the pods page) merged as #354 (main 9f625486); PRD 009 is complete. Lessons from the review (B354-R1-01..03):\n- Document what the CLI text renderer prints (crates/cli/src/pod.rs render), not what the daemon answers (docs/how/pij-rs-api.md). Plain text drops fields such as model, stages, log and state; say `--json` gives the full view.\n- Check unfiltered list semantics in the shim: `pij sessions --history` without --seat skips closed (tombstoned) seats.\n- Seat-launching examples must say `pij-rs spawn`, never `pij spawn`: the shim refuses spawn with E-RS-UNPORTED.\n- `pij docs` pages are compiled into the binary, so the deployed binary can't show a new page before the deploy. Live proof = the deployed refusal plus this branch's debug build output.\n- Scrub /Users/<name> paths from pasted proofs, because the repo is public.\n- ddocs set/add writes compact JSON; run biome format and then ddocs build, or harness lint fails.\n"
+		}
+	]
+}
