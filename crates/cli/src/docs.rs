@@ -118,7 +118,7 @@ fn types_page() -> Page {
 `pij docs get types/<type>` prints a type's purpose, lifecycle, what it keeps, what a role of it must give, its rules and its shipped seed. `pij directory types <type> --seed` shows the seed pij would use in this repo. To build a role on a type: `pij docs get building-a-role`.\n",
     );
     Page {
-        id: "types".to_string(),
+        id: types::DOCS_PAGE.to_string(),
         body,
         sources: types::all()
             .iter()
@@ -166,7 +166,7 @@ fn type_page(def: &'static TypeDef) -> Page {
         body,
         "\nA fixed rule holds for every role of this type. A role may change a default rule with a reason: `pij directory edit <role> --why <text> --type-change <rule>=<why>`.\n\n\
 ## Seed\n\n\
-The opening text for a seat of this type, as pij ships it (version {}). A repo may keep its own: `pij directory types {} --seed` shows the one pij would use there. Starting a seat in a role with its seed is planned (PRD 007).\n\n\
+The opening text for a seat of this type, as pij ships it (version {}). A repo may keep its own: `pij directory types {} --seed` shows the one pij would use there. A seat started in a role of this type (`pij-rs spawn --as role:<id>`) gets the seed in its first turn, with a pointer to this page instead of the definition above.\n\n\
 ```text\n{}\n```\n\n\
 ## Source\n\n`{}` and `{}`.\n",
         def.version,
@@ -176,7 +176,7 @@ The opening text for a seat of this type, as pij ships it (version {}). A repo m
         seed_path(def),
     );
     Page {
-        id: format!("types/{}", def.id),
+        id: types::docs_page(&def.id),
         body,
         sources: vec![
             Source::Document {

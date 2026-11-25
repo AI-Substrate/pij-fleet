@@ -15,7 +15,7 @@ A pij fleet is a team of agent seats and the work they do. Some fleets build a p
 | type | How does it live? | One of pij's ten fixed kinds: prime, pa, project-manager, coder, reviewer, worker, knowledge, steward, watcher, human-window. A role names exactly one; it sets when the holder is compacted or closed, what it must keep, and the rules every role of that type follows. `pij docs get types`. |
 | position | Who governs whom? | Where a seat sits in the fleet: the designated prime of a project, or a seat role of `pm`, `pa` or `worker` under a parent. Authority comes from here and nowhere else. |
 | pod | Which roles were stood up together? | Planned (PRD 008): a named group of role instances started, shown and taken down as one. Not in this pij yet; see [Coming](#coming). |
-| seed | What is a seat of a type told? | The opening text for a type. pij ships one per type, and a repo may keep its own in governance: `pij directory types <type> --seed` shows the one pij would use. Starting a seat with it is planned; see [Coming](#coming). |
+| seed | What is a seat of a type told? | The opening text for a type. pij ships one per type, and a repo may keep its own in governance: `pij directory types <type> --seed` shows the one pij would use. A seat started in a role (`pij-rs spawn --as role:<id>`) gets one first turn: its type's seed and a pointer to its type's page, the role's text with its parameters filled, the creator's focus and packet, and the role's memory index. |
 | template | Where does a role start from? | A shipped, versioned example to copy and adapt: role templates (`pij directory templates`). A role made from one records the template and version, and `pij directory template-diff` shows what changed since. Templates are examples, never a checklist. Pod templates are planned; see [Coming](#coming). |
 
 ## A type is a label, never authority
@@ -31,13 +31,13 @@ Types are checked when a role is written (`pij directory add` refuses a role wit
 - A **community** is everything one project's fleet has: its roles, who holds them and their memory. There is one per project.
 - A **role** names a **type**. A **seat** holds roles; holding a role makes the seat that role's holder until it is released or the seat closes.
 - A seat's **position** says who governs it. Its roles say what it does; their type says how it lives.
-- **Memory** belongs to a role, never to a seat: `pij directory memory <role>`. Closing a seat keeps it, and the role's next holder reads it.
+- **Memory** belongs to a role, never to a seat: `pij directory memory <role>`. Closing a seat keeps it (`pij close <seat> --stop` asks a holder to write its note first, then stops it), and the role's next holder reads it.
 
 ## Governance and the repo
 
 | | Governance (the team) | The repo (the work) |
 |---|---|---|
-| Holds | rulings, the role directory and holders, role memory, a repo's own seeds | the work's code and docs, its PRDs and plans, its procedures |
+| Holds | rulings, the role directory and holders, role memory, each first turn a seat was started with, a repo's own seeds | the work's code and docs, its PRDs and plans, its procedures |
 | Lives on | the project's governance branch, under `community/` | the main branch |
 | Written by | pij's single writer, with a reason on every change (`--why`) | anyone, through pull requests |
 
@@ -56,7 +56,6 @@ The same constructs serve both: only the roles and types differ.
 
 Planned and not in this pij yet. Each is described here so the terms above make sense; this section changes as each ships.
 
-- **Starting a seat in a role (PRD 007).** `spawn` with a role named, and one assembled first turn: the type's seed, the role's text, its filled parameters, the creator's packet and the role's memory index.
 - **Pods (PRD 008).** A named group of role instances, started, shown and taken down as one, with shared parameters. A seat is in one pod or none; a shared expert (a knowledge seat many pods consult) is in no pod, and pods name the roles they consult. Memory is kept per role instance (role plus subject), never shared across subjects, and a closed pod can be revived.
 - **Pod templates (PRD 010).** Shipped, versioned pod templates a repo copies and adapts. The pod commands take a path to a template, so it may sit in governance or in the main repo.
 

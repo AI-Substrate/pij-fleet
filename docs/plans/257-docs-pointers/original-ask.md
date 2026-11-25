@@ -1,0 +1,3 @@
+# Original ask
+
+From pm-001, 2026-11-25, after PRD 007 merged (#345): workstream 009 step s04 (PRD 009 req-06) in a follow-up PR to #348. A refusal that turns on a seat type names the `pij docs` page that explains it (message text only: no refusal code or next step changes). A seat's first turn names the page for its type instead of carrying the type's full text, as req-06 says (pm-001's ruling, option B): the type part keeps the type's line, whether it carries authority, the pointer `Your type in full: pij docs get types/<type>`, the role's own rule changes with their reasons, then the seed. The pods page (req-05) only if PRD 008's pod commands are on main; they are not.

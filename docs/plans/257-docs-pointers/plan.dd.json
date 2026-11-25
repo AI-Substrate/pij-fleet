@@ -1,0 +1,102 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Docs in the pij CLI: refusals and first turns point at pages",
+        "slug": "docs-pointers",
+        "ordinal": 257,
+        "status": "ready",
+        "summary": "PRD 009 workstream step s04 (req-06). The seat-type refusals end with the `pij docs` page that explains them, and a seat started in a role is told its type's page instead of the type's whole definition. The page ids come from one place in the type catalog, which `pij docs` also uses.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "PRD 006's refusals (`E-RS-TYPE-MISSING`, `-UNKNOWN`, `-FIELD`, `-RULE`) list the ten types or name a flag, and PRD 007's first turn carried each type's purpose, lifecycle, keeps and every rule. Both now point at the page: a refusal's message ends `Read: pij docs get types` (or `types/<type>`), with its code and runnable next step unchanged, and the first turn's type part becomes the type's line, whether the seat carries authority (from its role's id, never its type), `Your type in full: pij docs get types/<type>`, only the rules the role changes (with their reasons, which no page holds) and the seed. That changes what every new seat is told: across the ten shipped types the type part shrinks from 9,737 to 6,220 characters (36%, mean 973 to 622), measured with the format strings before and after on the shipped definitions and seeds, with no rule changes. `types::DOCS_PAGE` and `types::docs_page()` name the pages for both the refusals and `pij docs`, so they cannot drift apart."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A seat refused for a type, or started in a role, is pointed at the page that explains its type.",
+        "A first turn carries what only it can: the role's own rule changes, the seed, the role and its memory."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Changing any refusal's code, next step or when it fires.",
+        "The pods page (req-05): PRD 008's pod commands are not on main.",
+        "Pointers in refusals that do not turn on a type."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`E-RS-TYPE-MISSING` and `E-RS-TYPE-UNKNOWN` messages end `Read: pij docs get types`; `E-RS-TYPE-FIELD` and every `E-RS-TYPE-RULE` end `Read: pij docs get types/<type>`. Codes and `next` are unchanged.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "A first turn's type part is `You are a <type> seat (<title>): <line>`, `Carries authority: yes|no, as your role's id makes you a <pa|pm|worker> (a type grants none).`, derived from the role id through `holders::seat_role_for`, the path assign stamps the seat role with, never from the type (review of #351, B351-R1-01),, `Your type in full: pij docs get types/<type>`, then `Your role changes these rules of your type:` with each changed rule's text, id and reason (only when the role changes one), then the seed. It no longer carries the type's purpose, lifecycle, keeps or unchanged rules.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "The type pages say a seat started in a role gets the seed and a pointer to the page; building-a-role and concepts describe `pij-rs spawn --as role:<id>`, `pij directory show <role> --first-turn` and `pij close --stop`, which PRD 007 shipped, instead of calling them planned.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Pointers shipped",
+          "brief": "One PR: refusal messages, the first turn's type part, the pages that described PRD 007 as planned.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Refusals: `check_role_for` and `get` in `crates/daemon/src/community/types.rs` (a `Refusal` is a code, a message and one runnable `next`; the pointer goes in the message so `next` stays the one command to run). First turn: the type part of `assemble` in `crates/daemon/src/community/first_turn.rs` (PRD 007, plan 242); `reshape_http/role_start.rs` asserts the role, parameters and creator parts, not the type part."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A seat that cannot run `pij docs` (no pij on its PATH) loses its type's definition from its first turn.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "Every seat pij starts runs beside pij; the line, authority, the role's changes and the seed stay in the first turn, and `pij directory types <type>` prints the same definition."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: no loop, poll, timer, hook or launch. A refusal formats one more sentence; the first turn formats less. Nothing per seat or per tick.",
+        "Pages and messages are public-safe: no customer or person names."
+      ]
+    }
+  ]
+}

@@ -60,13 +60,14 @@
 				{
 					"id": "s04",
 					"title": "Refusals and first turns point at pages",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/009-cli-docs.dd.json#requirements/req-06"],
 					"builds": [],
-					"depends_on": ["#steps/s03"],
+					"depends_on": ["#steps/s03", "007-role-start.dd.json#steps/s02"],
 					"needs": ["role:coder", "role:reviewer"],
 					"done_when": "A refusal for a missing type names its page, and a seat's first turn names the page for its type.",
-					"note": "Waits on workstream 007 step s02 (seats started in a role); link it here when workstream 007 is on main. Comes in the follow-up PR after #348, with the pods page."
+					"note": "The first-turn half follows req-06 as written (pm-001, 2026-11-25): the type part names the page and keeps only the role's own rule changes and the seed.",
+					"plan": "docs/plans/257-docs-pointers"
 				}
 			]
 		},

@@ -23,6 +23,20 @@ pub const E_TYPE_FIELD: &str = "E-RS-TYPE-FIELD";
 /// A role changes a fixed rule of its type, or names a rule it does not have.
 pub const E_TYPE_RULE: &str = "E-RS-TYPE-RULE";
 
+/// The `pij docs` page on the ten types (PRD 009). A refusal that turns on a
+/// type names it, and `pij docs` serves it, so the two never disagree.
+pub const DOCS_PAGE: &str = "types";
+
+/// The `pij docs` page for one type: `types/<type>`.
+pub fn docs_page(type_id: &str) -> String {
+    format!("{DOCS_PAGE}/{type_id}")
+}
+
+/// The sentence a refusal ends with to name the page that explains it.
+fn read(page: &str) -> String {
+    format!("Read: pij docs get {page}")
+}
+
 /// The ten types, in the order pij lists them.
 pub const TYPES: [&str; 10] = [
     "prime",
@@ -227,7 +241,11 @@ pub fn get(id: &str) -> Result<&'static TypeDef, Refusal> {
     all().iter().find(|def| def.id == id).ok_or_else(|| {
         Refusal::new(
             E_TYPE_UNKNOWN,
-            format!("{id:?} is not a pij seat type; the ten are:\n{}", menu()),
+            format!(
+                "{id:?} is not a pij seat type; the ten are:\n{}\n{}",
+                menu(),
+                read(DOCS_PAGE)
+            ),
         )
         .with_next("pij directory types")
     })
@@ -375,8 +393,9 @@ pub fn check_role_for(
         return Err(Refusal::new(
             E_TYPE_MISSING,
             format!(
-                "{why}; every role is one of pij's ten seat types:\n{}",
-                menu()
+                "{why}; every role is one of pij's ten seat types:\n{}\n{}",
+                menu(),
+                read(DOCS_PAGE)
             ),
         )
         .with_next(next));
@@ -393,7 +412,10 @@ pub fn check_role_for(
                 .map_or(field.as_str(), |(_, flag)| flag);
             return Err(Refusal::new(
                 E_TYPE_FIELD,
-                format!("role {id:?} is of type {type_id}, which requires {flag} <value>"),
+                format!(
+                    "role {id:?} is of type {type_id}, which requires {flag} <value>. {}",
+                    read(&docs_page(type_id))
+                ),
             )
             .with_next(format!("pij directory types {type_id}")));
         }
@@ -409,8 +431,9 @@ pub fn check_role_for(
             return Err(Refusal::new(
                 E_TYPE_RULE,
                 format!(
-                    "role {id:?}: type {type_id} has no rule {rule_id:?}; its rules are {}",
-                    rules.join(", ")
+                    "role {id:?}: type {type_id} has no rule {rule_id:?}; its rules are {}. {}",
+                    rules.join(", "),
+                    read(&docs_page(type_id))
                 ),
             )
             .with_next(format!("pij directory types {type_id}")));
@@ -419,8 +442,9 @@ pub fn check_role_for(
             return Err(Refusal::new(
                 E_TYPE_RULE,
                 format!(
-                    "role {id:?}: rule {rule_id:?} of type {type_id} is fixed and no role may change it ({})",
-                    rule.text
+                    "role {id:?}: rule {rule_id:?} of type {type_id} is fixed and no role may change it ({}). {}",
+                    rule.text,
+                    read(&docs_page(type_id))
                 ),
             ));
         }
@@ -431,7 +455,8 @@ pub fn check_role_for(
             return Err(Refusal::new(
                 E_TYPE_RULE,
                 format!(
-                    "role {id:?}: the change to rule {rule_id:?} needs a reason: --type-change {rule_id}=<why>"
+                    "role {id:?}: the change to rule {rule_id:?} needs a reason: --type-change {rule_id}=<why>. {}",
+                    read(&docs_page(type_id))
                 ),
             ));
         }
@@ -620,6 +645,18 @@ mod tests {
         for id in TYPES {
             assert!(refusal.message.contains(id), "{id}");
         }
+        // PRD 009 req-06: the refusal names the page that explains types.
+        assert!(
+            refusal.message.ends_with("Read: pij docs get types"),
+            "{}",
+            refusal.message
+        );
+        assert!(
+            get("wizard")
+                .unwrap_err()
+                .message
+                .ends_with("Read: pij docs get types")
+        );
         assert!(check_role("x", &untyped, false).is_ok());
         let unknown = role(json!({"type": "wizard"}), None);
         assert_eq!(
@@ -655,6 +692,13 @@ mod tests {
         let refusal = check_role("x", &role(json!({"type": "knowledge"}), None), true).unwrap_err();
         assert_eq!(refusal.code, E_TYPE_FIELD);
         assert!(refusal.message.contains("--keeps"), "{}", refusal.message);
+        assert!(
+            refusal
+                .message
+                .ends_with("Read: pij docs get types/knowledge"),
+            "{}",
+            refusal.message
+        );
         let refusal = check_role("x", &role(json!({"type": "steward"}), None), true).unwrap_err();
         assert!(
             refusal.message.contains("--sole-writer-of"),
@@ -677,6 +721,11 @@ mod tests {
         let refusal = check_role("x", &coder, true).unwrap_err();
         assert_eq!(refusal.code, E_TYPE_RULE);
         assert!(refusal.message.contains("fixed"), "{}", refusal.message);
+        assert!(
+            refusal.message.ends_with("Read: pij docs get types/coder"),
+            "{}",
+            refusal.message
+        );
         let security = role(
             json!({"type": "reviewer"}),
             Some(json!([{"rule": "compact-after-job", "why": "carries open findings"}])),
