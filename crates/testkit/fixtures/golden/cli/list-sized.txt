@@ -1,9 +1,9 @@
-  SEAT             HARNESS       STATE                         CTX   IDLE   CACHE
-❄ pij-cold-claude  claude alt:1  idle                          720k  2h     cold 1h
-  pij-warm-omp     omp           working                       57k   3m     warm
-⚠ pij-gpt-unknown  copilot       idle                          512k  12m    ?
-  pij-copilot      copilot       idle                          ?     14m    warm
-  pij-lapsed       copilot       idle, receiver lapsed 39m     ?     40m    warm
-  pij-asking       copilot       blocked on a dialog (ctrl+d)  133k  1h53m  warm
-  pij-far@laptop   claude        idle                          -     -      -
+  SEAT             TYPE             HARNESS       STATE                         CTX   IDLE   CACHE
+❄ pij-cold-claude  -                claude alt:1  idle                          720k  2h     cold 1h
+  pij-warm-omp     coder            omp           working                       57k   3m     warm
+⚠ pij-gpt-unknown  -                copilot       idle                          512k  12m    ?
+  pij-copilot      knowledge        copilot       idle                          ?     14m    warm
+  pij-lapsed       -                copilot       idle, receiver lapsed 39m     ?     40m    warm
+  pij-asking       project-manager  copilot       blocked on a dialog (ctrl+d)  133k  1h53m  warm
+  pij-far@laptop   -                claude        idle                          -     -      -
 unavailable: nas (connection refused)

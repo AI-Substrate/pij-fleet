@@ -4623,6 +4623,28 @@ struct SeatProjection<'a> {
     /// lease lapsed: `pij list` adds it to STATE, since the process may run on.
     #[serde(rename = "nativeReceiver", skip_serializing_if = "Option::is_none")]
     native_receiver: Option<String>,
+    /// PRD 006: the seat's one type (see [`seat_type`]); `null` for none or two.
+    #[serde(rename = "type")]
+    seat_type: Option<String>,
+    /// PRD 006: every distinct type of the roles the seat holds, sorted.
+    types: Vec<String>,
+}
+
+/// A seat's one label (PRD 006 req-05): the type of the roles it holds when
+/// they agree; with none, its seat role's (`prime`, `pm` as
+/// `project-manager`, `pa`); `None` when it holds two types or nothing typed.
+/// Authority is not derived from it: that stays the seat role's.
+fn seat_type(types: &[String], seat_role: Option<&str>) -> Option<String> {
+    match types {
+        [one] => Some(one.clone()),
+        [] => match seat_role? {
+            "prime" => Some("prime".to_string()),
+            "pm" => Some("project-manager".to_string()),
+            "pa" => Some("pa".to_string()),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// How long `pij list` waits for one seat's session facts (plan 160). The
@@ -4773,6 +4795,27 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
             Vec::new()
         }
     };
+    // PRD 006: one indexed store read for every seat's role types; a failed
+    // read shows none rather than failing the list.
+    let (prefix, suffix) = crate::community::pointer::role_document_affixes();
+    let mut held: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    match state
+        .services
+        .governance
+        .store()
+        .open_holding_types(&prefix, &suffix)
+        .await
+    {
+        Ok(rows) => {
+            for (seat, kind) in rows {
+                let types = held.entry(seat).or_default();
+                if !types.contains(&kind) {
+                    types.push(kind);
+                }
+            }
+        }
+        Err(error) => eprintln!("pij seats: role types: {error}"),
+    }
     // F195: one in-memory read of the receiver leases; no store read, no launch.
     let lapsed = state
         .services
@@ -4795,7 +4838,10 @@ async fn seats(State(state): State<AppState>, Query(query): Query<SeatQuery>) ->
                     .then(|| lapsed.iter().find(|(id, _)| *id == seat.id))
                     .flatten()
                     .map(|(_, renewed)| receiver_lapse_label(*renewed));
+                let types = held.get(seat.id.as_str()).cloned().unwrap_or_default();
                 SeatProjection {
+                    seat_type: seat_type(&types, seat.role.as_deref()),
+                    types,
                     seat,
                     generation: "rs",
                     badge: seat.badge.as_deref(),

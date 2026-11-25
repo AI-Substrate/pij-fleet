@@ -2126,6 +2126,31 @@ async fn run(cli: Cli) -> ExitCode {
                     }
                     ExitCode::SUCCESS
                 }
+                // `directory retype [--apply]` (PRD 006, plan 238).
+                Some(data) if data.get("proposed").is_some_and(Value::is_array) => {
+                    println!("{}", render_retype(data));
+                    ExitCode::SUCCESS
+                }
+                // `directory types [<type> [--seed]]` (PRD 006).
+                Some(data) if data.get("types").is_some_and(Value::is_array) => {
+                    println!("{}", render_types(&data["types"]));
+                    ExitCode::SUCCESS
+                }
+                Some(data) if data["type"].get("rules").is_some_and(Value::is_array) => {
+                    println!("{}", render_type(&data["type"]));
+                    ExitCode::SUCCESS
+                }
+                Some(data) if data["seed"].get("text").is_some_and(Value::is_string) => {
+                    let seed = &data["seed"];
+                    println!(
+                        "# seed for {} ({}: {})\n\n{}",
+                        seed["type"].as_str().unwrap_or("-"),
+                        seed["source"].as_str().unwrap_or("-"),
+                        seed["path"].as_str().unwrap_or("-"),
+                        seed["text"].as_str().unwrap_or_default().trim_end(),
+                    );
+                    ExitCode::SUCCESS
+                }
                 Some(data) if data.get("templates").is_some_and(Value::is_array) => {
                     println!("{}", render_templates(&data["templates"]));
                     ExitCode::SUCCESS
@@ -3706,7 +3731,15 @@ fn render_directory_at(
         let head = format!(
             "\n  {} ({}, {}): ",
             shown(&role["id"], render::name),
-            shown(&role["kind"], render::word),
+            // PRD 006: the type, or a legacy role's kind until it is retyped.
+            shown(
+                if role["type"].is_string() {
+                    &role["type"]
+                } else {
+                    &role["kind"]
+                },
+                render::word
+            ),
             shown(&role["holders"], render::word)
         );
         out.push_str(&head);
@@ -4023,6 +4056,116 @@ fn render_edit(data: &Value) -> String {
 }
 
 /// `pij directory templates` for a human.
+/// `pij directory retype` for a human: what was (or would be) typed, then
+/// each role left, with the edit that types it.
+fn render_retype(data: &Value) -> String {
+    let rows = |key: &str| data[key].as_array().map(Vec::as_slice).unwrap_or_default();
+    let applied = data["applied"] == true;
+    let mut out = format!(
+        "{} role(s) {}typed",
+        rows("proposed").len(),
+        if applied { "" } else { "would be " }
+    );
+    if let Some(commit) = data["commit"].as_str() {
+        let _ = write!(out, " in {}", commit.get(..10).unwrap_or(commit));
+    }
+    for row in rows("proposed") {
+        let _ = write!(
+            out,
+            "\n  {}: {} ({})",
+            shown(&row["id"], pij_core::render::name),
+            shown(&row["type"], pij_core::render::word),
+            row["source"].as_str().unwrap_or("-"),
+        );
+    }
+    if !rows("undecided").is_empty() {
+        let _ = write!(out, "\n{} role(s) left for you:", rows("undecided").len());
+        for row in rows("undecided") {
+            let _ = write!(
+                out,
+                "\n  {}: {}\n    {}",
+                shown(&row["id"], pij_core::render::name),
+                row["reason"].as_str().unwrap_or("-"),
+                row["command"].as_str().unwrap_or("-"),
+            );
+        }
+    }
+    if !applied && !rows("proposed").is_empty() {
+        out.push_str("\nWrite them: pij directory retype --apply --why <text>");
+    }
+    out
+}
+
+/// `pij directory types` for a human: the ten, one line each.
+fn render_types(types: &Value) -> String {
+    let rows = types.as_array().map(Vec::as_slice).unwrap_or_default();
+    let mut out = format!(
+        "{} seat types; a role names one (pij directory types <type> for its rules)",
+        rows.len()
+    );
+    for row in rows {
+        let _ = write!(
+            out,
+            "\n  {:<15} {}{}",
+            row["id"].as_str().unwrap_or("-"),
+            row["line"].as_str().unwrap_or("-"),
+            if row["authority"] == true {
+                " (carries authority)"
+            } else {
+                ""
+            },
+        );
+    }
+    out
+}
+
+/// `pij directory types <type>` for a human: the whole definition.
+fn render_type(def: &Value) -> String {
+    let text = |key: &str| def[key].as_str().unwrap_or("-").to_string();
+    let mut out = format!(
+        "{} ({}){}\n\n{}\n\nLifecycle: {}\nKeeps: {}",
+        text("id"),
+        text("title"),
+        if def["authority"] == true {
+            ", carries authority"
+        } else {
+            ""
+        },
+        text("purpose"),
+        text("lifecycle"),
+        text("keeps"),
+    );
+    let requires: Vec<&str> = def["requires"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    if !requires.is_empty() {
+        let _ = write!(
+            out,
+            "\nA role of this type must give: {}",
+            requires.join(", ")
+        );
+    }
+    out.push_str("\nRules:");
+    for rule in def["rules"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let _ = write!(
+            out,
+            "\n  {} [{}]: {}",
+            rule["id"].as_str().unwrap_or("-"),
+            rule["mode"].as_str().unwrap_or("-"),
+            rule["text"].as_str().unwrap_or("-"),
+        );
+    }
+    out
+}
+
 fn render_templates(templates: &Value) -> String {
     let rows = templates.as_array().map(Vec::as_slice).unwrap_or_default();
     let mut out = format!(

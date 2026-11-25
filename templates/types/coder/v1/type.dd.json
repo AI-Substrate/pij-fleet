@@ -1,0 +1,54 @@
+{
+	"dd": {
+		"schema": "pij/type"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "coder",
+				"title": "Coder",
+				"authority": "none",
+				"line": "Builds one workstream step, then is compacted."
+			}
+		},
+		{
+			"name": "purpose",
+			"value": "Builds one step: reads the packet, writes the plan, changes the code, runs the repo's gates and opens or updates one PR."
+		},
+		{
+			"name": "lifecycle",
+			"value": "Compacted after every job. Its size matters more than what it remembers, so what it learned goes into a memory note before compaction."
+		},
+		{
+			"name": "keeps",
+			"value": "A memory note per job: what it built, what surprised it, what it would warn the next coder about."
+		},
+		{
+			"name": "rules",
+			"value": [
+				{
+					"id": "compact-after-job",
+					"text": "Is compacted after every job, after writing its memory note.",
+					"mode": "fixed"
+				},
+				{
+					"id": "one-step",
+					"text": "Builds one step at a time, in its own worktree and branch.",
+					"mode": "fixed"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"why": "First version (PRD 006)."
+				}
+			]
+		}
+	],
+	"references": []
+}

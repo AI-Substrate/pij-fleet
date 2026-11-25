@@ -15,9 +15,9 @@ The directory lives on the governance branch under `<government-root>/community/
 ```bash
 pij directory [--suggest]                        # the prime, roles, actions, prompts, the boundary review; --suggest: every suggestion
 pij directory templates [--show '<name>[@vN]']   # the shipped examples, and one template's body
-pij directory add '<id>' --from 'template:<name>' --why '<the need>'  [flags override fields]
-pij directory add '<id>' --from 'file:<brief>' --why '<the need>' --title '<title>' --kind specialist --lifecycle long-lived --holders one --rule '<text>'
-pij directory add '<id>' --why '<the need>' --title '<title>' --kind specialist --lifecycle long-lived --holders one --rule '<rule>' --packet '<packet>'  # no template
+pij directory add '<id>' --from 'template:<name>' --why '<the need>'  [flags override fields; --type when the template names none]
+pij directory add '<id>' --from 'file:<brief>' --why '<the need>' --title '<title>' --type '<type>' --holders one --rule '<text>'
+pij directory add '<id>' --why '<the need>' --title '<title>' --type '<type>' --holders one --rule '<rule>' --packet '<packet>'  # no template
 pij directory assign '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory release '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory edit '<id>' --why '<text>' --set '<field>=<value>' [role flags]
@@ -27,7 +27,7 @@ pij directory template-diff '<id>'               # upstream change since the rol
 pij directory routes [--write --why '<text>']    # who owns which paths, with live holders
 ```
 
-Every `<placeholder>` in a printed command sits inside single quotes: fill it there (write a `'` in the value as `'\''`) so the shell passes one literal word. Pass message and note bodies with `--body-file`. A role with no template needs `--title`, `--kind` (`specialist` or `general`), `--lifecycle` (`long-lived` or `per-task`) and `--holders` (`one` or `many`); `--from file:` supplies only the packet.
+Every `<placeholder>` in a printed command sits inside single quotes: fill it there (write a `'` in the value as `'\''`) so the shell passes one literal word. Pass message and note bodies with `--body-file`. A role with no template needs `--title`, `--type` and `--holders` (`one` or `many`); `--from file:` supplies only the packet. **Every role names one of pij's ten seat types** (PRD 006): `prime`, `pa`, `project-manager`, `coder`, `reviewer`, `worker`, `knowledge`, `steward`, `watcher`, `human-window`. A type says how its seat lives (when it is compacted or closed, what it must keep); the role says what it covers. `pij directory types ['<type>' [--seed]]` prints the ten, a type's rules (each `fixed` or `default`) or the seed its seats are told. A knowledge role names the artefact it keeps current (`--keeps`), a steward what only it writes (`--sole-writer-of`). Change a default rule with its reason, `--type-change '<rule>=<why>'` (a security reviewer that keeps standing context: `--type-change 'compact-after-job=<why>'`); a fixed rule refuses. When no type fits, pick the nearest, put the difference in `--rule`s and record `--type-suggestion '<text>'`. Only prime, pa and project-manager carry authority, exactly as those seats do today. `--kind` and `--lifecycle` are retired and ignored with a warning; a role from a template takes the template's type. The seed a seat of each type is told ships with pij; `pij directory seed '<type>' --file '<path>' --why '<text>'` writes the repo's own copy, which wins. `pij directory retype [--apply --why '<text>']` types every role written before types, and lists those it cannot decide with the edit for each.
 
 `add --from template:` copies the template as it is. Replace the project's placeholders (`<project>`, `<government-root>`, `<workstream number>`, and a template's own, such as `<topic>`) with flags or a later `edit --set`; `<did>`, `<next>`, `<seat>` and `<path>` in a packet's commands are the holder's to fill at run time. Give real `--scope-path`s, since scopes become ROUTES.md. A repeated flag (`--rule`, `--scope-path`) replaces the template's list. Each packet sends its holder to `<government-root>/community/README.md`: write that once by hand (what the community is for, where its docs live).
 
@@ -105,6 +105,6 @@ pij directory memory add '<role>' --title '<t>' --hook '<one line>' [--tags '<a,
 |---|---|
 | `E-RS-GOV-ABSENT` | Restore the standing governance worktree as its `details.next` says; never recreate the branch |
 | `E-RS-GOV-FOREIGN-EDIT` | Someone edited a path the writer needs: commit or remove that edit, then retry |
-| `E-RS-DIRECTORY-ROLE-MISSING` on assign | Add the role first (`pij directory add '<role>' --why '<the need>'`) |
+| `E-RS-DIRECTORY-ROLE-MISSING` on assign | Add the role first (`pij directory add '<role>' --type '<type>' --why '<the need>' ...`) |
 | A send to a role refuses with several holders | Name the instance: `'role:<id>/<instance>'` |
 | A prompt you don't need | Ignore it; prompts never create anything |

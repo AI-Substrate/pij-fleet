@@ -1,0 +1,131 @@
+{
+	"dd": {
+		"schema": "pij/workstream"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Workstream 006: seat types",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pm-001"
+			}
+		},
+		{
+			"name": "goal",
+			"value": "Every role names one of pij's ten seat types, and pij shows and uses it."
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s01",
+					"title": "Blueprint for seat types, starting a role and pods",
+					"state": "complete",
+					"delivers": [],
+					"builds": [],
+					"needs": ["role:docs-system"],
+					"done_when": "One blueprint realises every requirement of PRDs 006, 007, 008 and 010, and each later step in those workstreams names the component it builds.",
+					"note": "The blueprint is shared by workstreams 006, 007, 008 and 010. Ruled 2026-11-25: a seat has one label, its type; prime, project manager and PA carry today's authority and the other types carry none."
+				},
+				{
+					"id": "s02",
+					"title": "Type on the role, the ten definitions and their seed templates",
+					"state": "complete",
+					"delivers": [
+						"../prds/006-seat-types.dd.json#requirements/req-01",
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-03",
+						"../prds/006-seat-types.dd.json#requirements/req-06",
+						"../prds/006-seat-types.dd.json#requirements/req-08"
+					],
+					"builds": [
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-type-catalog",
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-type-schema",
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-seeds",
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-role-type",
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-directory-type",
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-role-templates"
+					],
+					"depends_on": ["#steps/s01"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "`pij directory add` refuses a role with no type, asks for what the type requires, and pij prints each type's definition and seed template.",
+					"plan": "docs/plans/236-seat-type-on-role",
+					"note": "req-02 and req-08 stay in progress after this step: their print and edit halves ship here, and a seat receiving its type's definition and seed at start waits on PRD 007 s02 (#345)."
+				},
+				{
+					"id": "s03",
+					"title": "pij shows and uses the type",
+					"state": "complete",
+					"delivers": [
+						"../prds/006-seat-types.dd.json#requirements/req-04",
+						"../prds/006-seat-types.dd.json#requirements/req-05"
+					],
+					"builds": [
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-seat-type",
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-mixed-types"
+					],
+					"depends_on": ["#steps/s02"],
+					"needs": ["role:coder", "role:reviewer", "role:security"],
+					"done_when": "`pij list` and `pij directory` show each seat's type, a seat holding two types is flagged, and every existing permission test passes.",
+					"plan": "docs/plans/237-seat-type-shown"
+				},
+				{
+					"id": "s04",
+					"title": "Give existing roles a type",
+					"state": "complete",
+					"delivers": ["../prds/006-seat-types.dd.json#requirements/req-07"],
+					"builds": [
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-retype",
+						"../blueprints/005-seat-types-and-pods.dd.json#components/c-role-templates"
+					],
+					"depends_on": ["#steps/s02"],
+					"needs": ["role:coder", "role:reviewer"],
+					"done_when": "One command types every role in a community written before the change and lists those it could not decide.",
+					"plan": "docs/plans/238-role-retype"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Owner moved from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s01 complete: blueprint 005. s02 to s04 name the components they build and their plans (236, 237, 238)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s02 complete (plan 236)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s03 complete (plan 237)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s04 complete (plan 238)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s02 notes that req-02 and req-08 wait on PRD 007 s02 (#345) (review of #344)."
+				}
+			]
+		}
+	]
+}

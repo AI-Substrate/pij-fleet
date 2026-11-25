@@ -404,6 +404,8 @@ impl DirectoryService {
                 u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
             });
         let cutoff = picture::idle_cutoff(now_ms);
+        // PRD 006 req-04: (seat, role, instance, type) per live typed holding.
+        let mut typed: Vec<picture::TypedHolding> = Vec::new();
         for (index, (id, document)) in ids.iter().zip(&documents).enumerate() {
             let retired = standings[index].retired();
             let meta = document["sections"]
@@ -502,6 +504,14 @@ impl DirectoryService {
                     .copied()
                     .filter(|row| row.to.is_none() && live_seats.contains(&row.seat))
                     .collect();
+                if let Some(kind) = meta["type"].as_str() {
+                    typed.extend(live_holders.iter().map(|row| picture::TypedHolding {
+                        seat: row.seat.clone(),
+                        role: id.clone(),
+                        instance: row.instance.clone(),
+                        kind: kind.to_string(),
+                    }));
+                }
                 // Read only when two-live-holders fires (plan 215, F90; F272:
                 // per-PR instances are not duplicates).
                 let open: HashMap<String, u64> = if holders_mode == "one"
@@ -601,6 +611,8 @@ impl DirectoryService {
                 "id": id,
                 "title": meta["title"],
                 "kind": meta["kind"],
+                "type": meta["type"],
+                "type_suggestion": meta["type_suggestion"],
                 "holders": meta["holders"],
                 "template": self.templates.drift(&meta),
                 "state": standings[index].state,
@@ -682,6 +694,7 @@ impl DirectoryService {
                 )
         });
         let prompts = shown;
+        actions.extend(picture::two_types(project, &typed));
         let mut view = serde_json::json!({
             "project": project, "prime": prime, "prime_document": prime_document,
             "roles": roles, "pending": pending,
@@ -775,6 +788,82 @@ impl DirectoryService {
             "behind": latest > from,
             "diff": diff,
         }))
+    }
+
+    /// `pij directory retype [--apply]` (PRD 006 req-07, plan 238): a type for
+    /// every active role written before types. Without `apply` it reads the
+    /// governance worktree in-process and writes nothing. With it, one commit
+    /// types every decided role (each with a changelog row), re-planned under
+    /// the writer's lock; the caller records the pointers, which refreshes
+    /// `pij list`'s types. Returns the plan and the commit, if any.
+    ///
+    /// # Errors
+    /// [`super::E_GOV_ABSENT`]; any writer refusal.
+    pub async fn retype(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        apply: Option<(&SeatId, &str)>,
+    ) -> Result<(Vec<super::types::Retype>, Option<Written>), Refusal> {
+        let root = super::root::find(&repo)?;
+        let plan = super::types::retype_plan(project, &read_roles(&root.worktree));
+        let decided = plan
+            .iter()
+            .any(|item| matches!(item, super::types::Retype::Decided { .. }));
+        let Some((actor, why)) = apply.filter(|_| decided) else {
+            return Ok((plan, None));
+        };
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: retype roles\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+        );
+        let (project_id, by, why) = (project.to_string(), actor.to_string(), why.to_string());
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let roles = read_roles(&root.worktree);
+                let plan = super::types::retype_plan(&project_id, &roles);
+                let mut files = Vec::new();
+                for item in &plan {
+                    let super::types::Retype::Decided { id, kind, source } = item else {
+                        continue;
+                    };
+                    let Some((_, document)) = roles.iter().find(|(role, _)| role == id) else {
+                        continue;
+                    };
+                    let typed = super::types::with_type(document.clone(), kind);
+                    let stamped = role::stamp(
+                        typed,
+                        id,
+                        &by,
+                        &format!("{why} (retype: {kind}, {source})"),
+                        &super::holders::today(),
+                    )?;
+                    files.push(NewFile {
+                        path: RolePaths::new(id)?.document,
+                        bytes: role::to_bytes(&stamped),
+                        document: true,
+                        existing: Existing::Replace,
+                    });
+                }
+                built.skipped = plan
+                    .iter()
+                    .filter_map(|item| match item {
+                        super::types::Retype::Undecided { id, .. } => Some(id.clone()),
+                        super::types::Retype::Decided { .. } => None,
+                    })
+                    .collect();
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        Ok((plan, Some(written)))
     }
 
     /// Rebuild this project's pointer and holder rows from the governance
@@ -1336,6 +1425,14 @@ impl DirectoryService {
                         &current,
                     ),
                 };
+                // A role written before types may stay untyped until retype;
+                // a typed one keeps a type and its rules (PRD 006 req-06).
+                super::types::check_role_for(
+                    &id,
+                    &edited,
+                    super::types::of_role(&current).is_some(),
+                    super::types::Verb::Edit,
+                )?;
                 if role::standing(&edited) != standing {
                     return Err(Refusal::new(
                         "E-RS-ARG",
@@ -2770,6 +2867,24 @@ fn refuse_retired(id: &str, standing: &role::Standing) -> Result<(), Refusal> {
 }
 
 /// The role's committed document.
+/// Every role document under the worktree's `community/roles/`, by id, sorted;
+/// an unreadable one is skipped. In-process reads, no launch.
+fn read_roles(worktree: &std::path::Path) -> Vec<(String, Value)> {
+    let dir = worktree.join(super::layout::COMMUNITY).join("roles");
+    let mut roles: Vec<(String, Value)> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let id = entry.file_name().into_string().ok()?;
+            let bytes = std::fs::read(entry.path().join("role.dd.json")).ok()?;
+            Some((id, serde_json::from_slice(&bytes).ok()?))
+        })
+        .collect();
+    roles.sort_by(|a, b| a.0.cmp(&b.0));
+    roles
+}
+
 fn read_role(root: &GovernanceRoot, id: &str) -> Result<Value, Refusal> {
     let paths = RolePaths::new(id)?;
     let missing = || {

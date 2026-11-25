@@ -287,7 +287,12 @@ async fn write(
         .directory
         .output_add(&project, repo, fields.clone(), &actor.id, holds_role)
         .await?;
-    let pointers = pointer::for_write(&project, &written.paths, &written.commit);
+    let pointers = pointer::for_write(
+        &project,
+        &written.paths,
+        &written.commit,
+        &written.root.worktree,
+    );
     store
         .record_community_pointers(&pointers)
         .await

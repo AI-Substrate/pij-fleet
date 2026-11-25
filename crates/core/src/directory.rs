@@ -15,6 +15,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("routes") => Some(ROUTES),
         Some("templates" | "template-diff") => Some(TEMPLATES),
         Some("memory") => Some(MEMORY),
+        Some("types" | "seed" | "retype") => Some(TYPES),
         _ => None,
     }
 }
@@ -60,6 +61,9 @@ Usage:
   pij directory edit <id> --why <text> (--set <field>=<value>... | role flags | --file <json>)
   pij directory retire <role> --why <text>             a role no longer in use
   pij directory merge <from> --into <to> --why <text>  fold one role into another
+  pij directory types [<type> [--seed]]                the ten seat types, one's definition, or its seed
+  pij directory seed <type> --file <path> --why <text> this repo's own seed for a type
+  pij directory retype [--apply --why <text>]         a type for every role written before types
   pij directory templates [--show <name>[@vN]]        the role templates, or one's body
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
@@ -94,11 +98,16 @@ Usage:
   pij directory add --batch <dir> --why <text>
 
 Required, unless --file or --from template supplies them: --why, --title,
---kind, --lifecycle, --holders, at least one --rule, and one of --packet or
---brief. The shortest add:
-  pij directory add qa --why \"a QA role\" --title QA --kind specialist \\
-    --lifecycle long-lived --holders one --rule \"A verdict on every PR.\" \\
+--type, --holders, at least one --rule, and one of --packet or --brief. A
+knowledge role also needs --keeps, a steward --sole-writer-of. The shortest add:
+  pij directory add qa --why \"a QA role\" --title QA --type reviewer \\
+    --holders one --rule \"A verdict on every PR.\" \\
     --packet \"Review each PR at its head.\"
+
+Every role names one of pij's ten seat types (pij directory types): prime, pa,
+project-manager, coder, reviewer, worker, knowledge, steward, watcher,
+human-window. --kind and --lifecycle are retired: given, they are ignored with
+a warning.
 
 Each add is its own commit: a chain of adds that stops part-way leaves the
 earlier roles committed. --batch <dir> is all or nothing.
@@ -111,8 +120,12 @@ Flags:
   --from file:<brief>       the same as --brief <brief>
   --project <slug>          default: the project whose repo holds this directory
   --title <text>
-  --kind specialist|general
-  --lifecycle long-lived|per-task
+  --type <type>             one of the ten seat types; required
+  --keeps <artefact>        knowledge: the graph or file it keeps current
+  --sole-writer-of <thing>  steward: what only it writes
+  --type-change <rule>=<why>   repeatable; change a default rule of the type,
+                            with the reason (a fixed rule refuses)
+  --type-suggestion <text>  the type you wished existed, when none fits
   --holders one|many
   --instance-key <text>
   --default-limit <duration>   like 45m or 1h30m
@@ -138,8 +151,11 @@ Usage:
   pij directory edit <id> --why <text> --set <field>=<value> [--set ...] [role flags]
   pij directory edit <id> --why <text> --file <role.dd.json>
 
---set takes title, kind, lifecycle, holders, instance_key, default_limit,
-summary, template, template_version, harness, model, effort, packet or brief.
+--set takes title, type, keeps, sole_writer_of, type_suggestion, holders,
+instance_key, default_limit, summary, template, template_version, harness,
+model, effort, packet or brief. A typed role is checked against its type on
+every edit: changing --type re-checks its --type-change rows and required
+fields.
 The role flags `add` takes work too. A list flag (--rule, --scope-path,
 --out-of-scope, --forbidden, --input, --output-kind) REPLACES THE WHOLE LIST
 with the items given. To change one item, use --add-<list> <item> or
@@ -150,6 +166,32 @@ refuses. Every edit prints each list it changed, before and after, and each
 item it removed. --file replaces the whole document but keeps its changelog.
 Every edit adds one changelog row (--why) and commits through the writer; an
 edit that changes nothing, or a role that does not exist, refuses.";
+
+const TYPES: &str = "\
+pij directory types | seed: pij's ten seat types (PRD 006).
+
+Usage:
+  pij directory types                          the ten, one line each
+  pij directory types <type>                   its purpose, lifecycle, what it keeps,
+                                               required fields and rules (fixed or default)
+  pij directory types <type> --seed            the seed a seat of that type is told,
+                                               and where it came from
+  pij directory seed <type> --file <path> --why <text>   write this repo's own seed
+  pij directory retype                         the type each untyped role would get, and
+                                               those it cannot decide, with the edit for each
+  pij directory retype --apply --why <text>    write the decided types in one commit
+
+A type says how a seat lives; a role says what it is responsible for. Types are
+pij's fixed set; a repo builds any role it needs on one. Only prime, pa and
+project-manager carry authority of their own. A seed is read from the
+governance copy (community/seeds/<type>.md) when there is one, else the one
+pij ships. Nothing here launches a seat.
+
+retype proposes a role's type from its template first, then its id (prime,
+pa, pm or pm-<n>, and coder, reviewer, security or qa alone or before a -). It never guesses past
+that: every other role, and one whose proposed type needs a field it lacks
+(knowledge: --keeps), is listed with the edit that types it. Typed and retired
+roles are left alone, so a second run finds nothing to do.";
 
 const RESHAPE: &str = "\
 pij directory retire | merge: reshape the community as the work changes (plan 206).
@@ -323,9 +365,12 @@ mod tests {
     fn add_help_names_the_required_flags() {
         let add = help(Some("add")).unwrap();
         assert!(
-            add.contains("at least one --rule, and one of --packet or\n--brief"),
+            add.contains("--type, --holders, at least one --rule, and one of --packet or --brief"),
             "{add}"
         );
+        assert!(add.contains("--type <type>"), "{add}");
+        assert!(help(Some("types")).unwrap().contains("--seed"));
+        assert_eq!(help(Some("types")), help(Some("seed")));
         assert!(add.contains("The shortest add:"), "{add}");
     }
 

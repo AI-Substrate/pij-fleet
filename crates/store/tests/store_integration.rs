@@ -1594,6 +1594,7 @@ async fn community_pointers_upsert_by_path_and_a_rebuild_restores_them_row_for_r
         project: project.into(),
         path: path.into(),
         commit: commit.into(),
+        role_type: None,
     };
     let pm = ".harness/government/community/roles/pm/role.dd.json";
     let qa = ".harness/government/community/roles/qa/role.dd.json";
@@ -1628,6 +1629,66 @@ async fn community_pointers_upsert_by_path_and_a_rebuild_restores_them_row_for_r
     assert_eq!(
         store.community_pointers("other").await.unwrap(),
         vec![pointer("other", pm, "o1")]
+    );
+}
+
+/// PRD 006 (plan 237, migration 0052): a role document's type rides its
+/// pointer, a write replaces it, and a seat's open holdings read their types
+/// in one query: closed holdings and untyped roles give none.
+#[tokio::test]
+async fn open_holdings_read_their_role_types_from_the_pointers() {
+    let fresh = FreshStore::new();
+    let pool = pij_store::open(&fresh.path()).await.expect("open");
+    let store = pij_store::SqliteOrchestration::new(pool);
+    let (prefix, suffix) = (".harness/government/community/roles/", "/role.dd.json");
+    let pointer = |role: &str, kind: Option<&str>| pij_store::CommunityPointer {
+        project: "pij".into(),
+        path: format!("{prefix}{role}{suffix}"),
+        commit: "c1".into(),
+        role_type: kind.map(str::to_string),
+    };
+    store
+        .record_community_pointers(&[
+            pointer("pm-001", Some("reviewer")),
+            pointer("qa", Some("reviewer")),
+            pointer("old", None),
+        ])
+        .await
+        .unwrap();
+    store
+        .record_community_pointers(&[pointer("pm-001", Some("project-manager"))])
+        .await
+        .unwrap();
+    let holding = |role: &str, seat: &str, to: Option<&str>| pij_store::Assignment {
+        project: "pij".into(),
+        role: role.into(),
+        instance: String::new(),
+        seat: seat.into(),
+        harness: None,
+        session: None,
+        machine: None,
+        from: "2026-11-25T00:00:00Z".into(),
+        to: to.map(str::to_string),
+        assigned_by: "pij-prime".into(),
+        released_by: to.map(|_| "pij-prime".to_string()),
+        why: "test".into(),
+        release_why: None,
+        end_pending: false,
+    };
+    for row in [
+        holding("pm-001", "pij-a", None),
+        holding("qa", "pij-a", None),
+        holding("qa", "pij-b", Some("2026-11-25T01:00:00Z")),
+        holding("old", "pij-c", None),
+    ] {
+        assert!(store.record_history(&row).await.unwrap());
+    }
+    assert_eq!(
+        store.open_holding_types(prefix, suffix).await.unwrap(),
+        vec![
+            ("pij-a".to_string(), "project-manager".to_string()),
+            ("pij-a".to_string(), "reviewer".to_string()),
+        ]
     );
 }
 

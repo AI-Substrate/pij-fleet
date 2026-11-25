@@ -23,6 +23,9 @@ pub struct CommunityPointer {
     pub path: String,
     /// The commit that last wrote it.
     pub commit: String,
+    /// A role document's `meta.type` (PRD 006, migration 0052); `None` for
+    /// any other document or an untyped role.
+    pub role_type: Option<String>,
 }
 
 impl SqliteOrchestration {
@@ -71,7 +74,7 @@ impl SqliteOrchestration {
     pub async fn community_pointers(&self, project: &str) -> Result<Vec<CommunityPointer>> {
         require_current_schema(&self.pool).await?;
         let rows = sqlx::query(
-            "SELECT project, path, commit_sha FROM community_pointers \
+            "SELECT project, path, commit_sha, role_type FROM community_pointers \
              WHERE project = ?1 ORDER BY path",
         )
         .bind(project)
@@ -84,7 +87,41 @@ impl SqliteOrchestration {
                     project: row.try_get("project").map_err(adapter_error)?,
                     path: row.try_get("path").map_err(adapter_error)?,
                     commit: row.try_get("commit_sha").map_err(adapter_error)?,
+                    role_type: row.try_get("role_type").map_err(adapter_error)?,
                 })
+            })
+            .collect()
+    }
+
+    /// Each seat's open holdings joined to their role documents' types
+    /// (PRD 006, plan 237): `(seat, type)` per open holding whose role
+    /// document carries one. A role document's pointer path is
+    /// `<prefix><role><suffix>`. One indexed read; the caller groups by seat.
+    pub async fn open_holding_types(
+        &self,
+        prefix: &str,
+        suffix: &str,
+    ) -> Result<Vec<(String, String)>> {
+        require_current_schema(&self.pool).await?;
+        let rows = sqlx::query(
+            "SELECT a.seat AS seat, p.role_type AS role_type \
+             FROM community_assignments AS a INDEXED BY community_assignments_open_by_seat \
+             JOIN community_pointers AS p \
+               ON p.project = a.project AND p.path = ?1 || a.role || ?2 \
+             WHERE a.to_at IS NULL AND p.role_type IS NOT NULL \
+             ORDER BY a.seat, p.role_type",
+        )
+        .bind(prefix)
+        .bind(suffix)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(adapter_error)?;
+        rows.into_iter()
+            .map(|row| {
+                Ok((
+                    row.try_get("seat").map_err(adapter_error)?,
+                    row.try_get("role_type").map_err(adapter_error)?,
+                ))
             })
             .collect()
     }
@@ -95,12 +132,14 @@ async fn upsert(
     pointer: &CommunityPointer,
 ) -> Result<()> {
     sqlx::query(
-        "INSERT INTO community_pointers (project, path, commit_sha) VALUES (?1, ?2, ?3) \
-         ON CONFLICT (project, path) DO UPDATE SET commit_sha = excluded.commit_sha",
+        "INSERT INTO community_pointers (project, path, commit_sha, role_type) VALUES (?1, ?2, ?3, ?4) \
+         ON CONFLICT (project, path) DO UPDATE SET commit_sha = excluded.commit_sha, \
+         role_type = excluded.role_type",
     )
     .bind(&pointer.project)
     .bind(&pointer.path)
     .bind(&pointer.commit)
+    .bind(&pointer.role_type)
     .execute(&mut **tx)
     .await
     .map_err(adapter_error)?;

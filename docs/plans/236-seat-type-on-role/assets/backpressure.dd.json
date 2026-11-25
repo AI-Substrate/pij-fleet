@@ -1,0 +1,74 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 236 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1,AC2,AC6,AC8",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "crates/daemon/tests/directory_http.rs: add with no type refuses listing ten; knowledge without --keeps and steward without --sole-writer-of refuse naming the flag; template table supplies a type; --kind ignored with warning; an untyped legacy document reads.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon --test directory_http type"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Unit tests in community/types.rs: ten definitions parse and validate; list, show and seed source (shipped vs governance).",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon --lib types"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4,AC5",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "directory_http: a fixed rule change refuses, a default one records with why, edit --type re-checks; type_suggestion appears in the view JSON.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon --test directory_http type"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC7",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "directory_http: seed edit commits with its reason and types --seed then names the governance copy.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon --test directory_http seed"
+        },
+        {
+          "id": "bp-0005",
+          "criterion": "AC9",
+          "phase": "ph-0001",
+          "mode": "ABSENT",
+          "tier": "human-judgement",
+          "proof": "Reviewer reads the schema, help and skill text; ddocs validates every shipped definition.",
+          "state": "checked",
+          "probe": "ddocs validate templates/types/*/v1/type.dd.json"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

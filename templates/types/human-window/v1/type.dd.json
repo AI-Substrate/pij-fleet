@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/type"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "human-window",
+				"title": "Human window",
+				"authority": "none",
+				"line": "One person's seat into the fleet."
+			}
+		},
+		{
+			"name": "purpose",
+			"value": "One person's seat into the fleet: it carries that person's asks to the right seats and their answers back."
+		},
+		{
+			"name": "lifecycle",
+			"value": "Kept while its person uses it. Closed only with the person's say."
+		},
+		{
+			"name": "keeps",
+			"value": "What its person asked and decided, in memory notes."
+		},
+		{
+			"name": "rules",
+			"value": [
+				{
+					"id": "one-person",
+					"text": "Serves one person, and acts for nobody else.",
+					"mode": "fixed"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"why": "First version (PRD 006)."
+				}
+			]
+		}
+	],
+	"references": []
+}

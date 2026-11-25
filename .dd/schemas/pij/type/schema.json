@@ -1,0 +1,146 @@
+{
+  "dd_schema": 1,
+  "description": "A pij seat type: how a seat lives. pij ships one per type (prime, pa, project-manager, coder, reviewer, worker, knowledge, steward, watcher, human-window); a role names one. Each rule is fixed (no role may change it) or a default a role may change with a reason (PRD 006).",
+  "enums": {
+    "type_id": {
+      "values": [
+        "prime",
+        "pa",
+        "project-manager",
+        "coder",
+        "reviewer",
+        "worker",
+        "knowledge",
+        "steward",
+        "watcher",
+        "human-window"
+      ]
+    },
+    "rule_mode": {
+      "values": [
+        "fixed",
+        "default"
+      ]
+    },
+    "required_field": {
+      "values": [
+        "keeps",
+        "sole_writer_of"
+      ]
+    },
+    "authority": {
+      "values": [
+        "carries",
+        "none"
+      ]
+    }
+  },
+  "sections": {
+    "meta": {
+      "required": true,
+      "shape": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "authority",
+          "line"
+        ],
+        "fields": {
+          "id": {
+            "type": "enum",
+            "enum": "type_id"
+          },
+          "title": {
+            "type": "string"
+          },
+          "authority": {
+            "type": "enum",
+            "enum": "authority"
+          },
+          "line": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "purpose": {
+      "required": true,
+      "shape": {
+        "type": "text"
+      }
+    },
+    "lifecycle": {
+      "required": true,
+      "shape": {
+        "type": "text"
+      }
+    },
+    "keeps": {
+      "required": true,
+      "shape": {
+        "type": "text"
+      }
+    },
+    "requires": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "enum",
+          "enum": "required_field"
+        }
+      }
+    },
+    "rules": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "text",
+            "mode"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "text"
+            },
+            "mode": {
+              "type": "enum",
+              "enum": "rule_mode"
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "required": true,
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "date",
+            "by",
+            "why"
+          ],
+          "fields": {
+            "date": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "why": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  }
+}

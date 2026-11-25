@@ -1,0 +1,210 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 006: seat types",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pm-001",
+				"summary": "Every community role names one of ten types that says how its seat lives: what it is for, when it is compacted or closed, and what it must keep written down. Types are pij's fixed set; roles stay the open set each repo builds on top of them."
+			}
+		},
+		{
+			"name": "why",
+			"value": "A pij community is meant to be a team of experts that learns a problem space nobody could map in advance, not only a way to run coders in parallel. Today pij cannot tell those seats apart. The daemon acts on four seat roles (`prime`, `pm`, `worker`, `pa`), and assigning any other community role stamps the seat `worker`, so a topic expert, a graph keeper and a coder look the same. A role's `kind` (`specialist` or `general`) carries no rules, and nearly every role is `specialist`. On 2026-11-24 the primes of five fleets were asked how they use their seats. All five asked for a named knowledge type, and they sorted their seats into the same few kinds without having words for them. The operator's rulings from that conversation: a coder or reviewer is compacted after every job because its size matters more than what it remembers; a knowledge seat is the expert, not the database, and is responsible for writing what it learns into graphs or markdown that can be read without it."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-operator",
+					"name": "operator",
+					"need": "Know what kind of seat each one is and trust that it is treated accordingly."
+				},
+				{
+					"id": "a-prime",
+					"name": "prime",
+					"need": "Create a role by saying how it should live, without writing its lifecycle rules by hand each time."
+				},
+				{
+					"id": "a-holder",
+					"name": "role holder",
+					"need": "Be told, at the start, what kind of seat it is and what that requires of it."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "pij can tell a coder from an expert from a human's window, for every seat that holds a role."
+				},
+				{
+					"id": "g-2",
+					"goal": "A repo builds any role it needs on a type, and never needs to change pij to do it."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "Having the daemon enforce a type's rules, such as compacting a coder itself. This PRD states the rules and tells the seat; enforcement is later work."
+				},
+				{
+					"id": "n-2",
+					"text": "Changing the large-seat alert, the idle nudge or which fleet messages may wake a seat."
+				},
+				{
+					"id": "n-3",
+					"text": "Changing what a prime, a project manager or a PA is allowed to do, or any other permission rule (PRD 003). The `--role pm|worker|pa` flag on spawn and link keeps working; `worker` simply means no authority of its own."
+				},
+				{
+					"id": "n-4",
+					"text": "Letting a repo define its own type."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "Every role has one type",
+					"statement": "A role names exactly one type from pij's set: `prime`, `pa`, `project-manager`, `coder`, `reviewer`, `worker`, `knowledge`, `steward`, `watcher` or `human-window`. `pij directory add` and `edit` take `--type`, and `add` refuses a role with no type, listing the ten with one line each.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`pij directory add x --why y` with no type or template refuses and prints the ten types; the same call with `--type knowledge` writes a role whose document shows that type.",
+					"source": "operator rulings, design conversation 2026-11-24 and 2026-11-25"
+				},
+				{
+					"id": "req-02",
+					"title": "Each type says what it means",
+					"statement": "pij ships one short definition per type: what the seat is for, when it is compacted or closed, and what it must keep. A coder builds one step and is compacted after every job. A reviewer judges one piece of work at its exact version, independently of its author, and is compacted after every job unless its role keeps standing context, as security may. A worker does one other piece of work and is closed. A knowledge seat is the expert who owns one area and keeps what it learns written down. A steward is the only writer of one shared thing. A project manager runs a workstream and holds its history. A watcher reacts to events and rebuilds from current state. A human-window is one person's seat into the fleet. Prime and PA keep the duties they have today.",
+					"actor": "role holder",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "For each of the ten types, pij prints its definition on request, and a seat started in a role of that type receives it.",
+					"source": "operator rulings 2026-11-25; interviews with five primes 2026-11-24"
+				},
+				{
+					"id": "req-03",
+					"title": "A type asks for what it needs",
+					"statement": "Creating a role asks for what its type requires. A knowledge role names the artefact it keeps current (a graph or a file path). A steward role names the one thing it is sole writer of. `add` refuses when the required field is missing and names it.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "`pij directory add x --type knowledge --why y` with no artefact refuses and names the missing field; with one, the role document records it.",
+					"source": "operator ruling 2026-11-25: knowledge seats project what they know into static forms"
+				},
+				{
+					"id": "req-04",
+					"title": "A seat holds roles of one type",
+					"statement": "The prime's view marks a seat that holds roles of two different types and proposes the split, since their rules conflict (a coder is compacted after each job; an expert is kept).",
+					"actor": "prime",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "With one seat assigned a coder role and a knowledge role, `pij directory` lists it as an action naming both roles.",
+					"source": "PRD 001 req-29 boundary review; operator, 2026-11-25"
+				},
+				{
+					"id": "req-05",
+					"title": "One label per seat, and three types carry authority",
+					"statement": "A seat has one label, its type, shown by `pij directory` and `pij list`. Only three types carry authority of their own: prime, project manager and PA keep exactly the powers those seats have today. The other seven carry none, which is what `worker` means today, so there is no separate worker label to keep in step. Who may govern a particular seat still comes from its recorded parent and the prime designation.",
+					"actor": "operator",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A seat assigned a knowledge role and a seat assigned a coder role show different types in `pij list --json` and neither has any power a plain worker lacks; a prime, a project manager and a PA can do everything they could before; and every existing permission test still passes.",
+					"source": "operator ruling 2026-11-25: just prime, pm and pa, simplify; code reading: every other role is stamped worker at assignment"
+				},
+				{
+					"id": "req-06",
+					"title": "Roles extend types; types are fixed",
+					"statement": "A role inherits its type's rules and may add its own. A type marks each of its rules as fixed or as a default a role may change with a reason: a coder is always compacted after every job, while a reviewer role may keep standing context instead. A repo cannot add a type. When no type fits, the creator picks the nearest, puts the difference in the role's rules and records a type suggestion that the pij project can read.",
+					"actor": "prime",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "A coder role edited to remove the compact-after-each-job rule is refused; a reviewer role created to keep standing context is accepted and its document records the reason; a recorded type suggestion appears in the view.",
+					"source": "operator, 2026-11-25: dynamic roles come off one of our base types; security is a reviewer whose compaction is optional"
+				},
+				{
+					"id": "req-07",
+					"title": "Existing roles get a type",
+					"statement": "One command gives every existing role a type, proposing one from the role's template and id and leaving the rest for the prime to choose. `kind` and `lifecycle` are retired, and a role document written before the change still reads.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "Run on a community of roles written before this change, the command leaves no role without a type, lists each one it could not decide, and `pij directory` reads the result.",
+					"source": "role documents in five projects use kind and lifecycle today"
+				},
+				{
+					"id": "req-08",
+					"title": "Every type ships a seed template a repo can change",
+					"statement": "pij ships a seed template for each of the ten types: the text a seat of that type is told at start. The prime and project-manager seeds carry firm guidance on how to govern. The coder, reviewer, security and other seeds are working examples that a repo is encouraged to replace or extend for its own work. A repo edits its own copy of any of them, and a prime may change its own.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "pij prints a seed for each of the ten types; a repo's edited copy of the coder seed is what a new coder there receives; and a prime's edit to the prime seed is accepted and recorded with its reason.",
+					"source": "operator, 2026-11-25: seed templates for all of these; primes are encouraged to change them and can change their own"
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "Who may create roles, and of which types?",
+					"default": "Coder, reviewer and worker inside its own workstream; the prime creates the others.",
+					"status": "answered",
+					"answer": "Anyone. Any seat may create a role of any type and start a seat in it; it informs the prime (operator ruling 2026-11-25: we are not the police). See PRD 007 req-07."
+				},
+				{
+					"id": "q-02",
+					"question": "Is security a reviewer or a knowledge role, given that it carries open findings between reviews?",
+					"default": "A reviewer, with its findings kept in its outputs and role memory.",
+					"status": "answered",
+					"answer": "A reviewer. Compaction is optional for it, because it may need standing context (operator ruling 2026-11-25). See req-02 and req-06."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Owner moved from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s02 (plan 236): req-01, req-03 and req-06 shipped; req-02 and req-08 in progress (their print and edit halves ship here; a seat receiving its type's definition and seed is PRD 007 s02's first turn)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s03 (plan 237): req-04 and req-05 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s04 (plan 238): req-07 shipped."
+				}
+			]
+		}
+	],
+	"references": []
+}

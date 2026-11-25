@@ -1,0 +1,103 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "pij shows and uses the type (workstream 006 s03)",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "Migration 0052 and the stamp at assign, edit and rebuild",
+          "phase": "ph-0001",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001",
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "type and types in list and directory JSON and the human list",
+          "phase": "ph-0001",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "Two-type action",
+          "phase": "ph-0001",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "Permission tests unchanged",
+          "phase": "ph-0001",
+          "state": "checked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "#done_when/tk-0004"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "Migration 0052 and the stamp at assign, edit and rebuild",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "type and types in list and directory JSON and the human list",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "Two-type action",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "Permission tests unchanged",
+            "state": "checked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,239 @@
+{
+	"dd": {
+		"schema": "pij/blueprint"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "Blueprint 005: seat types, starting a role, pods and pod templates",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pm-001",
+				"summary": "How PRDs 006, 007, 008 and 010 are built: a shipped catalog of ten seat types with seed templates, the type on every role and seat, spawn with a role and an assembled first turn, close that stops, pods defined by folders in governance, and pod templates shared from pij and owned per repo."
+			}
+		},
+		{
+			"name": "overview",
+			"value": "Everything is built in the daemon's community module and its HTTP and CLI verbs, on the machinery role templates already use: versioned shipped originals compiled into the daemon, a governance copy a repo owns, and the single writer that commits every governance change with its reason. PRD 006 adds the type catalog and seeds, the type on the role document and the holding, and the retype migration. PRD 007 builds on it: launch settings, the assembled first turn, spawn with a role and close with --stop. PRD 008 defines pods as governance folders driven by the same spawn and close paths, once per member. PRD 010 ships pod templates and the adopt, diff, init and export verbs. Nothing adds a loop, poll or timer, no permission rule changes, and no existing JSON field is removed. This PR (PRD 006) carries the components PRD 006 builds. The rest of the design, designed with them in workstream 006 s01, lands with its PRD so that every component is built by a step the moment it appears: PRD 007 adds launch settings and parameters on a role, the assembled first turn, spawn with a role, seats with no role in the view, suggest and close with --stop; PRD 008 the pod definition and the pod verbs; PRD 010 the shipped pod templates with adopt, diff, init and export; and the concepts page is PRD 009's."
+		},
+		{
+			"name": "components",
+			"value": [
+				{
+					"id": "c-type-catalog",
+					"name": "The ten type definitions",
+					"kind": "template",
+					"where": "templates/types/<type>/v<N>/type.dd.json, compiled into the daemon like the role templates (crates/daemon/src/community/types.rs)",
+					"responsibility": "One `pij/type` document per type (prime, pa, project-manager, coder, reviewer, worker, knowledge, steward, watcher, human-window): what the seat is for, when it is compacted or closed, what it must keep, whether it carries authority, the fields a role of that type must give, and its rules, each with an id and marked `fixed` or `default`. Versioned and immutable once shipped, like role templates. A Rust catalog loads them and answers `get`, `list` and the rule check. The read is pure (compiled-in bytes, no store, HTTP or governance read) and its signature is stable: `types::all()`, `types::get(id)`, `types::listing()` and `TypeDef::show()`; `pij directory types` and PRD 009's `pij-rs docs` both render from it.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-05",
+						"../prds/006-seat-types.dd.json#requirements/req-06"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-type-schema",
+					"name": "Type schema",
+					"kind": "schema",
+					"where": ".dd/schemas/pij/type (copied to the governance branch with the other pij schemas)",
+					"responsibility": "The `pij/type` ddoc: meta (id, title, authority, version), purpose, lifecycle (compaction and close), keeps, requires (the role fields the type demands), rules (id, text, mode fixed or default). ddocs validates every shipped definition and any repo copy.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-06"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-seeds",
+					"name": "Seed templates",
+					"kind": "template",
+					"where": "templates/types/<type>/v<N>/seed.md; a repo copy at community/seeds/<type>.md on the governance branch",
+					"responsibility": "The text a seat of each type is told at start. The prime and project-manager seeds carry firm governance guidance; the rest are working examples a repo is told to replace. pij reads the governance copy when there is one and the shipped one otherwise, and says which it used. A repo edit goes through `pij directory seed <type> --edit <file> --why <text>`, the single writer, so it is committed with its reason.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-08"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-role-type",
+					"name": "Type on the role document",
+					"kind": "schema",
+					"where": ".dd/schemas/pij/role (meta.type, meta.keeps, meta.sole_writer_of, type_changes, type_suggestion); crates/daemon/src/community/role.rs",
+					"responsibility": "The role schema gains `meta.type` (one of the ten), `meta.keeps` (knowledge: the artefact it keeps current), `meta.sole_writer_of` (steward), `type_changes` (a default rule of the type the role changes, each with its reason) and `type_suggestion` (the type the creator wished existed). `kind` and `lifecycle` become optional and are no longer written; a document written before still validates and reads.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-01",
+						"../prds/006-seat-types.dd.json#requirements/req-03",
+						"../prds/006-seat-types.dd.json#requirements/req-06",
+						"../prds/006-seat-types.dd.json#requirements/req-07"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-directory-type",
+					"name": "`pij directory add/edit --type` and `pij directory types`",
+					"kind": "verb",
+					"where": "crates/daemon/src/http/directory.rs, crates/daemon/src/community/directory.rs, crates/cli/src/main.rs",
+					"responsibility": "`add` takes `--type`, `--keeps`, `--sole-writer-of`, `--type-change <rule>=<text>` with `--why`, and `--type-suggestion`; it refuses with no type (or a template that supplies one), listing the ten with one line each, and refuses a missing type-required field by name. `edit --type` changes it under the same checks, and refuses a change to a fixed rule. `--from template:<name>` takes the template's type. `pij directory types [<type>] [--seed]` prints the definitions and the seed pij would use, naming its source.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-01",
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-03",
+						"../prds/006-seat-types.dd.json#requirements/req-06",
+						"../prds/006-seat-types.dd.json#requirements/req-08"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-seat-type",
+					"name": "A seat's type in the list and the view",
+					"kind": "endpoint",
+					"where": "crates/daemon/src/http/mod.rs (/v1/seats), crates/daemon/src/community/pointer.rs, crates/store (community_pointers.role_type, migration 0052), crates/cli/src/roster.rs and .omp/extensions/pij/core/roster-table.ts",
+					"responsibility": "Each seat in `pij list --json` gains `type` (the one type of the roles it holds, else from its seat role: a prime seat is `prime`, a `pm` seat `project-manager`, a `pa` seat `pa`; `null` otherwise or for two types) and `types` (every type it holds), and the human list a TYPE column. No existing field is removed or renamed. A role document's type rides its pointer, so a list reads no governance file.",
+					"realises": ["../prds/006-seat-types.dd.json#requirements/req-05"],
+					"state": "planned"
+				},
+				{
+					"id": "c-mixed-types",
+					"name": "Two types on one seat",
+					"kind": "module",
+					"where": "crates/daemon/src/community/picture.rs",
+					"responsibility": "A new view signal: a seat whose open holdings carry two different types is listed as an action naming both roles, with the release line that splits them.",
+					"realises": ["../prds/006-seat-types.dd.json#requirements/req-04"],
+					"state": "planned"
+				},
+				{
+					"id": "c-retype",
+					"name": "`pij directory retype`",
+					"kind": "verb",
+					"where": "crates/daemon/src/community/types.rs (proposal), crates/daemon/src/http/directory.rs, crates/cli/src/main.rs",
+					"responsibility": "One command that gives every role in a community a type: it proposes one from the role's template (each shipped role template maps to a type) and then its id, writes those it is sure of in one governance commit with `--apply`, and lists each role it could not decide with the `edit --type` line to run. Without `--apply` it changes nothing.",
+					"realises": ["../prds/006-seat-types.dd.json#requirements/req-07"],
+					"state": "planned"
+				},
+				{
+					"id": "c-role-templates",
+					"name": "Shipped role templates map to a type",
+					"kind": "template",
+					"where": "crates/daemon/src/community/types.rs (TEMPLATE_TYPES)",
+					"responsibility": "A table maps each shipped role template whose type is clear to one type (coder, reviewer, security and qa to reviewer, pm to project-manager, prime, pa, topic-expert to knowledge, note-taker and transcriber to worker). `add --from template:<name>` takes that type; a template with none needs `--type`. retype proposes from the same table.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-01",
+						"../prds/006-seat-types.dd.json#requirements/req-07"
+					],
+					"state": "planned"
+				}
+			]
+		},
+		{
+			"name": "decisions",
+			"value": [
+				{
+					"id": "d-1",
+					"decision": "The type is recorded on the role, and a seat's type is derived from the roles it holds; authority still comes from today's seat role (`prime` designation, `pm`, `pa`, `worker`) and is not recomputed from the type.",
+					"why": "Ruling of 2026-11-25: one label per seat and no permission change (PRD 003 out of scope). Deriving authority from the type would let a role typed project-manager grant pm powers to a seat that has none today. `type` is added to every JSON output; no existing field is removed or renamed, since the extensions, the statusline and other projects read them. A redundant field is proposed for later cleanup, not dropped.",
+					"realises": ["../prds/006-seat-types.dd.json#requirements/req-05"]
+				},
+				{
+					"id": "d-2",
+					"decision": "Types are pij's fixed set in a versioned catalog shipped with the daemon; a repo copies and edits seeds, not types.",
+					"why": "A repo cannot add a type (non-goal n-4). Shipping definitions as immutable versions mirrors role templates, so PRD 010 can copy and diff them with the same machinery.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-06",
+						"../prds/006-seat-types.dd.json#requirements/req-08"
+					]
+				},
+				{
+					"id": "d-3",
+					"decision": "A fixed rule is checked when a role document is written (add, edit, retype), not enforced on a running seat.",
+					"why": "Daemon enforcement of a type's rules is out of scope (n-1). Refusing a role document that removes a fixed rule is validation of the record, the same kind of check ddocs does.",
+					"realises": ["../prds/006-seat-types.dd.json#requirements/req-06"]
+				},
+				{
+					"id": "d-4",
+					"decision": "A role document's type is cached on its pointer row (`community_pointers.role_type`), so `pij list` reads no governance file.",
+					"why": "`/v1/seats` serves every project and has no governance worktree to read; a file read per role per list would grow with seats. The pointer is already written after every directory commit and rebuilt from the branch head, so those are the cache's refresh points; only a hand edit of the branch can leave it stale, until the next rebuild. One row per role, so an assign writes nothing new.",
+					"realises": ["../prds/006-seat-types.dd.json#requirements/req-05"]
+				},
+				{
+					"id": "d-5",
+					"decision": "`kind` and `lifecycle` are retired, not deleted: optional in the schema, never written again, still read.",
+					"why": "Role documents in five projects carry them; req-07 needs those to keep reading. retype proposes a type from the template first, then the id.",
+					"realises": ["../prds/006-seat-types.dd.json#requirements/req-07"]
+				},
+				{
+					"id": "d-6",
+					"decision": "One blueprint serves PRDs 006, 007, 008 and 010; each PRD's components join it in the PR that brings that PRD to main.",
+					"why": "The PRDs land one PR at a time. ddocs refuses a link to a document not on the branch yet, and the coverage check refuses a component no workstream step builds, so a component appears with its PRD and the step that builds it.",
+					"realises": []
+				},
+				{
+					"id": "d-7",
+					"decision": "Role templates name their type through a table in the type catalog, not through new template versions.",
+					"why": "A new version of every template would mark every existing role made from one as behind its template, and its diff would show only the type line. The table is read by add and retype alike; a template's next real version may carry `meta.type` itself, which then wins.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-01",
+						"../prds/006-seat-types.dd.json#requirements/req-07"
+					]
+				}
+			]
+		},
+		{
+			"name": "costs",
+			"value": [
+				{
+					"id": "k-1",
+					"what": "`pij directory add/edit/types/retype` and seed edits.",
+					"rate": "on demand only: in-process file reads and the single writer's governance commit (the same git and ddocs launches an add makes today); `types` launches nothing",
+					"scaling": "with the commands a seat runs; none per seat or per tick",
+					"component": [
+						"#components/c-directory-type",
+						"#components/c-retype",
+						"#components/c-seeds"
+					]
+				},
+				{
+					"id": "k-2",
+					"what": "A seat's type in `pij list` and `pij directory`.",
+					"rate": "0 launches: one indexed store query per `/v1/seats` call (open holdings joined to pointers), so it also rides the calls that poll the roster (federation fan-in, about once a second per peer, and the extension roster); never per seat. Each directory write reads the role documents it committed once, in-process",
+					"scaling": "with the rows listed; no loop, poll or timer",
+					"component": ["#components/c-seat-type", "#components/c-mixed-types"]
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "First draft (workstream 006 s01): every component of PRDs 006, 007, 008 and 010; links for 006 now, the others with their PRDs."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "c-type-catalog's read is pure and stable for PRD 009; the concepts page is PRD 009's (#348)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "d-4 and c-seat-type: the type rides the role document's pointer (migration 0052), not each holding."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "The components of PRDs 007, 008 and 010 move to the PRs that bring those PRDs (d-6), since coverage needs a building step for each."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "k-2 names the roster polls the list query rides (review of #344, N2)."
+				}
+			]
+		}
+	],
+	"references": []
+}

@@ -355,6 +355,8 @@ async fn add_writes_commits_and_points_at_a_role_then_refuses_it_twice() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "security",
             "--title",
             "Security",
@@ -405,6 +407,8 @@ async fn add_writes_commits_and_points_at_a_role_then_refuses_it_twice() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "security",
             "--rule",
             "x",
@@ -570,7 +574,10 @@ async fn help_is_answered_not_refused() {
     for (argv, needle) in [
         (vec!["directory", "--help"], "pij directory <verb> --help"),
         (vec!["directory", "add", "--help"], "--batch <dir>"),
-        (vec!["directory", "add", "qa", "-h"], "--why <text>"),
+        (
+            vec!["directory", "add", "qa", "--type", "worker", "-h"],
+            "--why <text>",
+        ),
     ] {
         let answer = call(addr, "/v1/directory", &argv, &cwd).await;
         assert_eq!(answer["ok"], true, "{argv:?}: {answer}");
@@ -610,6 +617,8 @@ async fn with_roles_and_prime(addr: SocketAddr, repo: &Repo, extra: &[&str]) {
             &[
                 "directory",
                 "add",
+                "--type",
+                "worker",
                 id,
                 "--title",
                 id,
@@ -1046,6 +1055,8 @@ async fn close_ends_holdings_and_a_refused_end_stays_pending_until_the_next_writ
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "qa",
             "--rule",
             "r",
@@ -1106,6 +1117,8 @@ async fn the_view_is_per_project_and_a_rebuild_gives_byte_identical_json() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "security",
             "--rule",
             "r",
@@ -1246,6 +1259,8 @@ async fn add_adopts_a_hand_written_role_folder_and_writes_only_the_document() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "coder",
             "--rule",
             "r",
@@ -1288,6 +1303,8 @@ async fn add_adopts_a_hand_written_role_folder_and_writes_only_the_document() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "coder",
             "--rule",
             "r",
@@ -1322,6 +1339,8 @@ async fn add_adopts_a_hand_written_role_folder_and_writes_only_the_document() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "pa",
             "--rule",
             "r",
@@ -1336,7 +1355,7 @@ async fn add_adopts_a_hand_written_role_folder_and_writes_only_the_document() {
     assert_eq!(adopted_pa["ok"], true, "{adopted_pa}");
     let batch = fresh_dir("pij-directory-adopt-batch");
     for id in ["coder", "pa"] {
-        let document = json!({"dd": {"schema": "pij/role"}, "sections": [{"name": "meta", "value": {"id": id}}], "references": []});
+        let document = json!({"dd": {"schema": "pij/role"}, "sections": [{"name": "meta", "value": {"id": id, "type": "worker"}}], "references": []});
         std::fs::write(batch.join(format!("{id}.dd.json")), document.to_string()).unwrap();
     }
     let refused = call(
@@ -1405,6 +1424,8 @@ async fn a_linked_worktree_finds_its_project_and_an_unknown_repo_names_the_regis
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "qa",
             "--rule",
             "r",
@@ -1427,6 +1448,8 @@ async fn a_linked_worktree_finds_its_project_and_an_unknown_repo_names_the_regis
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "qa",
             "--rule",
             "r",
@@ -1671,7 +1694,16 @@ async fn external_add_creates_then_appends_dated_entries() {
     let refused = call(
         rig.addr,
         "/v1/directory",
-        &["directory", "external", "add", "x", "--why", "w"],
+        &[
+            "directory",
+            "external",
+            "add",
+            "x",
+            "--type",
+            "worker",
+            "--why",
+            "w",
+        ],
         &repo.main,
     )
     .await;
@@ -1710,6 +1742,8 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "reviewer",
             "--title",
             "Reviewer",
@@ -1852,6 +1886,8 @@ async fn add_role(rig: &Rig, repo: &Repo, id: &str, path: &str, rule: &str) -> V
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             id,
             "--scope-path",
             path,
@@ -2229,6 +2265,8 @@ async fn dead_holder_fleet(rig: &Rig, repo: &Repo, holdings: &[(&str, &str)]) ->
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "pa",
             "--title",
             "pa",
@@ -2888,6 +2926,8 @@ async fn a_lineage_batch_is_one_commit_all_or_nothing() {
             &[
                 "directory",
                 "add",
+                "--type",
+                "worker",
                 id,
                 "--rule",
                 "r",
@@ -2994,6 +3034,8 @@ async fn the_prime_records_a_closed_seats_past_holding() {
             &[
                 "directory",
                 "add",
+                "--type",
+                "worker",
                 id,
                 "--rule",
                 "r",
@@ -3463,6 +3505,8 @@ async fn several_holder_refusals_never_print_a_hostile_seat() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "qa",
             "--title",
             "qa",
@@ -3512,6 +3556,8 @@ async fn several_holder_refusals_never_print_a_hostile_seat() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "ops",
             "--title",
             "ops",
@@ -3624,6 +3670,8 @@ async fn the_directory_view_never_prints_a_hostile_stored_seat_or_instance() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "prime",
             "--rule",
             "r",
@@ -4155,6 +4203,8 @@ async fn a_forged_request_id_never_reaches_the_queue_wake_or_the_holder_frame() 
         vec![
             "directory",
             "add",
+            "--type",
+            "worker",
             "pa",
             "--title",
             "pa",
@@ -4269,6 +4319,8 @@ async fn no_holder_queues_wakes_the_pa_and_an_assign_drains_in_order() {
     let added = dir(vec![
         "directory",
         "add",
+        "--type",
+        "worker",
         "pa",
         "--title",
         "pa",
@@ -4718,6 +4770,8 @@ async fn a_limit_checks_in_once_then_tells_the_pa_once_and_a_card_update_spares_
         vec![
             "directory",
             "add",
+            "--type",
+            "worker",
             "pa",
             "--title",
             "pa",
@@ -4910,6 +4964,8 @@ async fn a_role_default_limit_applies_and_an_explicit_limit_wins() {
         vec![
             "directory",
             "add",
+            "--type",
+            "worker",
             "timed",
             "--title",
             "timed",
@@ -5497,6 +5553,8 @@ async fn requests_lists_and_withdraw_closes_a_queued_request_for_its_requester_o
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "pa",
             "--title",
             "pa",
@@ -5717,6 +5775,8 @@ async fn limit_rig_queued(name: &str, pa: bool, target: &str, holder: &str) -> (
     let mut steps = vec![vec![
         "directory",
         "add",
+        "--type",
+        "worker",
         "pa",
         "--title",
         "pa",
@@ -7624,6 +7684,8 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
             &[
                 "directory",
                 "add",
+                "--type",
+                "worker",
                 id,
                 "--title",
                 id,
@@ -7933,6 +7995,8 @@ async fn the_view_shows_the_picture_and_prompts_the_prime() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "docs-system",
             "--title",
             "docs",
@@ -7978,7 +8042,7 @@ async fn the_views_assign_for_a_queued_instance_drains_it() {
     };
     let words = |text: &str| -> Vec<String> { text.split(' ').map(str::to_string).collect() };
     for argv in [
-        "directory add pa --title pa --kind general --lifecycle long-lived --holders one --rule r --packet p --why w",
+        "directory add pa --title pa --type pa --holders one --rule r --packet p --why w",
         "directory assign pa pij-second --why watch",
     ] {
         let done = dir(words(argv)).await;
@@ -8267,6 +8331,8 @@ async fn delivered_ends_the_holdings_its_pr_finished_in_one_commit_once() {
             &[
                 "directory",
                 "add",
+                "--type",
+                "worker",
                 id,
                 "--holders",
                 "many",
@@ -8543,6 +8609,8 @@ async fn delivered_rig(name: &str) -> (Repo, Rig) {
             &[
                 "directory",
                 "add",
+                "--type",
+                "worker",
                 id,
                 "--holders",
                 "many",
@@ -8820,6 +8888,8 @@ async fn the_prime_role_shows_the_designation_and_assign_refuses_it() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "prime",
             "--rule",
             "r",
@@ -8892,6 +8962,8 @@ async fn a_legacy_prime_assignment_never_stands_in_for_the_designation() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "prime",
             "--rule",
             "r",
@@ -9042,6 +9114,8 @@ async fn the_prime_recovery_action_follows_the_designations_liveness() {
         &[
             "directory",
             "add",
+            "--type",
+            "worker",
             "prime",
             "--rule",
             "r",

@@ -1143,10 +1143,27 @@ The FYI flush and `revive --cheap` are actions, so they need the seat's own evid
 
 `GET`/`POST /v1/seats?sizes=true` adds the same `sessionStatus` and derived fields to each **local** row, plus `sizeColumns` (`[CTX, IDLE, CACHE, ❄-or-⚠-or-empty]`). It is opt-in, so federation fan-in and extension rosters don't pay for it. The local seats are read in parallel with a 200 ms wait each. A seat that does not answer in time shows `?`, and its read keeps going in the background, so the next list is warm. Both `pij list` (shim) and `pij-rs list` ask for sizes. Their human output is one table (golden [`cli/list-sized.txt`](../../crates/testkit/fixtures/golden/cli/list-sized.txt) from [`cli/list-sized.json`](../../crates/testkit/fixtures/golden/cli/list-sized.json)):
 ```
-  SEAT             HARNESS  STATE    CTX   IDLE  CACHE
-❄ pij-cold-claude  claude   idle     720k  2h    cold 1h
-  pij-warm-omp     omp      working  57k   3m    warm
+  SEAT             TYPE   HARNESS  STATE    CTX   IDLE  CACHE
+❄ pij-cold-claude  -      claude   idle     720k  2h    cold 1h
+  pij-warm-omp     coder  omp      working  57k   3m    warm
 ```
+
+**Seat type (PRD 006, plan 237).** Every `/v1/seats` row carries `type` and
+`types`. `types` is every distinct seat type of the roles the seat holds
+(sorted). `type` is the one of them when they agree; with none, the seat role's
+(`prime`, `pm` as `project-manager`, `pa`); `null` when it holds two types or
+nothing typed. It is read in one indexed store query per list: a role
+document's type rides its pointer (`community_pointers.role_type`, migration
+0052), written whenever pij commits the document and recomputed by
+`pij directory rebuild`. That column is a cache of the governance branch whose
+refresh points are those writes and the rebuild; only a hand edit of the branch
+can make it stale, until the next rebuild. Authority does not come from it.
+TYPE is a label, never authority: a `pm` seat holding a coder role shows
+`coder` and keeps a project manager's powers, which come from its seat role
+(`role`) and the prime designation as before. The query is one per
+`/v1/seats` call, so it also rides the calls that poll the roster (federation
+fan-in, about once a second per peer, and the extension roster); it is never
+per seat and launches nothing.
 
 The one closed severity order is the exported
 [`pij_core::status::BADGE_SEVERITY`](../../crates/core/src/status.rs).
@@ -1493,8 +1510,9 @@ Writes are serialised per governance worktree. The branch also carries copies of
 pij's `pij/*` schemas under `.dd/schemas/pij/`, so ddocs validates there; a write
 refreshes them in the same commit when they differ from pij's.
 
-Flags: `--title`, `--kind specialist|general`, `--lifecycle long-lived|per-task`,
-`--holders one|many`, `--instance-key`, `--default-limit` (like `45m`),
+Flags: `--title`, `--type <type>` (required; one of the ten seat types, PRD 006),
+`--keeps` (knowledge), `--sole-writer-of` (steward), `--type-change <rule>=<why>`
+(repeatable), `--type-suggestion`, `--holders one|many`, `--instance-key`, `--default-limit` (like `45m`),
 `--summary`, `--template`, `--template-version`, `--harness`, `--model`,
 `--effort`, and the standing packet as `--packet <text>` or `--brief <path>` (a
 repo-relative link to an existing file). ddocs has no union type, so the writer
@@ -1773,10 +1791,52 @@ Cost: listing, diffing and the view read embedded bytes and the governance
 worktree in-process and launch nothing; an add from a template costs the same
 writer commit as any add. No loop or timer.
 
+### Seat types (PRD 006, plan 236)
+
+Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
+`project-manager`, `coder`, `reviewer`, `worker`, `knowledge`, `steward`,
+`watcher`, `human-window`. pij ships each as a `pij/type` definition and a seed
+(`templates/types/<type>/v<n>/`), compiled into the daemon.
+
+- `add` refuses a role with no type (`E-RS-TYPE-MISSING`, listing the ten, with a next step naming `--type`, `--from template:<name>` and `retype`, or on the edit path `edit --set type=`), an
+  unknown type (`E-RS-TYPE-UNKNOWN`), and a role missing what its type requires
+  (`E-RS-TYPE-FIELD`: `--keeps` for knowledge, `--sole-writer-of` for steward).
+  This holds for flags, `--file` and `--batch` alike. `add --from template:`
+  takes the template's type (its own `meta.type`, else the catalog's table);
+  a template with none needs `--type`.
+- `type_changes` rows (`--type-change <rule>=<why>`, merged by rule) change a
+  type's `default` rule with a reason; a `fixed` rule, an unknown rule or a
+  change with no reason refuses `E-RS-TYPE-RULE`. `edit` re-checks a typed role
+  on every write, so changing `--type` re-checks its changes and required
+  fields. A role written before types may be edited untyped.
+- `--kind` and `--lifecycle` (and `--set kind=`/`lifecycle=`) are retired: they
+  are ignored and the answer's `warnings` names `--type`. Old documents still
+  read and validate.
+- `directory types` lists the ten; `types <type>` returns the definition
+  (`purpose`, `lifecycle`, `keeps`, `requires`, `rules` with their `mode`);
+  `types <type> --seed` returns the seed and its `source`: `governance`
+  (`community/seeds/<type>.md`) or `shipped`. `directory seed <type> --file
+  <path> --why <text>` writes the governance copy through the writer.
+- `directory retype` (plan 238) proposes a type for every active role with
+  none: from its template (the catalog's table), else its id (`prime`, `pa`,
+  `pm`/`pm-<n>`, and `coder`, `reviewer`, `security` or `qa` alone or before a `-`). It answers
+  `proposed` and `undecided` (each with the `edit` that types it; a role whose
+  proposed type needs a field it lacks is undecided) and writes nothing.
+  `--apply --why <text>` writes every proposed type in one commit, re-planned
+  under the writer's lock, and records the pointers, so `pij list` shows the new
+  types at once. A second run proposes nothing.
+- The view's role rows carry `type` and `type_suggestion`. Types are checked
+  when a role is written, never enforced on a running seat, and authority is
+  unchanged: it still comes from the seat role and the prime designation.
+
+Cost: `types` reads compiled-in bytes and at most one governance file; add,
+edit and seed are the writer's usual commit. No loop, poll or timer.
+
 ### Reshaping roles (plan 206)
 
 `pij directory edit <id> --why <text>` changes a role that exists (F20). Give
-`--set <field>=<value>` (repeatable; `title`, `kind`, `lifecycle`, `holders`,
+`--set <field>=<value>` (repeatable; `title`, `type`, `keeps`, `sole_writer_of`,
+`type_suggestion`, `holders`,
 `instance_key`, `default_limit`, `summary`, `template`, `template_version`,
 `harness`, `model`, `effort`, `packet` or `brief`) and any of the role flags
 `add` takes, or `--file <json>` for the whole document. The writer reads the

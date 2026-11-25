@@ -366,8 +366,7 @@ fn schema_copies_ride_in_the_same_commit_only_when_they_differ() {
 fn review_real_role(id: &str, brief: Option<&str>) -> Vec<NewFile> {
     let fields = crate::community::role::RoleFields {
         title: Some(id.into()),
-        kind: Some("general".into()),
-        lifecycle: Some("per-task".into()),
+        role_type: Some("reviewer".into()),
         holders: Some("many".into()),
         rules: vec!["Review scratch proof.".into()],
         packet: brief.is_none().then(|| "A real inline packet.".into()),

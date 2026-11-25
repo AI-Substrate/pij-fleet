@@ -4,7 +4,7 @@
 //! would warn about (F214). A seat stalled on
 //! its harness's own dialog shows `blocked on a dialog (<key>)` (plan 219); a
 //! native Copilot seat whose receiver lease lapsed adds `receiver lapsed <age>`
-//! to its state (F195).
+//! to its state (F195). TYPE is the seat's one seat type (PRD 006).
 //!
 //! The daemon derives and renders the size columns (`sizeColumns`), so this
 //! only lays them out. The TS shim renders the same table from the same JSON;
@@ -12,7 +12,7 @@
 
 use serde_json::Value;
 
-const HEADERS: [&str; 6] = ["SEAT", "HARNESS", "STATE", "CTX", "IDLE", "CACHE"];
+const HEADERS: [&str; 7] = ["SEAT", "TYPE", "HARNESS", "STATE", "CTX", "IDLE", "CACHE"];
 
 /// The table for a `/v1/seats?sizes=true` payload (`{seats, unavailable}`).
 /// A row without size columns (a remote seat) shows `-`.
@@ -21,7 +21,7 @@ pub fn render_table(data: &Value) -> String {
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default();
-    let mut rows: Vec<(&str, [String; 6])> = Vec::with_capacity(seats.len());
+    let mut rows: Vec<(&str, [String; 7])> = Vec::with_capacity(seats.len());
     for seat in seats {
         let text = |key: &str| seat[key].as_str().unwrap_or("-").to_string();
         let id = match seat["machine"].as_str() {
@@ -57,7 +57,19 @@ pub fn render_table(data: &Value) -> String {
             Some(alt) => format!("{} alt:{alt}", text("harness")),
             None => text("harness"),
         };
-        rows.push((mark, [id, harness, state, column(0), column(1), column(2)]));
+        // PRD 006: the seat's one type, `-` for none or two.
+        rows.push((
+            mark,
+            [
+                id,
+                text("type"),
+                harness,
+                state,
+                column(0),
+                column(1),
+                column(2),
+            ],
+        ));
     }
     let mut widths = HEADERS.map(|header| header.chars().count());
     for (_, row) in &rows {
@@ -65,7 +77,7 @@ pub fn render_table(data: &Value) -> String {
             *width = (*width).max(cell.chars().count());
         }
     }
-    let line = |mark: &str, cells: &[String; 6]| {
+    let line = |mark: &str, cells: &[String; 7]| {
         let mut text = mark.to_string();
         for (index, (cell, width)) in cells.iter().zip(widths).enumerate() {
             if index + 1 == cells.len() {

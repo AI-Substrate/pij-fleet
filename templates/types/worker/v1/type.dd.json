@@ -1,0 +1,49 @@
+{
+	"dd": {
+		"schema": "pij/type"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "worker",
+				"title": "Worker",
+				"authority": "none",
+				"line": "Does one other piece of work, then is closed."
+			}
+		},
+		{
+			"name": "purpose",
+			"value": "Does one piece of work that is not building a step or reviewing one: a migration run, a survey, a one-off fix."
+		},
+		{
+			"name": "lifecycle",
+			"value": "Closed when its work is done, after writing a memory note."
+		},
+		{
+			"name": "keeps",
+			"value": "A memory note of what it did and found."
+		},
+		{
+			"name": "rules",
+			"value": [
+				{
+					"id": "close-after-job",
+					"text": "Is closed when its work is done, after writing its memory note.",
+					"mode": "default"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"why": "First version (PRD 006)."
+				}
+			]
+		}
+	],
+	"references": []
+}
