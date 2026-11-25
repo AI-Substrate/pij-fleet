@@ -418,3 +418,120 @@ async fn a_seat_working_here_with_no_role_is_an_action_until_assigned() {
     assert!(no_role(&directory(addr, &repo, &[]).await).is_empty());
     rig.server.abort();
 }
+
+/// Plan 244 ac-0001 to ac-0003: a seat that is not the prime adds a role and
+/// starts a seat in it; the prime gets one FYI for each, naming the role, its
+/// type, the creator and the reason, and the view shows who created and who
+/// assigned. A suggestion is recorded, listed and answered, waking no one.
+#[tokio::test]
+async fn the_prime_is_told_of_what_others_create_and_suggestions_are_answered() {
+    let repo = repo("pij-creator-note");
+    let rig = rig(Arc::new(NoHook)).await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    let prime = "pij-holder";
+    let set = call(
+        addr,
+        "/v1/project",
+        &["project", "set", "fleet", "--prime", prime],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(set["ok"], true, "{set}");
+    add_notes(addr, &repo).await;
+    let started = spawn(
+        addr,
+        &repo,
+        Some(json!({"role": "notes", "instance": "s1", "set": ["subject=planning"], "focus": "the planning call"})),
+    )
+    .await;
+    assert_eq!(started["details"]["prime_told"]["sent"], "fyi", "{started}");
+    let seat = started["data"]["id"].as_str().unwrap().to_string();
+    let (fyis, _) = rig
+        .delivery
+        .claim_fyis(&SeatId::from(prime), "test")
+        .await
+        .unwrap();
+    // The add's routes-change notice (plan 202) is held too; these are the two notes.
+    let bodies: Vec<&str> = fyis
+        .iter()
+        .map(|fyi| fyi.body.as_str())
+        .filter(|body| body.starts_with("pij: "))
+        .collect();
+    assert_eq!(bodies.len(), 2, "{bodies:?}");
+    assert!(
+        bodies[0].contains(&format!("{SEAT} added role notes (worker)"))
+            && bodies[0].contains("\"w\""),
+        "{bodies:?}"
+    );
+    assert!(
+        bodies[1].contains(&format!("{SEAT} started {seat} in role notes/s1 (worker)"))
+            && bodies[1].contains("the planning call"),
+        "{bodies:?}"
+    );
+
+    let view = directory(addr, &repo, &[]).await;
+    let notes = view["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == "notes")
+        .unwrap()
+        .clone();
+    assert_eq!(notes["created_by"], SEAT, "{notes}");
+    let holder = notes["live"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["seat"] == seat.as_str()))
+        .cloned();
+    assert_eq!(
+        holder.map(|row| row["assigned_by"].clone()),
+        Some(json!(SEAT)),
+        "{notes}"
+    );
+
+    let raised = directory(
+        addr,
+        &repo,
+        &["suggest", "docs/", "--signal", "nobody keeps the docs"],
+    )
+    .await;
+    assert_eq!(raised["ok"], true, "{raised}");
+    assert_eq!(raised["data"]["suggestion"]["id"], "sg-0001");
+    assert_eq!(
+        rig.delivery
+            .pending_fyi_count(&SeatId::from(prime))
+            .await
+            .unwrap(),
+        0,
+        "a suggestion wakes no one and holds nothing"
+    );
+    let open = directory(addr, &repo, &[]).await;
+    assert_eq!(open["data"]["seat_suggestions"][0]["area"], "docs/");
+    let answered = directory(
+        addr,
+        &repo,
+        &[
+            "suggest",
+            "--answer",
+            "sg-0001",
+            "not-yet",
+            "--why",
+            "after the release",
+        ],
+    )
+    .await;
+    assert_eq!(answered["ok"], true, "{answered}");
+    let later = directory(addr, &repo, &[]).await;
+    assert_eq!(
+        later["data"]["seat_suggestions"][0]["answer"]["why"],
+        "after the release"
+    );
+    let bad = directory(
+        addr,
+        &repo,
+        &["suggest", "--answer", "sg-0001", "maybe", "--why", "w"],
+    )
+    .await;
+    assert_eq!(bad["details"]["code"], "E-RS-ARG", "{bad}");
+    rig.server.abort();
+}

@@ -3978,6 +3978,39 @@ fn render_directory_at(
             );
         }
     }
+    // PRD 007 req-08: each seat suggestion, with its answer or how to give one.
+    let raised = list(&view["seat_suggestions"]);
+    if !raised.is_empty() {
+        out.push_str("\n\nSeat suggestions:");
+        for row in &raised {
+            let id = shown(&row["id"], render::name);
+            let _ = write!(
+                out,
+                "\n  {id} {} (from {}): {}",
+                text(&row["area"]),
+                shown(&row["by"], render::seat),
+                text(&row["signal"])
+            );
+            let answer = &row["answer"];
+            match answer["answer"].as_str() {
+                Some(given) => {
+                    let _ = write!(
+                        out,
+                        "\n    answered {} by {}: {}",
+                        render::word(given),
+                        shown(&answer["by"], render::seat),
+                        text(&answer["why"])
+                    );
+                }
+                None => {
+                    let _ = write!(
+                        out,
+                        "\n    open: pij directory suggest --answer {id} yes|no|not-yet --why '<why>'"
+                    );
+                }
+            }
+        }
+    }
     let actions = list(&view["actions"]);
     if !actions.is_empty() {
         out.push_str("\n\nNext actions:");

@@ -36,6 +36,8 @@ pub(super) struct Prepared {
     instance: String,
     first_turn: String,
     warnings: Vec<String>,
+    role_type: Option<String>,
+    why: String,
 }
 
 /// The warning a spawn with no role carries (PRD 007 req-07): it launches as
@@ -110,11 +112,15 @@ pub(super) async fn prepare(
         &sets,
         &first_turn::Creator {
             seat: creator.to_string(),
-            focus: as_role.focus,
+            focus: as_role.focus.clone(),
             packet,
         },
     )
     .map_err(refuse("building the first turn"))?;
+    let focus_line = as_role
+        .focus
+        .clone()
+        .unwrap_or_else(|| "no focus given".to_string());
     let seat = &start.default_seat;
     let same_harness = seat["harness"]
         .as_str()
@@ -135,6 +141,8 @@ pub(super) async fn prepare(
         instance: as_role.instance,
         first_turn: start.first_turn,
         warnings: start.warnings,
+        role_type: start.role_type,
+        why: focus_line,
     })
 }
 
@@ -158,6 +166,8 @@ pub(super) async fn commit(
         instance,
         first_turn,
         mut warnings,
+        role_type,
+        why,
     } = prepared;
     let directory = &state.services.directory;
     let receipt = directory
@@ -199,7 +209,32 @@ pub(super) async fn commit(
         None,
     )
     .await;
+    // PRD 007 req-07: anyone may start a seat in a role; the prime is told.
+    let address = if instance.is_empty() {
+        pij_core::render::name(&role).into_owned()
+    } else {
+        format!(
+            "{}/{}",
+            pij_core::render::name(&role),
+            pij_core::render::name(&instance)
+        )
+    };
+    let prime_told = super::routes::tell_prime(
+        &state.services,
+        &project,
+        &creator,
+        format!(
+            "pij: {} started {} in role {} ({}) in project {project}: {}",
+            pij_core::render::seat(creator.as_str()),
+            pij_core::render::seat(seat.id.as_str()),
+            address,
+            pij_core::render::word(role_type.as_deref().unwrap_or("none")),
+            super::routes::quoted(&why)
+        ),
+    )
+    .await;
     Ok(json!({
+        "prime_told": prime_told,
         "role": {
             "project": project,
             "role": role,

@@ -471,6 +471,7 @@ impl DirectoryService {
                 .map(|row| {
                     serde_json::json!({
                         "seat": row.seat, "instance": row.instance, "since": row.from,
+                        "assigned_by": row.assigned_by,
                         "machine": row.machine, "end_pending": row.end_pending,
                         "seat_live": live_seats.contains(&row.seat),
                         "cache_proxy": cache_proxy.get(&row.seat),
@@ -618,6 +619,11 @@ impl DirectoryService {
                 "kind": meta["kind"],
                 "type": meta["type"],
                 "type_suggestion": meta["type_suggestion"],
+                // PRD 007 req-07: who created the role, from its first changelog row.
+                "created_by": document["sections"]
+                    .as_array()
+                    .and_then(|sections| sections.iter().find(|section| section["name"] == "changelog"))
+                    .map_or(Value::Null, |changelog| changelog["value"][0]["by"].clone()),
                 "holders": meta["holders"],
                 "template": self.templates.drift(&meta),
                 "state": standings[index].state,
@@ -704,6 +710,7 @@ impl DirectoryService {
             "project": project, "prime": prime, "prime_document": prime_document,
             "roles": roles, "pending": pending,
             "actions": actions, "notice": picture::notice(),
+            "seat_suggestions": super::suggestions::read(&root.worktree),
             "reviews": reviews.iter().map(picture::Recommendation::json).collect::<Vec<_>>(),
         });
         if !held.is_empty() {
@@ -1531,6 +1538,50 @@ impl DirectoryService {
     pub async fn assign(&self, request: AssignRequest) -> Result<HoldingReceipt, Refusal> {
         let mut receipts = self.assign_many(vec![request]).await?;
         Ok(receipts.remove(0))
+    }
+
+    /// `pij directory suggest` (PRD 007 req-08, plan 244): one writer commit
+    /// to `community/suggestions.json`, read under the writer's lock. Returns
+    /// the commit and the row written.
+    ///
+    /// # Errors
+    /// What [`super::suggestions::apply`] refuses; a writer refusal.
+    pub async fn suggest(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        actor: &SeatId,
+        change: super::suggestions::Change,
+    ) -> Result<(Written, Value), Refusal> {
+        super::suggestions::check(&change)?;
+        let subject = match &change {
+            super::suggestions::Change::Raise { area, .. } => {
+                format!("community: suggest a seat for {area}")
+            }
+            super::suggestions::Change::Answer { id, answer, .. } => {
+                format!("community: answer suggestion {id}: {answer}")
+            }
+        };
+        let message = format!("{subject}\n\nPij-Seat: {actor}\nPij-Project: {project}");
+        let by = actor.to_string();
+        let at = super::holders::stamp(time::OffsetDateTime::now_utc());
+        let (written, mut built) = self
+            .commit(repo, message, move |root, built| {
+                let path = super::suggestions::path();
+                let current = std::fs::read(root.worktree.join(&path)).ok();
+                let (bytes, row) =
+                    super::suggestions::apply(current.as_deref(), &change, &by, &at)?;
+                built.suggestion = Some(row);
+                Ok(vec![NewFile {
+                    path,
+                    bytes,
+                    document: false,
+                    existing: Existing::Replace,
+                }])
+            })
+            .await?;
+        let row = built.suggestion.take().unwrap_or(Value::Null);
+        Ok((written, row))
     }
 
     /// The after-assign hook for one holding, for an assign that carried a
@@ -3037,6 +3088,8 @@ struct Built {
     skipped: Vec<String>,
     /// An edit's list changes (F152), from [`role::list_changes`].
     lists: Vec<Value>,
+    /// The suggestion a `suggest` wrote (PRD 007 req-08).
+    suggestion: Option<Value>,
 }
 
 fn store_refusal(written: &Written, error: &pij_core::error::PijError) -> Refusal {

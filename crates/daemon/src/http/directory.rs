@@ -29,8 +29,10 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 36] = [
+const SINGLE: [&str; 38] = [
     "why",
+    "signal",
+    "answer",
     "focus",
     "instance",
     "into",
@@ -166,6 +168,7 @@ impl Arguments {
                             | "seed"
                             | "retype"
                             | "show"
+                            | "suggest"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -401,6 +404,36 @@ impl Arguments {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 "usage: pij directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>] [--packet <file>] [--instance <key>] [--project <slug>]",
+            ));
+        }
+        if call.leaf == "suggest"
+            && (call.positions.len() != 1
+                || call.single.keys().any(|flag| {
+                    !matches!(
+                        flag.as_str(),
+                        "project" | "actor" | "signal" | "answer" | "why"
+                    )
+                })
+                || !call.repeated.is_empty()
+                || (call.get("answer").is_some()
+                    == (call.get("signal").is_some() || call.get("why").is_none())))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory suggest <area> --signal <text> | pij directory suggest --answer <id> yes|no|not-yet --why <text> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "suggest"
+            && ["signal", "answer"]
+                .iter()
+                .any(|flag| call.single.contains_key(*flag))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --signal and --answer belong to `suggest`",
+                    call.leaf
+                ),
             ));
         }
         if call.leaf != "show"
@@ -809,6 +842,7 @@ pub(crate) async fn handle(
         "seed" => seed(&state, &actor, &request.caller, &call).await,
         "retype" => retype(&state, &actor, &request.caller, &call).await,
         "show" => show(&state, &actor, &request.caller, &call).await,
+        "suggest" => suggest(&state, &actor, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
@@ -1084,6 +1118,7 @@ async fn add(
     crate::community::root::find(&repo)?;
     let mut files = Vec::new();
     let mut ids = Vec::new();
+    let mut kinds = Vec::new();
     for (id, document) in documents {
         let paths = RolePaths::new(&id)?;
         if ids.contains(&id) {
@@ -1093,6 +1128,11 @@ async fn add(
             ));
         }
         crate::community::types::check_role(&id, &document, true)?;
+        kinds.push(
+            crate::community::types::of_role(&document)
+                .unwrap_or("none")
+                .to_string(),
+        );
         let document = role::stamp(document, &id, actor, &why, &date)?;
         let dir = paths
             .document
@@ -1163,7 +1203,56 @@ async fn add(
         data["id"] = only["id"].clone();
         data["path"] = only["path"].clone();
     }
+    // PRD 007 req-07: anyone may add a role; the prime is told.
+    let added: Vec<String> = ids
+        .iter()
+        .zip(&kinds)
+        .map(|(id, kind)| format!("{id} ({})", pij_core::render::word(kind)))
+        .collect();
+    data["prime_told"] = super::routes::tell_prime(
+        &state.services,
+        &project,
+        &SeatId::from(actor),
+        format!(
+            "pij: {} added role {} in project {project}: {}",
+            pij_core::render::seat(actor),
+            added.join(", "),
+            super::routes::quoted(&why)
+        ),
+    )
+    .await;
     Ok(data)
+}
+
+/// `directory suggest <area> --signal <text>`, or `suggest --answer <id>
+/// <yes|no|not-yet> --why <text>` (PRD 007 req-08, plan 244): one writer
+/// commit to `community/suggestions.json`. It wakes no one; the view lists them.
+async fn suggest(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    use crate::community::suggestions::Change;
+    let change = match call.get("answer") {
+        Some(id) => Change::Answer {
+            id,
+            answer: call.positions[0].clone(),
+            why: call.get("why").unwrap_or_default(),
+        },
+        None => Change::Raise {
+            area: call.positions[0].clone(),
+            signal: call.get("signal").unwrap_or_default(),
+        },
+    };
+    crate::community::suggestions::check(&change)?;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let (written, row) = state
+        .services
+        .directory
+        .suggest(&project, repo, actor, change)
+        .await?;
+    Ok(json!({"project": project, "commit": written.commit, "suggestion": row}))
 }
 
 /// Record the store pointers for the documents a write committed.

@@ -1875,6 +1875,20 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
   <seat> --why '<why>' --project <slug>` and `pij close <seat>` (plan 243). The
   project's prime and the machine's designated prime are never listed. It costs
   two store reads and in-process folder matches per view; nothing polls it.
+- Anyone may add a role or start a seat in one, and pij refuses nothing on who
+  asks (plan 244). Each `add` and each `spawn --as` by a seat that is not the
+  project's prime (its own, else the machine's designated prime) holds the
+  prime one FYI: the role, its type, the creator and the reason (`--why`, or
+  the spawn's `--focus`), quoted on one line. A prime's own act sends nothing.
+  The answer carries it as `prime_told`. View role rows carry `created_by`
+  (the first changelog row's `by`) and each live holder its `assigned_by`.
+- `directory suggest <area> --signal <text>` records a seat suggestion in
+  `community/suggestions.json` (one writer commit; `sg-NNNN` ids) and holds or
+  wakes nothing. `suggest --answer <id> yes|no|not-yet --why <text>` records the
+  answer; yes and no are final, not-yet may be answered again. The view lists
+  every suggestion as `seat_suggestions`. Texts are one line, no control
+  characters. The shipped prime template v4 says: create the seat the work needs
+  when sure, ask the operator when not.
 
 Cost: `types` reads compiled-in bytes and at most one governance file; add,
 edit and seed are the writer's usual commit. No loop, poll or timer.

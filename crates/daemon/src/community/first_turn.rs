@@ -120,6 +120,8 @@ pub struct Start {
     pub default_seat: Value,
     /// Things to say that start nothing: a type with no governance seed.
     pub warnings: Vec<String>,
+    /// The role's type, when it names one.
+    pub role_type: Option<String>,
 }
 
 /// Role `id`'s first turn as a seat starting in it would get it: [`load`],
@@ -162,6 +164,7 @@ pub fn start(
             .cloned()
             .unwrap_or_else(|| serde_json::json!({})),
         warnings,
+        role_type: types::of_role(&sources.document).map(str::to_string),
     })
 }
 
