@@ -110,7 +110,7 @@ _No entries._
 
 | date | by | text |
 | --- | --- | --- |
-| 2026-11-26 | pij-solid-ox | Live run owed (PRD 005 req-24): the prime runs it at the next update. On 2026-11-26 an OMP update was pending (18.20.2 installed; the governed registry resolves 18.22.2), and Copilot had none (1.0.117-0 installed, ahead of npm latest 1.0.114). Checked read-only; nothing updated. |
+| 2026-11-26 | pij-solid-ox | Live run owed (PRD 005 req-24): at the next deliberate update, by the prime with the operator (OMP 18.22.2 pending as of 2026-11-26: 18.20.2 installed, and the governed registry resolves 18.22.2). The prime ruled it out of the PR that made the procedures current. Copilot had no update (1.0.117-0 installed, ahead of npm latest 1.0.114). Checked read-only; nothing updated. |
 
 <a id="changelog"></a>
 
