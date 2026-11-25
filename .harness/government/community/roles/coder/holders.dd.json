@@ -1722,7 +1722,10 @@
 					"harness_session": "cae6038f-0901-4317-81ae-b188efa18cf1",
 					"instance_key": "lane-a",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-multiple-nightingale",
+					"to": "2026-11-25T09:37:15.217Z",
 					"why": "PRDs 006/007/008/010 lane A build (Jordan 2026-11-25, spine 4761202)"
 				},
 				{
