@@ -1734,6 +1734,16 @@
 					"machine": "studio",
 					"seat": "pij-yielding-hamster",
 					"why": "PRD 009 lane B build (Jordan 2026-11-25, spine 4761202)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T03:18:53.557Z",
+					"harness": "omp",
+					"harness_session": "01a1ec37-421c-73b4-b9d3-da9d4ed048ca",
+					"instance_key": "f281-fix",
+					"machine": "studio",
+					"seat": "pij-cultural-falcon",
+					"why": "Jordan-approved (11-25 13:18): F281 shared-build signal test flake + fixture leak"
 				}
 			]
 		}
