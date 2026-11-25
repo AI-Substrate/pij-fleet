@@ -790,6 +790,82 @@ impl DirectoryService {
         }))
     }
 
+    /// `pij directory retype [--apply]` (PRD 006 req-07, plan 238): a type for
+    /// every active role written before types. Without `apply` it reads the
+    /// governance worktree in-process and writes nothing. With it, one commit
+    /// types every decided role (each with a changelog row), re-planned under
+    /// the writer's lock; the caller records the pointers, which refreshes
+    /// `pij list`'s types. Returns the plan and the commit, if any.
+    ///
+    /// # Errors
+    /// [`super::E_GOV_ABSENT`]; any writer refusal.
+    pub async fn retype(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        apply: Option<(&SeatId, &str)>,
+    ) -> Result<(Vec<super::types::Retype>, Option<Written>), Refusal> {
+        let root = super::root::find(&repo)?;
+        let plan = super::types::retype_plan(project, &read_roles(&root.worktree));
+        let decided = plan
+            .iter()
+            .any(|item| matches!(item, super::types::Retype::Decided { .. }));
+        let Some((actor, why)) = apply.filter(|_| decided) else {
+            return Ok((plan, None));
+        };
+        let pending = self.pending(project).await?;
+        let message = format!(
+            "community: retype roles\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+        );
+        let (project_id, by, why) = (project.to_string(), actor.to_string(), why.to_string());
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let roles = read_roles(&root.worktree);
+                let plan = super::types::retype_plan(&project_id, &roles);
+                let mut files = Vec::new();
+                for item in &plan {
+                    let super::types::Retype::Decided { id, kind, source } = item else {
+                        continue;
+                    };
+                    let Some((_, document)) = roles.iter().find(|(role, _)| role == id) else {
+                        continue;
+                    };
+                    let typed = super::types::with_type(document.clone(), kind);
+                    let stamped = role::stamp(
+                        typed,
+                        id,
+                        &by,
+                        &format!("{why} (retype: {kind}, {source})"),
+                        &super::holders::today(),
+                    )?;
+                    files.push(NewFile {
+                        path: RolePaths::new(id)?.document,
+                        bytes: role::to_bytes(&stamped),
+                        document: true,
+                        existing: Existing::Replace,
+                    });
+                }
+                built.skipped = plan
+                    .iter()
+                    .filter_map(|item| match item {
+                        super::types::Retype::Undecided { id, .. } => Some(id.clone()),
+                        super::types::Retype::Decided { .. } => None,
+                    })
+                    .collect();
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &pending,
+                    &[],
+                    &mut built.landed,
+                )?);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        Ok((plan, Some(written)))
+    }
+
     /// Rebuild this project's pointer and holder rows from the governance
     /// branch head (AC8). The branch is the truth: pending close-ends that never
     /// reached it are dropped. One git launch per holders document, plus two.
@@ -2790,6 +2866,24 @@ fn refuse_retired(id: &str, standing: &role::Standing) -> Result<(), Refusal> {
 }
 
 /// The role's committed document.
+/// Every role document under the worktree's `community/roles/`, by id, sorted;
+/// an unreadable one is skipped. In-process reads, no launch.
+fn read_roles(worktree: &std::path::Path) -> Vec<(String, Value)> {
+    let dir = worktree.join(super::layout::COMMUNITY).join("roles");
+    let mut roles: Vec<(String, Value)> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let id = entry.file_name().into_string().ok()?;
+            let bytes = std::fs::read(entry.path().join("role.dd.json")).ok()?;
+            Some((id, serde_json::from_slice(&bytes).ok()?))
+        })
+        .collect();
+    roles.sort_by(|a, b| a.0.cmp(&b.0));
+    roles
+}
+
 fn read_role(root: &GovernanceRoot, id: &str) -> Result<Value, Refusal> {
     let paths = RolePaths::new(id)?;
     let missing = || {

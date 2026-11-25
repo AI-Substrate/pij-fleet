@@ -2126,6 +2126,11 @@ async fn run(cli: Cli) -> ExitCode {
                     }
                     ExitCode::SUCCESS
                 }
+                // `directory retype [--apply]` (PRD 006, plan 238).
+                Some(data) if data.get("proposed").is_some_and(Value::is_array) => {
+                    println!("{}", render_retype(data));
+                    ExitCode::SUCCESS
+                }
                 // `directory types [<type> [--seed]]` (PRD 006).
                 Some(data) if data.get("types").is_some_and(Value::is_array) => {
                     println!("{}", render_types(&data["types"]));
@@ -4051,6 +4056,46 @@ fn render_edit(data: &Value) -> String {
 }
 
 /// `pij directory templates` for a human.
+/// `pij directory retype` for a human: what was (or would be) typed, then
+/// each role left, with the edit that types it.
+fn render_retype(data: &Value) -> String {
+    let rows = |key: &str| data[key].as_array().map(Vec::as_slice).unwrap_or_default();
+    let applied = data["applied"] == true;
+    let mut out = format!(
+        "{} role(s) {}typed",
+        rows("proposed").len(),
+        if applied { "" } else { "would be " }
+    );
+    if let Some(commit) = data["commit"].as_str() {
+        let _ = write!(out, " in {}", commit.get(..10).unwrap_or(commit));
+    }
+    for row in rows("proposed") {
+        let _ = write!(
+            out,
+            "\n  {}: {} ({})",
+            shown(&row["id"], render::name),
+            shown(&row["type"], render::word),
+            row["source"].as_str().unwrap_or("-"),
+        );
+    }
+    if !rows("undecided").is_empty() {
+        let _ = write!(out, "\n{} role(s) left for you:", rows("undecided").len());
+        for row in rows("undecided") {
+            let _ = write!(
+                out,
+                "\n  {}: {}\n    {}",
+                shown(&row["id"], render::name),
+                row["reason"].as_str().unwrap_or("-"),
+                row["command"].as_str().unwrap_or("-"),
+            );
+        }
+    }
+    if !applied && !rows("proposed").is_empty() {
+        out.push_str("\nWrite them: pij directory retype --apply --why <text>");
+    }
+    out
+}
+
 /// `pij directory types` for a human: the ten, one line each.
 fn render_types(types: &Value) -> String {
     let rows = types.as_array().map(Vec::as_slice).unwrap_or_default();

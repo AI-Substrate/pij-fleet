@@ -47,9 +47,9 @@
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij directory retype` (no flag) prints, per untyped role, the proposed type and its source (template or id), and each undecided role with its `pij directory edit &lt;id&gt; --type &lt;type&gt;` line; it writes nothing. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `retype --apply --why &lt;text&gt;` writes every proposed type in one governance commit, restamps the open holdings (plan 237) and prints what it wrote and what it left. A role whose proposed type requires a field it lacks (knowledge: keeps) is left undecided and named. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Proposals: the template table in the type catalog first; then the id (`prime`, `pa`, `pm` or `pm-&lt;n&gt;` to project-manager, `coder*` to coder, `reviewer*`, `security*` and `qa*` to reviewer). Run again, it finds nothing to do. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij directory retype` (no flag) prints, per untyped role, the proposed type and its source (template or id), and each undecided role with its `pij directory edit &lt;id&gt; --type &lt;type&gt;` line; it writes nothing. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `retype --apply --why &lt;text&gt;` writes every proposed type in one governance commit, restamps the open holdings (plan 237) and prints what it wrote and what it left. A role whose proposed type requires a field it lacks (knowledge: keeps) is left undecided and named. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Proposals: the template table in the type catalog first; then the id (`prime`, `pa`, `pm` or `pm-&lt;n&gt;` to project-manager, `coder*` to coder, `reviewer*`, `security*` and `qa*` to reviewer). Run again, it finds nothing to do. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -57,7 +57,7 @@
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Give existing roles a type (workstream 006 s04) | One phase on PR #344. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Give existing roles a type (workstream 006 s04) | One phase on PR #344. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

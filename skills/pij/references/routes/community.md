@@ -15,11 +15,12 @@ The directory lives on the governance branch under `<government-root>/community/
 ```bash
 pij directory [--suggest]                        # the prime, roles, actions, prompts, the boundary review; --suggest: every suggestion
 pij directory templates [--show '<name>[@vN]']   # the shipped examples, and one template's body
-pij directory add '<id>' --from 'template:<name>' --why '<the need>'  [flags override fields]
+pij directory add '<id>' --from 'template:<name>' --why '<the need>'  [flags override fields; --type when the template names none]
 pij directory add '<id>' --from 'file:<brief>' --why '<the need>' --title '<title>' --type '<type>' --holders one --rule '<text>'
 pij directory add '<id>' --why '<the need>' --title '<title>' --type '<type>' --holders one --rule '<rule>' --packet '<packet>'  # no template
 pij directory types ['<type>' [--seed]]          # the ten seat types, one's rules, the seed its seats are told
 pij directory seed '<type>' --file '<path>' --why '<text>'  # this repo's own seed for a type
+pij directory retype [--apply --why '<text>']   # a type for every role written before types; lists the ones it cannot decide
 pij directory assign '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory release '<role>[/<instance>]' '<seat>' --why '<text>'
 pij directory edit '<id>' --why '<text>' --set '<field>=<value>' [role flags]
@@ -109,6 +110,6 @@ pij directory memory add '<role>' --title '<t>' --hook '<one line>' [--tags '<a,
 |---|---|
 | `E-RS-GOV-ABSENT` | Restore the standing governance worktree as its `details.next` says; never recreate the branch |
 | `E-RS-GOV-FOREIGN-EDIT` | Someone edited a path the writer needs: commit or remove that edit, then retry |
-| `E-RS-DIRECTORY-ROLE-MISSING` on assign | Add the role first (`pij directory add '<role>' --why '<the need>'`) |
+| `E-RS-DIRECTORY-ROLE-MISSING` on assign | Add the role first (`pij directory add '<role>' --type '<type>' --why '<the need>' ...`) |
 | A send to a role refuses with several holders | Name the instance: `'role:<id>/<instance>'` |
 | A prompt you don't need | Ignore it; prompts never create anything |

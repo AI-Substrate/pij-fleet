@@ -125,6 +125,8 @@ struct Arguments {
     suggest: bool,
     /// `--seed` on `types <type>`: print the seed pij would use (PRD 006).
     seed: bool,
+    /// `--apply` on `retype`: write the proposed types (PRD 006).
+    apply: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -155,6 +157,7 @@ impl Arguments {
                             | "memory"
                             | "types"
                             | "seed"
+                            | "retype"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -188,6 +191,16 @@ impl Arguments {
             }
             if flag == "drop-queued" {
                 call.drop_queued = true;
+                continue;
+            }
+            if flag == "apply" {
+                if call.leaf != "retype" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--apply belongs to `retype`: pij directory retype --apply --why <text>",
+                    ));
+                }
+                call.apply = true;
                 continue;
             }
             if flag == "seed" {
@@ -316,6 +329,20 @@ impl Arguments {
             return Err(Refusal::new(
                 "E-RS-ARG",
                 "usage: pij directory types [<type> [--seed]] [--project <slug>]",
+            ));
+        }
+        if call.leaf == "retype"
+            && (!call.positions.is_empty()
+                || call
+                    .single
+                    .keys()
+                    .any(|flag| !matches!(flag.as_str(), "project" | "actor" | "why"))
+                || !call.repeated.is_empty()
+                || (call.apply && call.get("why").is_none()))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory retype [--apply --why <text>] [--project <slug>]",
             ));
         }
         if call.leaf == "seed"
@@ -710,6 +737,7 @@ pub(crate) async fn handle(
         "memory" => memory(&state, &actor, &request.caller, &call).await,
         "types" => types(&state, &request.caller, &call).await,
         "seed" => seed(&state, &actor, &request.caller, &call).await,
+        "retype" => retype(&state, &actor, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
@@ -926,6 +954,11 @@ async fn add(
         }
     };
 
+    // A project with no governance refuses by name before any role check
+    // (PRD 001 req-02).
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    // In-process reads only (no launch): the writer finds the root again.
+    crate::community::root::find(&repo)?;
     let mut files = Vec::new();
     let mut ids = Vec::new();
     for (id, document) in documents {
@@ -964,7 +997,6 @@ async fn add(
         ids.push(id);
     }
 
-    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let subject = match ids.as_slice() {
         [id] => format!("community: add role {id}"),
         ids => format!(
@@ -1286,6 +1318,40 @@ async fn types(
         Err(_) => None,
     };
     Ok(json!({"seed": types::seed(worktree.as_deref(), type_id)?}))
+}
+
+/// `directory retype [--apply --why <text>]` (PRD 006 req-07, plan 238): the
+/// type each role written before types would get, and those it cannot
+/// decide with the edit that types each. `--apply` writes the decided ones in
+/// one commit and records their pointers, which refreshes `pij list`.
+async fn retype(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let why = call.get("why").unwrap_or_default();
+    let (plan, written) = state
+        .services
+        .directory
+        .retype(&project, repo, call.apply.then_some((actor, why.as_str())))
+        .await?;
+    let (decided, undecided): (Vec<_>, Vec<_>) = plan
+        .iter()
+        .partition(|item| matches!(item, crate::community::types::Retype::Decided { .. }));
+    let mut data = json!({
+        "project": project,
+        "applied": written.is_some(),
+        "proposed": decided.iter().map(|item| item.json()).collect::<Vec<_>>(),
+        "undecided": undecided.iter().map(|item| item.json()).collect::<Vec<_>>(),
+    });
+    if let Some(written) = written {
+        record_pointers(state, &project, &written).await?;
+        data["commit"] = json!(written.commit);
+        data["paths"] = json!(written.paths);
+    }
+    Ok(data)
 }
 
 /// `directory seed <type> --file <path> --why <text>` (PRD 006 req-08): the

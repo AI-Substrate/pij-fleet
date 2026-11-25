@@ -400,3 +400,118 @@ async fn the_list_and_the_view_show_each_seats_type() {
     );
     rig.server.abort();
 }
+
+/// Plan 238 (s04): retype proposes, writes nothing without --apply, types the
+/// sure roles in one commit with --apply (refreshing `pij list`), lists the
+/// rest with the edit that types each, and a second run has nothing to do.
+#[tokio::test]
+async fn retype_types_what_it_is_sure_of_and_lists_the_rest() {
+    let repo = repo("pij-types-retype");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    for (id, template) in [
+        ("sec", Some("security")),
+        ("pm-004", None),
+        ("historian", None),
+        ("expert", Some("topic-expert")),
+    ] {
+        let dir = repo.gov.join(ROLES).join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut meta = json!({"id": id, "title": id, "kind": "specialist",
+            "lifecycle": "long-lived", "holders": "one"});
+        if let Some(template) = template {
+            meta["template"] = json!(template);
+            meta["template_version"] = json!("1");
+        }
+        let document = json!({"dd": {"schema": "pij/role"}, "sections": [
+            {"name": "meta", "value": meta},
+            {"name": "scope", "value": {"paths": [], "rules": ["r"]}},
+            {"name": "standing_packet", "value": {"source": "inline", "text": "p"}},
+            {"name": "changelog", "value": [{"date": "2026-01-01", "by": "pij-a", "why": "old"}]},
+        ], "references": []});
+        std::fs::write(dir.join("role.dd.json"), document.to_string()).unwrap();
+    }
+    git(&repo.gov, &["add", "."]);
+    git(
+        &repo.gov,
+        &["commit", "-q", "-m", "roles from before types"],
+    );
+    let assigned = directory(
+        rig.addr,
+        &repo,
+        &["assign", "pm-004", "pij-second", "--why", "w"],
+    )
+    .await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    assert_eq!(
+        listed(&seats(rig.addr).await, "pij-second")["type"],
+        "project-manager",
+        "an untyped pm seat reads its seat role's type"
+    );
+
+    let start = head(&repo);
+    let dry = directory(rig.addr, &repo, &["retype"]).await;
+    assert_eq!(dry["ok"], true, "{dry}");
+    assert_eq!(head(&repo), start, "a dry run writes nothing");
+    let proposed: Vec<(&str, &str)> = dry["data"]["proposed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| (row["id"].as_str().unwrap(), row["type"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        proposed,
+        [("pm-004", "project-manager"), ("sec", "reviewer")]
+    );
+    let undecided: Vec<&str> = dry["data"]["undecided"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(undecided, ["expert", "historian"]);
+    assert!(
+        dry["data"]["undecided"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("--keeps"),
+        "{dry}"
+    );
+
+    let refused = directory(rig.addr, &repo, &["retype", "--apply"]).await;
+    assert_eq!(refused["ok"], false, "--apply needs --why: {refused}");
+    let applied = directory(
+        rig.addr,
+        &repo,
+        &["retype", "--apply", "--why", "type the old roles"],
+    )
+    .await;
+    assert_eq!(applied["ok"], true, "{applied}");
+    assert_eq!(applied["data"]["applied"], true);
+    assert_eq!(head(&repo), applied["data"]["commit"].as_str().unwrap());
+    assert_eq!(
+        section(&committed(&repo, "sec"), "meta")["type"],
+        "reviewer"
+    );
+    assert_eq!(
+        section(&committed(&repo, "pm-004"), "meta")["type"],
+        "project-manager"
+    );
+    assert!(
+        section(&committed(&repo, "historian"), "meta")
+            .get("type")
+            .is_none()
+    );
+    let seat = listed(&seats(rig.addr).await, "pij-second").clone();
+    assert_eq!(
+        seat["types"],
+        json!(["project-manager"]),
+        "the pointer was refreshed: {seat}"
+    );
+
+    let again = directory(rig.addr, &repo, &["retype", "--apply", "--why", "again"]).await;
+    assert_eq!(again["data"]["applied"], false, "{again}");
+    assert_eq!(again["data"]["proposed"], json!([]));
+    assert_eq!(head(&repo), applied["data"]["commit"].as_str().unwrap());
+    rig.server.abort();
+}

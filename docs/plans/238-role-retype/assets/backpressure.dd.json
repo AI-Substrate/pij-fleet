@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Unit tests on the proposal function; directory_http: dry run writes nothing, --apply types the sure ones in one commit, restamps holdings, lists the rest, and a second run is empty.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon retype"
         }
       ]

@@ -73,7 +73,7 @@
 				{
 					"id": "s04",
 					"title": "Give existing roles a type",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/006-seat-types.dd.json#requirements/req-07"],
 					"builds": [
 						"../blueprints/005-seat-types-and-pods.dd.json#components/c-retype",
@@ -113,6 +113,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s03 complete (plan 237)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s04 complete (plan 238)."
 				}
 			]
 		}

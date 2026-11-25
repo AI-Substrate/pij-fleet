@@ -36,19 +36,19 @@
         {
           "id": "ac-0001",
           "claim": "`pij directory retype` (no flag) prints, per untyped role, the proposed type and its source (template or id), and each undecided role with its `pij directory edit <id> --type <type>` line; it writes nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`retype --apply --why <text>` writes every proposed type in one governance commit, restamps the open holdings (plan 237) and prints what it wrote and what it left. A role whose proposed type requires a field it lacks (knowledge: keeps) is left undecided and named.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "Proposals: the template table in the type catalog first; then the id (`prime`, `pa`, `pm` or `pm-<n>` to project-manager, `coder*` to coder, `reviewer*`, `security*` and `qa*` to reviewer). Run again, it finds nothing to do.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         }
       ]
@@ -60,7 +60,7 @@
           "id": "ph-0001",
           "title": "Give existing roles a type (workstream 006 s04)",
           "brief": "One phase on PR #344.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

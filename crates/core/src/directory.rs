@@ -15,7 +15,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("routes") => Some(ROUTES),
         Some("templates" | "template-diff") => Some(TEMPLATES),
         Some("memory") => Some(MEMORY),
-        Some("types" | "seed") => Some(TYPES),
+        Some("types" | "seed" | "retype") => Some(TYPES),
         _ => None,
     }
 }
@@ -63,6 +63,7 @@ Usage:
   pij directory merge <from> --into <to> --why <text>  fold one role into another
   pij directory types [<type> [--seed]]                the ten seat types, one's definition, or its seed
   pij directory seed <type> --file <path> --why <text> this repo's own seed for a type
+  pij directory retype [--apply --why <text>]         a type for every role written before types
   pij directory templates [--show <name>[@vN]]        the role templates, or one's body
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
@@ -176,12 +177,21 @@ Usage:
   pij directory types <type> --seed            the seed a seat of that type is told,
                                                and where it came from
   pij directory seed <type> --file <path> --why <text>   write this repo's own seed
+  pij directory retype                         the type each untyped role would get, and
+                                               those it cannot decide, with the edit for each
+  pij directory retype --apply --why <text>    write the decided types in one commit
 
 A type says how a seat lives; a role says what it is responsible for. Types are
 pij's fixed set; a repo builds any role it needs on one. Only prime, pa and
 project-manager carry authority of their own. A seed is read from the
 governance copy (community/seeds/<type>.md) when there is one, else the one
-pij ships. Nothing here launches a seat.";
+pij ships. Nothing here launches a seat.
+
+retype proposes a role's type from its template first, then its id (prime,
+pa, pm or pm-<n>, coder*, reviewer*, security*, qa*). It never guesses past
+that: every other role, and one whose proposed type needs a field it lacks
+(knowledge: --keeps), is listed with the edit that types it. Typed and retired
+roles are left alone, so a second run finds nothing to do.";
 
 const RESHAPE: &str = "\
 pij directory retire | merge: reshape the community as the work changes (plan 206).

@@ -380,6 +380,133 @@ pub fn check_role(id: &str, document: &Value, require: bool) -> Result<(), Refus
     Ok(())
 }
 
+/// The type `retype` would give a role written before types (PRD 006
+/// req-07, plan 238), and why: its template's (the catalog's table), else its
+/// id's (`prime`, `pa`, `pm` or `pm-<n>`, `coder*`, `reviewer*`, `security*`,
+/// `qa*`). `None` when neither names one.
+pub fn propose(id: &str, template: Option<&str>) -> Option<(&'static str, String)> {
+    if let Some(name) = template
+        && let Some(kind) = template_type(name)
+    {
+        return Some((kind, format!("from template {name}")));
+    }
+    let pm = id
+        .strip_prefix("pm-")
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+    let kind = match id {
+        "prime" => "prime",
+        "pa" => "pa",
+        "pm" => "project-manager",
+        _ if pm => "project-manager",
+        _ if id.starts_with("coder") => "coder",
+        _ if ["reviewer", "security", "qa"]
+            .iter()
+            .any(|prefix| id.starts_with(prefix)) =>
+        {
+            "reviewer"
+        }
+        _ => return None,
+    };
+    Some((kind, format!("from the id {id}")))
+}
+
+/// One untyped role `retype` looked at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Retype {
+    /// Sure: the type and why.
+    Decided {
+        /// The role id.
+        id: String,
+        /// The type it gets.
+        kind: &'static str,
+        /// Where the type came from.
+        source: String,
+    },
+    /// Not sure: why, and the edit that types it.
+    Undecided {
+        /// The role id.
+        id: String,
+        /// Why retype left it.
+        reason: String,
+        /// The `pij directory edit` line that types it.
+        command: String,
+    },
+}
+
+impl Retype {
+    /// The view of one item in `retype`'s answer.
+    pub fn json(&self) -> Value {
+        match self {
+            Self::Decided { id, kind, source } => {
+                json!({"id": id, "type": kind, "source": source})
+            }
+            Self::Undecided {
+                id,
+                reason,
+                command,
+            } => json!({"id": id, "reason": reason, "command": command}),
+        }
+    }
+}
+
+/// `document` with `meta.type` set to `kind`.
+pub fn with_type(mut document: Value, kind: &str) -> Value {
+    if let Some(meta) = document["sections"].as_array_mut().and_then(|sections| {
+        sections
+            .iter_mut()
+            .find(|section| section["name"] == "meta")
+    }) {
+        meta["value"]["type"] = json!(kind);
+    }
+    document
+}
+
+/// `retype`'s plan over `(id, document)` pairs: every active role with no
+/// type, decided or not. A typed or retired role is left out. A proposal the
+/// role cannot meet (knowledge with no `keeps`) is left undecided.
+pub fn retype_plan(project: &str, roles: &[(String, Value)]) -> Vec<Retype> {
+    let edit = |id: &str, kind: &str, extra: &[&str]| {
+        let set = format!("type={kind}");
+        let mut words = vec!["pij", "directory", "edit", id, "--set", set.as_str()];
+        words.extend_from_slice(extra);
+        words.extend_from_slice(&["--why", "<why>", "--project", project]);
+        super::picture::command(&words)
+    };
+    roles
+        .iter()
+        .filter(|(_, document)| of_role(document).is_none())
+        .filter(|(_, document)| !super::role::standing(document).retired())
+        .map(|(id, document)| {
+            let Some((kind, source)) = propose(id, meta(document)["template"].as_str()) else {
+                return Retype::Undecided {
+                    id: id.clone(),
+                    reason: "no template or id pattern names a type".to_string(),
+                    command: edit(id, "<type>", &[]),
+                };
+            };
+            match check_role(id, &with_type(document.clone(), kind), true) {
+                Ok(()) => Retype::Decided {
+                    id: id.clone(),
+                    kind,
+                    source,
+                },
+                Err(refusal) => {
+                    let extra: &[&str] = match kind {
+                        "knowledge" => &["--keeps", "<artefact>"],
+                        "steward" => &["--sole-writer-of", "<thing>"],
+                        _ => &[],
+                    };
+                    Retype::Undecided {
+                        id: id.clone(),
+                        reason: format!("{kind} ({source}), but {}", refusal.message),
+                        command: edit(id, kind, extra),
+                    }
+                }
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,5 +628,65 @@ mod tests {
         assert_eq!(ours["text"], "Our coders run just ci.\n");
         assert_eq!(seed(Some(&dir), "pa").unwrap()["source"], "shipped");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn retype_proposes_from_the_template_then_the_id_and_leaves_the_rest() {
+        let role = |id: &str, meta: Value| {
+            let mut value = json!({"id": id});
+            for (key, item) in meta.as_object().unwrap() {
+                value[key] = item.clone();
+            }
+            (
+                id.to_string(),
+                json!({"sections": [{"name": "meta", "value": value}]}),
+            )
+        };
+        let roles = [
+            role("sec", json!({"template": "security"})),
+            role("pm-004", json!({})),
+            role("coder-b", json!({})),
+            role("historian", json!({})),
+            role("expert", json!({"template": "topic-expert"})),
+            role("typed", json!({"type": "worker"})),
+            role("qa-old", json!({"state": "retired"})),
+        ];
+        let plan = retype_plan("fleet", &roles);
+        let decided: Vec<(&str, &str)> = plan
+            .iter()
+            .filter_map(|item| match item {
+                Retype::Decided { id, kind, .. } => Some((id.as_str(), *kind)),
+                Retype::Undecided { .. } => None,
+            })
+            .collect();
+        assert_eq!(
+            decided,
+            [
+                ("sec", "reviewer"),
+                ("pm-004", "project-manager"),
+                ("coder-b", "coder")
+            ]
+        );
+        let undecided: Vec<(&str, &str)> = plan
+            .iter()
+            .filter_map(|item| match item {
+                Retype::Undecided { id, command, .. } => Some((id.as_str(), command.as_str())),
+                Retype::Decided { .. } => None,
+            })
+            .collect();
+        assert_eq!(
+            undecided,
+            [
+                (
+                    "historian",
+                    "pij directory edit historian --set 'type=<type>' --why '<why>' --project fleet"
+                ),
+                (
+                    "expert",
+                    "pij directory edit expert --set type=knowledge --keeps '<artefact>' --why '<why>' --project fleet"
+                ),
+            ]
+        );
+        assert_eq!(propose("pm-x", None), None, "pm-<n> only");
     }
 }

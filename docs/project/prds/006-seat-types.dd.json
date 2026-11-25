@@ -140,7 +140,7 @@
 					"statement": "One command gives every existing role a type, proposing one from the role's template and id and leaving the rest for the prime to choose. `kind` and `lifecycle` are retired, and a role document written before the change still reads.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "Run on a community of roles written before this change, the command leaves no role without a type, lists each one it could not decide, and `pij directory` reads the result.",
 					"source": "role documents in five projects use kind and lifecycle today"
 				},
@@ -197,6 +197,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s03 (plan 237): req-04 and req-05 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s04 (plan 238): req-07 shipped."
 				}
 			]
 		}

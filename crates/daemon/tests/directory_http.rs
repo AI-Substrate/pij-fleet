@@ -549,17 +549,7 @@ async fn missing_governance_refuses_with_the_bootstrap_step() {
     let refused = call(
         addr,
         "/v1/directory",
-        &[
-            "directory",
-            "add",
-            "qa",
-            "--type",
-            "worker",
-            "--rule",
-            "x",
-            "--why",
-            "w",
-        ],
+        &["directory", "add", "qa", "--rule", "x", "--why", "w"],
         &root,
     )
     .await;

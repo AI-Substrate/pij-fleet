@@ -20,7 +20,7 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-3 | ph-0001 | BUILD | computational | Unit tests on the proposal function; directory_http: dry run writes nothing, --apply types the sure ones in one commit, restamps holdings, lists the rest, and a second run is empty. | [ ] unchecked | — | — | cargo test -p pij-daemon retype |
+| bp-0001 | AC1-3 | ph-0001 | BUILD | computational | Unit tests on the proposal function; directory_http: dry run writes nothing, --apply types the sure ones in one commit, restamps holdings, lists the rest, and a second run is empty. | [x] checked | — | — | cargo test -p pij-daemon retype |
 
 <a id="sensors"></a>
 

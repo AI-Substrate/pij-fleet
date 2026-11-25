@@ -1811,6 +1811,14 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
   `types <type> --seed` returns the seed and its `source`: `governance`
   (`community/seeds/<type>.md`) or `shipped`. `directory seed <type> --file
   <path> --why <text>` writes the governance copy through the writer.
+- `directory retype` (plan 238) proposes a type for every active role with
+  none: from its template (the catalog's table), else its id (`prime`, `pa`,
+  `pm`/`pm-<n>`, `coder*`, `reviewer*`, `security*`, `qa*`). It answers
+  `proposed` and `undecided` (each with the `edit` that types it; a role whose
+  proposed type needs a field it lacks is undecided) and writes nothing.
+  `--apply --why <text>` writes every proposed type in one commit, re-planned
+  under the writer's lock, and records the pointers, so `pij list` shows the new
+  types at once. A second run proposes nothing.
 - The view's role rows carry `type` and `type_suggestion`. Types are checked
   when a role is written, never enforced on a running seat, and authority is
   unchanged: it still comes from the seat role and the prime designation.
