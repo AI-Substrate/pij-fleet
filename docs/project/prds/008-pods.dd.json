@@ -149,7 +149,7 @@
 				{
 					"id": "req-07",
 					"title": "Pods live in governance; templates live where their path says",
-					"statement": "Each pod's folder lives under `community/pods/<pod>/` on the governance branch, written only by pij. It holds its filled parameters, the template path and version it came from, the seat id that fills each slot, each seat's first turn and a log of what changed. A pod template is read from the path a command names, in the main repo or in governance. Facts about a seat itself (its working folder, harness sessions and process) stay in pij's database and are looked up by seat id, not copied into the folder. Each memory note records the id of the seat that wrote it and, for a pod member, its subject.",
+					"statement": "Each pod's folder lives under `community/pods/<pod>/` on the governance branch, written only by pij. It holds its filled parameters, the template path and version it came from, the seat id that fills each slot and a log of what changed; each seat's first turn is kept at its role, by seat id. A pod template is read from the path a command names, in the main repo or in governance. Facts about a seat itself (its working folder, harness sessions and process) stay in pij's database and are looked up by seat id, not copied into the folder. Each memory note records the id of the seat that wrote it and, for a pod member, its subject.",
 					"actor": "operator",
 					"priority": "must",
 					"state": "shipped",
@@ -408,6 +408,16 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #346 (s06): req-16, req-17, req-20 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-07: a member's first turn is kept at its role by seat id, as `spawn --as` writes it, not copied into the pod's folder (#346 review B346-R1-10; the unused pod first-turn path is removed)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "#346 review round 1 fixed on #346: a secret-shaped parameter is refused before any write (req-03, req-05), each record change is built from the current record (req-05, req-08, req-16, req-19), a later confirm recovers a degraded slot (req-19), the template is recorded as resolved (req-07), a seat in one pod is refused by a second (req-01, pm-001 ruling), a late work folder drives the freeze (req-14), the write-back honours the dispatch brake (req-17, req-19), and the text output shows warnings, outcomes, first turns, wiring, types and folders (req-01, req-03, req-07)."
 				}
 			]
 		}

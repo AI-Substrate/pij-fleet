@@ -41,9 +41,10 @@
         },
         {
           "id": "ac-0002",
-          "claim": "`pij pod down <pod>` runs the template's close steps, then for each member not marked keep-open runs the same path as `pij close <seat> --stop` (plan 245): memory first, the recorded process stopped, the prime told of any seat that did not answer, cold seats not woken. A keep-open member (knowledge by default) is named in a warning and left running. Consulted roles are not touched. The pod reads closing until every member is down.",
+          "claim": "`pij pod down <pod>`, for each member not marked keep-open runs the same path as `pij close <seat> --stop` (plan 245): memory first, the recorded process stopped, the prime told of any seat that did not answer, cold seats not woken. A keep-open member (knowledge by default) is named in a warning and left running. Consulted roles are not touched. The pod reads closing until every member is down.",
           "state": "checked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002",
+          "note": "A template's close steps run with PRD 010 req-01 (pm-001 ruling 2026-11-25); #346 review B346-R1-10 reworded this claim."
         },
         {
           "id": "ac-0003",
