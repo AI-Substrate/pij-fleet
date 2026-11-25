@@ -3080,7 +3080,10 @@
 					"harness_session": "655ce405-b9aa-4419-962c-7062161b5dfe",
 					"instance_key": "345",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-wonderful-owl",
+					"to": "2026-11-25T03:32:53.606Z",
 					"why": "#345 PRD 007 single review (amended C34; Jordan-approved)"
 				}
 			]
