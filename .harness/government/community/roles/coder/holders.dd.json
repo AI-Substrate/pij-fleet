@@ -1755,7 +1755,10 @@
 					"harness_session": "068fe522-03ac-44bd-9d8c-12faa4604a54",
 					"instance_key": "f281-fix",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-spatial-vole",
+					"to": "2026-11-25T04:15:08.538Z",
 					"why": "Jordan-approved F281 fix; fresh coder (falcon cold)"
 				}
 			]
