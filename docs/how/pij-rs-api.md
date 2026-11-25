@@ -1829,6 +1829,22 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
   when a role is written, never enforced on a running seat, and authority is
   unchanged: it still comes from the seat role and the prime designation.
 
+### Starting a seat in a role (PRD 007, plans 240-245)
+
+- A role declares the parameters a seat starting in it needs filled:
+  `add`/`edit --param <name>[:optional|:required]` writes a `parameters`
+  section (`[{name, need}]`). Each `<name>` in the role's summary, rules,
+  scope paths, out-of-scope items, forbidden paths and packet is filled at start.
+- `directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>]
+  [--packet <file>] [--instance <key>]` (plan 241) returns `first_turn` (the
+  whole text) and `parts` (`heading`, `source`, `text`), in order: the type
+  (definition and seed), the role (filled), the parameters, the caller's focus
+  and packet as creator, and the role's memory index. A parameter the role does
+  not declare refuses `E-RS-PARAM-UNKNOWN` (naming those it declares); a
+  required one left out refuses `E-RS-PARAM-MISSING` (naming each `--set`). It
+  writes nothing and launches nothing: in-process reads of the governance
+  worktree and the caller's `--packet` file.
+
 Cost: `types` reads compiled-in bytes and at most one governance file; add,
 edit and seed are the writer's usual commit. No loop, poll or timer.
 

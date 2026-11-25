@@ -29,8 +29,10 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 34] = [
+const SINGLE: [&str; 36] = [
     "why",
+    "focus",
+    "instance",
     "into",
     "from",
     "show",
@@ -65,9 +67,10 @@ const SINGLE: [&str; 34] = [
     "note",
     "slug",
 ];
-const REPEATED: [&str; 21] = [
+const REPEATED: [&str; 22] = [
     "set",
     "type-change",
+    "param",
     "scope-path",
     "rule",
     "out-of-scope",
@@ -127,6 +130,8 @@ struct Arguments {
     seed: bool,
     /// `--apply` on `retype`: write the proposed types (PRD 006).
     apply: bool,
+    /// `--first-turn` on `show`: print a role's first turn (PRD 007 req-03).
+    first_turn: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -158,6 +163,7 @@ impl Arguments {
                             | "types"
                             | "seed"
                             | "retype"
+                            | "show"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -201,6 +207,16 @@ impl Arguments {
                     ));
                 }
                 call.apply = true;
+                continue;
+            }
+            if flag == "first-turn" {
+                if call.leaf != "show" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--first-turn belongs to `show`: pij directory show <role> --first-turn",
+                    ));
+                }
+                call.first_turn = true;
                 continue;
             }
             if flag == "seed" {
@@ -359,6 +375,35 @@ impl Arguments {
                 "usage: pij directory seed <type> --file <path> --why <text> [--project <slug>]",
             ));
         }
+        if call.leaf == "show"
+            && (call.positions.len() != 1
+                || !call.first_turn
+                || call.single.keys().any(|flag| {
+                    !matches!(
+                        flag.as_str(),
+                        "project" | "actor" | "focus" | "packet" | "instance"
+                    )
+                })
+                || call.repeated.keys().any(|flag| flag != "set"))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>] [--packet <file>] [--instance <key>] [--project <slug>]",
+            ));
+        }
+        if call.leaf != "show"
+            && ["focus", "instance"]
+                .iter()
+                .any(|flag| call.single.contains_key(*flag))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --focus and --instance belong to `show --first-turn`",
+                    call.leaf
+                ),
+            ));
+        }
         if call.leaf != "templates" && call.single.contains_key("show") {
             return Err(Refusal::new(
                 "E-RS-ARG",
@@ -407,10 +452,13 @@ impl Arguments {
                 ),
             ));
         }
-        if call.leaf != "edit" && call.repeated.contains_key("set") {
+        if !matches!(call.leaf.as_str(), "edit" | "show") && call.repeated.contains_key("set") {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                format!("directory {}: --set belongs to `edit`", call.leaf),
+                format!(
+                    "directory {}: --set belongs to `edit` and `show --first-turn`",
+                    call.leaf
+                ),
             ));
         }
         if call.leaf == "edit"
@@ -569,6 +617,16 @@ impl Arguments {
                 .map(|change| match change.split_once('=') {
                     Some((rule, why)) => (rule.trim().to_string(), why.trim().to_string()),
                     None => (change.trim().to_string(), String::new()),
+                })
+                .collect(),
+            parameters: self
+                .all("param")
+                .into_iter()
+                .map(|param| match param.split_once(':') {
+                    Some((name, "optional")) => (name.trim().to_string(), false),
+                    Some((name, "required")) => (name.trim().to_string(), true),
+                    // Anything else keeps the colon, so the name check refuses it.
+                    _ => (param.trim().to_string(), true),
                 })
                 .collect(),
             holders: self.get("holders"),
@@ -738,6 +796,7 @@ pub(crate) async fn handle(
         "types" => types(&state, &request.caller, &call).await,
         "seed" => seed(&state, &actor, &request.caller, &call).await,
         "retype" => retype(&state, &actor, &request.caller, &call).await,
+        "show" => show(&state, &actor, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
@@ -1318,6 +1377,74 @@ async fn types(
         Err(_) => None,
     };
     Ok(json!({"seed": types::seed(worktree.as_deref(), type_id)?}))
+}
+
+/// `directory show <role> --first-turn` (PRD 007 req-03, plan 241): the first
+/// turn a seat starting in the role would get, with the caller as its
+/// creator. Reads the governance worktree and `--packet`'s file in-process;
+/// writes nothing and launches nothing.
+async fn show(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    use crate::community::first_turn;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let root = crate::community::root::find(&repo)?;
+    let creator = first_turn::Creator {
+        seat: actor.as_str().to_string(),
+        focus: call.get("focus"),
+        packet: call
+            .get("packet")
+            .map(|file| read_packet(caller, &file))
+            .transpose()?,
+    };
+    let instance = call.get("instance").unwrap_or_default();
+    let role_id = &call.positions[0];
+    let (text, parts) = first_turn::build(
+        &root.worktree,
+        role_id,
+        &instance,
+        &parameter_sets(&call.all("set"))?,
+        &creator,
+    )?;
+    Ok(json!({
+        "project": project,
+        "role": role_id,
+        "instance": (!instance.is_empty()).then_some(instance),
+        "first_turn": text,
+        "parts": parts,
+    }))
+}
+
+/// `--set <name>=<value>` values as pairs, in the order given.
+pub(super) fn parameter_sets(sets: &[String]) -> Result<Vec<(String, String)>, Refusal> {
+    sets.iter()
+        .map(|set| {
+            set.split_once('=')
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .ok_or_else(|| {
+                    Refusal::new(
+                        "E-RS-ARG",
+                        format!("--set {set:?}: give it as <name>=<value>"),
+                    )
+                })
+        })
+        .collect()
+}
+
+/// A `--packet <file>` named by the caller: `(the name as given, its text)`.
+pub(super) fn read_packet(caller: &CallerContext, file: &str) -> Result<(String, String), Refusal> {
+    let path = caller_path(caller, file)?;
+    std::fs::read_to_string(&path)
+        .map(|text| (file.to_string(), text))
+        .map_err(|error| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!("--packet: cannot read {}: {error}", path.display()),
+            )
+        })
 }
 
 /// `directory retype [--apply --why <text>]` (PRD 006 req-07, plan 238): the

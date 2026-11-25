@@ -2163,3 +2163,7 @@ async fn combined_list_edits_apply_replace_then_remove_then_add() {
 /// PRD 006 s02 (plan 236): the type on a role, its definitions and seeds.
 #[path = "types.rs"]
 mod types;
+
+/// PRD 007 (plans 240, 241): role parameters and the first turn.
+#[path = "role_start.rs"]
+mod role_start;

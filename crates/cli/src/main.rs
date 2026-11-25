@@ -2155,6 +2155,14 @@ async fn run(cli: Cli) -> ExitCode {
                     println!("{}", render_retype(data));
                     ExitCode::SUCCESS
                 }
+                // `directory show <role> --first-turn` (PRD 007): the turn itself.
+                Some(data) if data.get("first_turn").is_some_and(Value::is_string) => {
+                    println!(
+                        "{}",
+                        data["first_turn"].as_str().unwrap_or_default().trim_end()
+                    );
+                    ExitCode::SUCCESS
+                }
                 // `directory types [<type> [--seed]]` (PRD 006).
                 Some(data) if data.get("types").is_some_and(Value::is_array) => {
                     println!("{}", render_types(&data["types"]));

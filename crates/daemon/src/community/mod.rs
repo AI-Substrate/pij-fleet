@@ -8,6 +8,7 @@
 
 pub mod ddocs;
 pub mod directory;
+pub mod first_turn;
 pub mod gh;
 mod git;
 pub mod holders;

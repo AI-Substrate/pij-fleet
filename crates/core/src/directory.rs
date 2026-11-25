@@ -16,6 +16,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("templates" | "template-diff") => Some(TEMPLATES),
         Some("memory") => Some(MEMORY),
         Some("types" | "seed" | "retype") => Some(TYPES),
+        Some("show") => Some(SHOW),
         _ => None,
     }
 }
@@ -64,6 +65,7 @@ Usage:
   pij directory types [<type> [--seed]]                the ten seat types, one's definition, or its seed
   pij directory seed <type> --file <path> --why <text> this repo's own seed for a type
   pij directory retype [--apply --why <text>]         a type for every role written before types
+  pij directory show <role> --first-turn [--set <name>=<value>]...   what a seat starting in it is told
   pij directory templates [--show <name>[@vN]]        the role templates, or one's body
   pij directory template-diff <id>                    what changed in its template since
   pij directory assign <role>[/<instance>] <seat> --why <text>
@@ -126,6 +128,9 @@ Flags:
   --type-change <rule>=<why>   repeatable; change a default rule of the type,
                             with the reason (a fixed rule refuses)
   --type-suggestion <text>  the type you wished existed, when none fits
+  --param <name>[:optional]   repeatable; a parameter the role needs filled at
+                            start (`pij spawn --as role:<id> --set <name>=<value>`),
+                            required unless :optional
   --holders one|many
   --instance-key <text>
   --default-limit <duration>   like 45m or 1h30m
@@ -192,6 +197,20 @@ pa, pm or pm-<n>, and coder, reviewer, security or qa alone or before a -). It n
 that: every other role, and one whose proposed type needs a field it lacks
 (knowledge: --keeps), is listed with the edit that types it. Typed and retired
 roles are left alone, so a second run finds nothing to do.";
+
+const SHOW: &str = "\
+pij directory show: what a seat starting in a role is told (PRD 007).
+
+Usage:
+  pij directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>]
+                     [--packet <file>] [--instance <key>] [--project <slug>] [--json]
+
+Prints the one first turn `pij spawn --as role:<role>` sends, in order: the
+seat's type (its definition and seed), the role's own text with each <name>
+filled from --set, the parameters, your --focus and --packet as its creator,
+and the role's memory index. Each part names where it came from. --json gives
+the parts. A parameter the role does not declare, or a required one left out,
+refuses as the spawn would. It writes nothing and launches nothing.";
 
 const RESHAPE: &str = "\
 pij directory retire | merge: reshape the community as the work changes (plan 206).
