@@ -26,7 +26,7 @@ pub async fn governance(
         "orchestration" => "/v1/orchestration",
         "spine" => "/v1/spine",
         "directory" => "/v1/directory",
-        "pod" => "/v1/pod",
+        "pod" | "community" => "/v1/pod",
         "output" => "/v1/output",
         "outputs" => "/v1/outputs",
         "claim" => "/v1/claim",

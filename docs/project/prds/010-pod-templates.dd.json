@@ -85,18 +85,18 @@
 					"statement": "pij ships pod templates and type definitions as versioned, unchangeable originals. A pod command names its template by path, or a shipped one as `shipped:<name>[@v<n>]`, and pij reads exactly that: a template can sit in the main repo (a fleet shared as files) or in governance, and pij does not enforce where. `pij pod adopt <name> [--into <path>] --why <text>` copies a shipped one to governance by default or to the path given, recording the version it came from; the repo then edits its copy. Every pod command says which template it read (path, or shipped name and version). `template-diff <path>` shows what changed upstream and applies nothing. A running pod keeps the version it started from.",
 					"actor": "template author",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A shipped template adopted into the main repo with `--into` and edited is the one `plan` reads when given that path, and `plan` names it; `template-diff` lists an upstream change without altering the copy; a pod started before an edit shows its original version.",
 					"source": "operator, 2026-11-25: centrally managed in pij, customised by repos; PRD 001 role templates work this way"
 				},
 				{
 					"id": "req-03",
 					"title": "Setting up templates is a prime's setup job",
-					"statement": "At project setup the prime runs `pij community init --seeds all --templates <names> [--into <path>] --why <text>`, which copies the type definitions into governance and the chosen pod templates into governance (or the path given) in one commit each place, and prints what it wrote and where. pij copies nothing on its own.",
+					"statement": "At project setup the prime runs `pij community init --seeds all --templates <names> [--into <path>] --why <text>`, which copies each type's seed (what its seats are told; a repo's copy wins, while the type's rules stay pij's) into governance and the chosen pod templates into governance (or the path given) in one commit each place, and prints what it wrote and where. pij copies nothing on its own.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
-					"done_when": "On a project with an empty community, `init` writes the ten type definitions and the named templates, and with `--into` the templates land at that path; with no `init`, nothing is written until a command asks.",
+					"state": "shipped",
+					"done_when": "On a project with an empty community, `init` writes the ten types' seeds and the named templates, and with `--into` the templates land at that path; with no `init`, nothing is written until a command asks.",
 					"source": "operator ruling 2026-11-25: getting templates going is a prime setup job; PRD 001 ruling that nothing is created for you"
 				},
 				{
@@ -125,7 +125,7 @@
 					"statement": "`pij pod adopt`, `pij pod export`, `template-diff` and `pij community init` start no seat and add no loop, poll or timer.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "planned",
+					"state": "in-progress",
 					"done_when": "`pij-rs --json ping | jq .data.spawns` does not move across one `init`, one `adopt`, one `template-diff` and one `export`.",
 					"source": "AGENTS.md: resource cost is a correctness property"
 				}
@@ -194,6 +194,16 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #347 (s01): req-01 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-03: init copies each type's seed, the part of a type a repo owns; a type's rules stay pij's, as PRD 006 has them, so there is no governance copy of them to write."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #347 (s02): req-02 and req-03 shipped; req-06 in progress (export arrives with s03; its live spawn-counter receipt after deploy)."
 				}
 			]
 		}

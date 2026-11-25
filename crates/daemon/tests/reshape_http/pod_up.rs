@@ -1249,3 +1249,170 @@ async fn a_template_names_its_procedures_and_down_records_its_close_procedure() 
     }
     rig.server.abort();
 }
+
+/// Plan 254 ac-0001..ac-0005 (PRD 010 req-02, req-03, req-06): a shipped
+/// template is named as `shipped:<name>`, recorded at its version, adopted to
+/// governance (one commit) or a path (files), read by that path, diffed
+/// against upstream without being changed, and `community init` copies the
+/// ten seeds and the named templates, keeping what is there. Nothing
+/// launches a seat.
+#[tokio::test]
+async fn shipped_templates_are_named_adopted_diffed_and_set_up_by_init() {
+    let repo = repo("pij-pod-shipped");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+
+    let listed = pod(rig.addr, &repo, &["templates"]).await;
+    assert_eq!(listed["data"]["templates"][0]["name"], "build", "{listed}");
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &["plan", "shipped:build", "--set", "subject=step"],
+    )
+    .await;
+    assert_eq!(planned["ok"], true, "{planned}");
+    assert_eq!(planned["data"]["template"]["source"], "shipped:build@v1");
+    let up = pod(
+        rig.addr,
+        &repo,
+        &["up", "shipped:build", "--set", "subject=step", "--no-start"],
+    )
+    .await;
+    assert_eq!(up["ok"], true, "{up}");
+    let set = pod(rig.addr, &repo, &["set", "build", "subject=again"]).await;
+    assert_eq!(set["ok"], true, "a shipped template is read again: {set}");
+
+    let before = head(&repo);
+    let into = pod(
+        rig.addr,
+        &repo,
+        &["adopt", "build", "--into", "pods/mine", "--why", "ours"],
+    )
+    .await;
+    assert_eq!(into["ok"], true, "{into}");
+    assert_eq!(
+        into["data"]["commit"],
+        Value::Null,
+        "files in the repo, no commit"
+    );
+    assert_eq!(head(&repo), before);
+    let file = repo.main.join("pods/mine/pod-template.dd.json");
+    let copy: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(section(&copy, "meta")["from"], "shipped:build@v1");
+    let again = pod(
+        rig.addr,
+        &repo,
+        &["adopt", "build", "--into", "pods/mine", "--why", "ours"],
+    )
+    .await;
+    assert_eq!(again["ok"], false, "never overwritten: {again}");
+    let governed = pod(rig.addr, &repo, &["adopt", "build", "--why", "ours"]).await;
+    assert_eq!(governed["ok"], true, "{governed}");
+    let path = governed["data"]["wrote"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(path, ".harness/government/community/pod-templates/build");
+    assert!(
+        repo.gov.join(&path).join("pod-template.dd.json").is_file(),
+        "{governed}"
+    );
+    assert_ne!(head(&repo), before, "one governance commit");
+
+    let mine = pod(
+        rig.addr,
+        &repo,
+        &[
+            "plan",
+            "pods/mine",
+            "--set",
+            "subject=step",
+            "--name",
+            "mine",
+        ],
+    )
+    .await;
+    assert_eq!(mine["data"]["template"]["source"], "pods/mine", "{mine}");
+    let edited = std::fs::read(&file).unwrap();
+    let diffed = pod(rig.addr, &repo, &["template-diff", "pods/mine"]).await;
+    assert_eq!(diffed["data"]["from"], "shipped:build@v1", "{diffed}");
+    assert_eq!(diffed["data"]["current"], true, "{diffed}");
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        edited,
+        "diff applies nothing"
+    );
+
+    let init = call(
+        rig.addr,
+        "/v1/pod",
+        &[
+            "community",
+            "init",
+            "--seeds",
+            "all",
+            "--templates",
+            "build",
+            "--why",
+            "setup",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(init["ok"], true, "{init}");
+    assert_eq!(
+        init["data"]["wrote"].as_array().unwrap().len(),
+        10,
+        "{init}"
+    );
+    assert_eq!(
+        init["data"]["kept"][0]["path"], ".harness/government/community/pod-templates/build",
+        "{init}"
+    );
+    let twice = call(
+        rig.addr,
+        "/v1/pod",
+        &["community", "init", "--seeds", "all", "--why", "setup"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(twice["data"]["commit"], Value::Null, "{twice}");
+    assert_eq!(twice["data"]["kept"].as_array().unwrap().len(), 10);
+    let elsewhere = call(
+        rig.addr,
+        "/v1/pod",
+        &[
+            "community",
+            "init",
+            "--templates",
+            "build",
+            "--into",
+            "tpl",
+            "--why",
+            "setup",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(elsewhere["ok"], true, "{elsewhere}");
+    assert!(repo.main.join("tpl/build/pod-template.dd.json").is_file());
+    let nothing = call(
+        rig.addr,
+        "/v1/pod",
+        &["community", "init", "--why", "x"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(
+        nothing["ok"], false,
+        "pij copies nothing on its own: {nothing}"
+    );
+
+    assert_eq!(
+        super::role_start::launches(&rig.tmux),
+        0,
+        "no seat launched"
+    );
+    rig.server.abort();
+}

@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "A shipped version is never edited: pinned hashes.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_templates_pinned"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP tests: adopt into governance and --into; plan names the copy it read; diff lists a change and alters nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_adopt"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: init writes the types and templates where asked; with no init nothing is written.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon community_init"
         },
         {
@@ -51,7 +51,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "The spawn counter does not move across init, adopt, diff and export.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_templates_cost"
         }
       ]

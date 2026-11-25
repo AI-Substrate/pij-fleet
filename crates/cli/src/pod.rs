@@ -8,6 +8,10 @@ fn text(value: &Value) -> &str {
 
 /// A `pod plan`, `up` or `show` answer as lines a person reads.
 pub fn render(data: &Value) -> String {
+    if data.get("wrote").is_some() || data.get("templates").is_some() || data.get("diff").is_some()
+    {
+        return render_templates(data);
+    }
     let mut lines = Vec::new();
     let pod = text(&data["pod"]);
     if let Some(template) = data["template"].as_object() {
@@ -220,6 +224,58 @@ pub fn render(data: &Value) -> String {
         if let Some(line) = data[key].as_str() {
             lines.push(format!("{key}: {line}"));
         }
+    }
+    lines.join("\n")
+}
+
+/// `pod templates`, `adopt`, `template-diff` and `community init` (PRD 010).
+fn render_templates(data: &Value) -> String {
+    let mut lines = Vec::new();
+    for row in data["templates"].as_array().into_iter().flatten() {
+        lines.push(format!(
+            "{} (latest v{}): {}",
+            text(&row["name"]),
+            row["latest"],
+            row["summary"].as_str().unwrap_or("")
+        ));
+        lines.push(format!("  use: {}", text(&row["use"])));
+        lines.push(format!("  own a copy: {}", text(&row["adopt"])));
+    }
+    if let Some(from) = data["from"].as_str() {
+        lines.push(format!(
+            "{} was copied from {from}; the latest is {}",
+            text(&data["template"]),
+            text(&data["latest"])
+        ));
+        match data["diff"].as_str().filter(|diff| !diff.is_empty()) {
+            Some(diff) => lines.push(diff.trim_end().to_string()),
+            None => lines.push("no upstream change since then".to_string()),
+        }
+        lines.push(format!("applied: {}", text(&data["applied"])));
+    }
+    for row in data["wrote"].as_array().into_iter().flatten() {
+        lines.push(format!(
+            "wrote {} to {} ({})",
+            row["template"]
+                .as_str()
+                .or(row["seed"].as_str())
+                .unwrap_or("-"),
+            text(&row["path"]),
+            text(&row["where"])
+        ));
+    }
+    for row in data["kept"].as_array().into_iter().flatten() {
+        lines.push(format!(
+            "kept {}: {}",
+            text(&row["path"]),
+            text(&row["why"])
+        ));
+    }
+    if let Some(commit) = data["commit"].as_str() {
+        lines.push(format!("commit: {commit}"));
+    }
+    if let Some(next) = data["next"].as_str() {
+        lines.push(format!("next: {next}"));
     }
     lines.join("\n")
 }

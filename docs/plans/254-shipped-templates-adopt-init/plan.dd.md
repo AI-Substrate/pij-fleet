@@ -47,11 +47,11 @@ pij ships pod templates and type definitions as versioned originals. A pod comma
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | Shipped originals under `templates/pods/&lt;name&gt;/v&lt;N&gt;/`, embedded like role templates, never edited after they ship (a pinned hash per version). | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij pod adopt &lt;name&gt; [--into &lt;path&gt;] --why &lt;text&gt;` copies a shipped template to governance (default) or the path, recording its version, in one writer commit. Every pod command says which template it read: a path, or a shipped name and version. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | `pij pod template-diff &lt;path&gt;` shows what changed upstream since the copy's version and applies nothing. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | `pij community init --seeds all --templates &lt;names&gt; [--into &lt;path&gt;] --why &lt;text&gt;` copies the ten type definitions into governance and the named templates into governance or the path, one commit per place, and prints what it wrote and where. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | Cost: adopt, init and export are one writer commit each (init one per place); diff and listing are in-process. No seat launched; no loop, poll or timer. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | Shipped originals under `templates/pods/&lt;name&gt;/v&lt;N&gt;/`, embedded like role templates, never edited after they ship (a pinned hash per version). | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij pod adopt &lt;name&gt; [--into &lt;path&gt;] --why &lt;text&gt;` copies a shipped template to governance (default) or the path, recording its version, in one writer commit. Every pod command says which template it read: a path, or a shipped name and version. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | `pij pod template-diff &lt;path&gt;` shows what changed upstream since the copy's version and applies nothing. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | `pij community init --seeds all --templates &lt;names&gt; [--into &lt;path&gt;] --why &lt;text&gt;` copies the ten type definitions into governance and the named templates into governance or the path, one commit per place, and prints what it wrote and where. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | Cost: adopt, init and export are one writer commit each (init one per place); diff and listing are in-process. No seat launched; no loop, poll or timer. | [x] checked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -59,7 +59,7 @@ pij ships pod templates and type definitions as versioned originals. A pod comma
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Shipped templates, adopt, diff and init (workstream 010 s02) | One phase on PR #347. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Shipped templates, adopt, diff and init (workstream 010 s02) | One phase on PR #347. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

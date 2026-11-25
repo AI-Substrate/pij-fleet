@@ -36,31 +36,31 @@
         {
           "id": "ac-0001",
           "claim": "Shipped originals under `templates/pods/<name>/v<N>/`, embedded like role templates, never edited after they ship (a pinned hash per version).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij pod adopt <name> [--into <path>] --why <text>` copies a shipped template to governance (default) or the path, recording its version, in one writer commit. Every pod command says which template it read: a path, or a shipped name and version.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "`pij pod template-diff <path>` shows what changed upstream since the copy's version and applies nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0004",
           "claim": "`pij community init --seeds all --templates <names> [--into <path>] --why <text>` copies the ten type definitions into governance and the named templates into governance or the path, one commit per place, and prints what it wrote and where.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0005",
           "claim": "Cost: adopt, init and export are one writer commit each (init one per place); diff and listing are in-process. No seat launched; no loop, poll or timer.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         }
       ]
@@ -72,7 +72,7 @@
           "id": "ph-0001",
           "title": "Shipped templates, adopt, diff and init (workstream 010 s02)",
           "brief": "One phase on PR #347.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

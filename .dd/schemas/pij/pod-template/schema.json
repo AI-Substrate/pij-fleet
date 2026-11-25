@@ -50,6 +50,9 @@
           },
           "summary": {
             "type": "text"
+          },
+          "from": {
+            "type": "string"
           }
         }
       }

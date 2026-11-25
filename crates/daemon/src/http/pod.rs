@@ -34,6 +34,7 @@ use super::{AppState, ExistingSeatPolicy, envelope};
 use crate::community::first_turn::{self, Creator};
 use crate::community::layout::RolePaths;
 use crate::community::pod::{self, PodPaths, SlotPlan, Template, Warning};
+use crate::community::pod_templates::{self, Shipped};
 use crate::community::writer::{Existing, NewFile};
 use crate::community::{Refusal, holders, role, root};
 
@@ -68,6 +69,10 @@ struct Call {
     tools: Vec<String>,
     skip_close_procedure: bool,
     close_procedure_ran: bool,
+    into: Option<String>,
+    why: Option<String>,
+    seeds: Option<String>,
+    templates: Vec<String>,
 }
 
 fn parse(argv: &[String]) -> Result<Call, Refusal> {
@@ -112,6 +117,16 @@ fn parse(argv: &[String]) -> Result<Call, Refusal> {
                 );
             }
             "--tool" => call.tools.push(value("--tool")?),
+            "--into" => call.into = Some(value("--into")?),
+            "--why" => call.why = Some(value("--why")?),
+            "--seeds" => call.seeds = Some(value("--seeds")?),
+            "--templates" => call.templates.extend(
+                value("--templates")?
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_string),
+            ),
             "--fresh" => call.fresh = true,
             "--no-start" => call.no_start = true,
             "--skip-close-procedure" => call.skip_close_procedure = true,
@@ -137,6 +152,16 @@ pub(crate) async fn handle(
     Json(request): Json<GovernanceRequest>,
 ) -> Response {
     let args = request.argv.get(1..).unwrap_or_default();
+    let community = request.argv.first().map(String::as_str) == Some("community");
+    if community && (args.is_empty() || pij_core::directory::wants_help(args)) {
+        return envelope(
+            StatusCode::OK,
+            &Envelope::ok(
+                "pij community",
+                json!({"help": pij_core::pod::COMMUNITY_HELP}),
+            ),
+        );
+    }
     if pij_core::directory::wants_help(args) {
         let verb = pij_core::directory::verb(args);
         return match pij_core::pod::help(verb) {
@@ -166,6 +191,17 @@ pub(crate) async fn handle(
         Resolved::Refusal(response) => return response,
     };
     let answer = match call.verb.as_str() {
+        "init" if community => community_init(&state, &call, &request.caller, &actor).await,
+        _ if community => Err(Refusal::new(
+            "E-RS-UNPORTED",
+            format!(
+                "community {}: unknown command; pij community --help",
+                call.verb
+            ),
+        )),
+        "templates" => Ok(pod_templates::listing()),
+        "adopt" => adopt(&state, &call, &request.caller, &actor).await,
+        "template-diff" => template_diff(&call, &request.caller),
         "plan" => plan(&state, &call, &request.caller, &actor)
             .await
             .map(|planned| planned.answer()),
@@ -324,6 +360,18 @@ fn template_path(given: &str, caller: &CallerContext) -> Result<PathBuf, Refusal
         })
 }
 
+/// The template a command names: a shipped one (`shipped:<name>[@v<n>]`,
+/// PRD 010 req-02), else the folder or file at that path.
+///
+/// # Errors
+/// What reading it refuses with.
+fn load_template(given: &str, caller: &CallerContext) -> Result<Template, Refusal> {
+    match pod_templates::named(given) {
+        Some(shipped) => pod_templates::read(shipped?),
+        None => pod::read(&template_path(given, caller)?, given),
+    }
+}
+
 /// Read, fill and check the pod a `plan` or `up` names, before any write.
 async fn plan(
     state: &AppState,
@@ -338,7 +386,7 @@ async fn plan(
         )
     })?;
     pod::refuse_secret_parameters(&call.sets)?;
-    let template = pod::read(&template_path(given, caller)?, given)?;
+    let template = load_template(given, caller)?;
     let filled = pod::fill(&template, &call.sets)?;
     let (project, repo) = project_and_repo(state, caller, None).await?;
     let worktree = root::find(&repo)?.worktree;
@@ -400,7 +448,11 @@ async fn plan(
         pod::procedure_present(&template, &repo, procedure)
     }));
     Ok(Planned {
-        shown: recorded_source(given, &repo, caller),
+        shown: if pod_templates::named(given).is_some() {
+            template.source.clone()
+        } else {
+            recorded_source(given, &repo, caller)
+        },
         work_folder: value("work-folder"),
         template,
         filled,
@@ -1923,6 +1975,9 @@ fn template_of(repo: &Path, document: &Value) -> Result<Template, Refusal> {
         .as_str()
         .unwrap_or_default()
         .to_string();
+    if let Some(shipped) = pod_templates::named(&source) {
+        return pod_templates::read(shipped?);
+    }
     let file = if Path::new(&source).is_absolute() {
         PathBuf::from(&source)
     } else {
@@ -2297,6 +2352,309 @@ fn close_procedure(repo: &Path, document: &Value, pod_name: &str) -> Value {
             "present": pod::procedure_present(&template, repo, procedure),
         })
     })
+}
+
+// --- Shipped templates, adopt, diff and init (PRD 010 s02, plan 254)
+
+fn why_of(call: &Call, usage: &str) -> Result<String, Refusal> {
+    call.why
+        .clone()
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!("{usage}: --why <text> is required; it goes in the commit"),
+            )
+        })
+}
+
+/// Where copies go: governance (one writer commit for all of them) or a
+/// caller-relative path in the repo (written as files for the repo to
+/// commit). `folder_of` names each copy's folder. A copy already there is
+/// kept and listed, never overwritten.
+struct Copies {
+    wrote: Vec<Value>,
+    kept: Vec<Value>,
+    governance: Vec<NewFile>,
+}
+
+fn place(
+    copies: &mut Copies,
+    shipped: &Shipped,
+    governance_root: &Path,
+    into: Option<&Path>,
+    folder: PathBuf,
+) -> Result<(), Refusal> {
+    let shown = folder.display().to_string();
+    let exists = match into {
+        Some(_) => folder.join(pod::TEMPLATE_FILE).exists(),
+        None => governance_root
+            .join(&folder)
+            .join(pod::TEMPLATE_FILE)
+            .exists(),
+    };
+    if exists {
+        copies.kept.push(json!({
+            "template": shipped.reference(),
+            "path": shown,
+            "why": "a template is already there; compare it with pij pod template-diff",
+        }));
+        return Ok(());
+    }
+    let files = pod_templates::copy_files(shipped, &folder)?;
+    match into {
+        Some(_) => {
+            for (path, bytes) in &files {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| {
+                        Refusal::new(
+                            "E-RS-ARG",
+                            format!("cannot create {}: {error}", parent.display()),
+                        )
+                    })?;
+                }
+                std::fs::write(path, bytes).map_err(|error| {
+                    Refusal::new(
+                        "E-RS-ARG",
+                        format!("cannot write {}: {error}", path.display()),
+                    )
+                })?;
+            }
+            copies
+                .wrote
+                .push(json!({"template": shipped.reference(), "path": shown, "where": "repo"}));
+        }
+        None => {
+            copies
+                .governance
+                .extend(files.into_iter().map(|(path, bytes)| NewFile {
+                    path,
+                    document: false,
+                    bytes,
+                    existing: Existing::Refuse(Refusal::new(
+                        pod::E_TEMPLATE,
+                        format!("a template is already at {shown}"),
+                    )),
+                }));
+            copies.wrote.push(
+                json!({"template": shipped.reference(), "path": shown, "where": "governance"}),
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn commit_copies(
+    state: &AppState,
+    project: &str,
+    repo: &Path,
+    files: Vec<NewFile>,
+    message: String,
+) -> Result<Option<String>, Refusal> {
+    if files.is_empty() {
+        return Ok(None);
+    }
+    let (written, _) = state
+        .services
+        .directory
+        .write(project, repo.to_path_buf(), files, message)
+        .await?;
+    Ok(Some(written.commit))
+}
+
+/// `pij pod adopt <name>[@v<n>] [--into <path>] --why <text>` (req-02):
+/// copy a shipped template to governance, or to the folder `--into` names,
+/// with `meta.from` recording its version. Launches no seat.
+async fn adopt(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
+    const USAGE: &str = "pij pod adopt <name>[@v<n>] [--into <path>] --why <text>";
+    let spec = position(call, 0, USAGE)?;
+    let why = why_of(call, USAGE)?;
+    let (name, version) = crate::community::templates::parse_spec(
+        spec.strip_prefix(pod_templates::PREFIX).unwrap_or(spec),
+    )?;
+    let shipped = pod_templates::get(&name, version)?;
+    let (project, repo) = project_and_repo(state, caller, None).await?;
+    let worktree = root::find(&repo)?.worktree;
+    let into = call
+        .into
+        .as_deref()
+        .map(|given| template_path(given, caller))
+        .transpose()?;
+    let folder = into
+        .clone()
+        .unwrap_or_else(|| pod_templates::governance_folder(shipped.name));
+    let mut copies = Copies {
+        wrote: Vec::new(),
+        kept: Vec::new(),
+        governance: Vec::new(),
+    };
+    place(&mut copies, shipped, &worktree, into.as_deref(), folder)?;
+    if let Some(kept) = copies.kept.first() {
+        return Err(Refusal::new(
+            pod::E_TEMPLATE,
+            format!(
+                "{} already holds a template; compare it with upstream: pij pod template-diff {}",
+                text_of(&kept["path"]),
+                text_of(&kept["path"])
+            ),
+        ));
+    }
+    let commit = commit_copies(
+        state,
+        &project,
+        &repo,
+        copies.governance,
+        format!(
+            "community: adopt pod template {}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}",
+            shipped.reference()
+        ),
+    )
+    .await?;
+    let wrote = copies.wrote.remove(0);
+    let next = if commit.is_some() {
+        format!(
+            "edit it at {}; name it in pod commands by that path",
+            text_of(&wrote["path"])
+        )
+    } else {
+        format!(
+            "commit {} in your repo; name it in pod commands by that path",
+            text_of(&wrote["path"])
+        )
+    };
+    Ok(json!({
+        "template": shipped.reference(),
+        "wrote": [wrote],
+        "commit": commit,
+        "next": next,
+    }))
+}
+
+/// `pij pod template-diff <path>` (req-02): what changed upstream since the
+/// copy at `path` was taken. Applies nothing; in-process, launches nothing.
+fn template_diff(call: &Call, caller: &CallerContext) -> Result<Value, Refusal> {
+    let given = position(call, 0, "pij pod template-diff <path>")?;
+    let path = template_path(given, caller)?;
+    let file = if path.is_dir() {
+        path.join(pod::TEMPLATE_FILE)
+    } else {
+        path
+    };
+    let bytes = std::fs::read(&file).map_err(|error| {
+        Refusal::new(
+            pod::E_TEMPLATE,
+            format!("cannot read {}: {error}", file.display()),
+        )
+    })?;
+    pod_templates::upstream_diff(&bytes, given)
+}
+
+/// `pij community init --seeds all --templates <names> [--into <path>] --why
+/// <text>` (req-03): a prime's setup job. Copies each type's seed and the
+/// named pod templates into governance in one commit, and with `--into` the
+/// templates to `<path>/<name>/` as files; keeps (and lists) anything already
+/// there; prints what it wrote and where. Launches no seat.
+async fn community_init(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
+    use crate::community::types;
+    const USAGE: &str = "pij community init [--seeds all|<type>,...] [--templates <name>,...] [--into <path>] --why <text>";
+    let why = why_of(call, USAGE)?;
+    if call.seeds.is_none() && call.templates.is_empty() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{USAGE}: name what to set up; pij copies nothing on its own"),
+        ));
+    }
+    let seed_types: Vec<&types::TypeDef> = match call.seeds.as_deref() {
+        None => Vec::new(),
+        Some("all") => types::all().iter().collect(),
+        Some(list) => list
+            .split(',')
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(types::get)
+            .collect::<Result<_, _>>()?,
+    };
+    let shipped: Vec<&Shipped> = call
+        .templates
+        .iter()
+        .map(|spec| {
+            crate::community::templates::parse_spec(spec)
+                .and_then(|(name, version)| pod_templates::get(&name, version))
+        })
+        .collect::<Result<_, _>>()?;
+    let (project, repo) = project_and_repo(state, caller, None).await?;
+    let worktree = root::find(&repo)?.worktree;
+    let into = call
+        .into
+        .as_deref()
+        .map(|given| template_path(given, caller))
+        .transpose()?;
+    let mut copies = Copies {
+        wrote: Vec::new(),
+        kept: Vec::new(),
+        governance: Vec::new(),
+    };
+    for def in seed_types {
+        let path = types::seed_path(&def.id);
+        let shown = path.display().to_string();
+        if worktree.join(&path).exists() {
+            copies.kept.push(
+                json!({"seed": def.id, "path": shown, "why": "this repo already has its own seed"}),
+            );
+            continue;
+        }
+        copies.governance.push(NewFile {
+            path,
+            bytes: def.seed.as_bytes().to_vec(),
+            document: false,
+            existing: Existing::Refuse(Refusal::new(
+                "E-RS-EXISTS",
+                format!("a seed is already at {shown}"),
+            )),
+        });
+        copies
+            .wrote
+            .push(json!({"seed": def.id, "path": shown, "where": "governance"}));
+    }
+    for template in shipped {
+        let folder = match &into {
+            Some(into) => into.join(template.name),
+            None => pod_templates::governance_folder(template.name),
+        };
+        place(&mut copies, template, &worktree, into.as_deref(), folder)?;
+    }
+    let commit = commit_copies(
+        state,
+        &project,
+        &repo,
+        copies.governance,
+        format!(
+            "community: init (seeds and pod templates)\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+        ),
+    )
+    .await?;
+    let in_repo = copies.wrote.iter().any(|row| row["where"] == "repo");
+    Ok(json!({
+        "project": project,
+        "wrote": copies.wrote,
+        "kept": copies.kept,
+        "commit": commit,
+        "next": if in_repo {
+            "commit the templates written in the repo; name each in pod commands by its path"
+        } else {
+            "name each template in pod commands by its path"
+        },
+    }))
 }
 
 #[cfg(test)]

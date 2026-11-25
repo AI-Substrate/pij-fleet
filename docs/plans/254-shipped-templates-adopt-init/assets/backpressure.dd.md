@@ -20,10 +20,10 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1 | ph-0001 | BUILD | computational | A shipped version is never edited: pinned hashes. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_templates_pinned |
-| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP tests: adopt into governance and --into; plan names the copy it read; diff lists a change and alters nothing. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_adopt |
-| bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test: init writes the types and templates where asked; with no init nothing is written. | [ ] unchecked | — | — | cargo test -p pij-daemon community_init |
-| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter does not move across init, adopt, diff and export. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_templates_cost |
+| bp-0001 | AC1 | ph-0001 | BUILD | computational | A shipped version is never edited: pinned hashes. | [x] checked | — | — | cargo test -p pij-daemon pod_templates_pinned |
+| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP tests: adopt into governance and --into; plan names the copy it read; diff lists a change and alters nothing. | [x] checked | — | — | cargo test -p pij-daemon pod_adopt |
+| bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test: init writes the types and templates where asked; with no init nothing is written. | [x] checked | — | — | cargo test -p pij-daemon community_init |
+| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter does not move across init, adopt, diff and export. | [x] checked | — | — | cargo test -p pij-daemon pod_templates_cost |
 
 <a id="sensors"></a>
 

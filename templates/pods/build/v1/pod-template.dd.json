@@ -1,0 +1,74 @@
+{
+	"dd": { "schema": "pij/pod-template" },
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"name": "build",
+				"title": "Build pod: one workstream step",
+				"version": "1",
+				"summary": "A project manager, a coder and a reviewer for one workstream step. The reviewer runs on another model than the coder and reviews the coder's PR at its exact head."
+			}
+		},
+		{
+			"name": "parameters",
+			"value": [
+				{
+					"name": "subject",
+					"need": "required",
+					"describe": "The workstream step, for example 'workstream 008 s02'. Memory is filed under it."
+				},
+				{
+					"name": "work-folder",
+					"need": "optional",
+					"describe": "The absolute folder of the step's worktree, so pod down records where it stands."
+				}
+			]
+		},
+		{
+			"name": "slots",
+			"value": [
+				{
+					"id": "pm",
+					"role": "pm",
+					"tools": ["gh"],
+					"seed": "You run this step: write the coder's packet, route the review, keep the step's states true."
+				},
+				{
+					"id": "coder",
+					"role": "coder",
+					"tools": ["git", "gh", "just"],
+					"seed": "Build the step in its own worktree and branch, then open its PR and send the project manager the frozen head."
+				},
+				{
+					"id": "reviewer",
+					"role": "reviewer",
+					"tools": ["git", "gh", "just"],
+					"not_model_of": "coder",
+					"seed": "Review the coder's PR at its exact head, read-only, in a detached worktree. Send your verdict to the project manager."
+				}
+			]
+		},
+		{
+			"name": "wiring",
+			"value": [
+				{ "from": "pm", "to": "coder", "what": "the step's packet" },
+				{ "from": "coder", "to": "pm", "what": "the PR's frozen head" },
+				{ "from": "pm", "to": "reviewer", "what": "a verdict request at that head" },
+				{ "from": "reviewer", "to": "pm", "what": "the verdict" }
+			]
+		},
+		{
+			"name": "deliverables",
+			"value": [
+				{
+					"id": "pr",
+					"owner": "pm",
+					"stages": ["final", "verdict"],
+					"stage_needs": [{ "stage": "final", "slots": ["coder"] }]
+				}
+			]
+		}
+	],
+	"references": []
+}

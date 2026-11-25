@@ -15,6 +15,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("sessions") => Some(SESSIONS),
         Some("activity") => Some(ACTIVITY),
         Some("stage") => Some(STAGE),
+        Some("templates" | "adopt" | "template-diff") => Some(SHIPPED),
         _ => None,
     }
 }
@@ -35,9 +36,12 @@ Usage:
   pij pod activity <pod> [--since <time>]    what the pod did, in order; open to any seat
   pij pod stage <pod> <deliverable> <stage> --output <path> [--from <slot>]...
   pij pod confirm <pod> --tool <tool>...      a slot's seat answering its tool canary
+  pij pod templates                           the pod templates pij ships
+  pij pod adopt <name>[@v<n>] [--into <path>] --why <text>
+  pij pod template-diff <path>                what changed upstream since a copy
 
 A template is a folder holding pod-template.dd.json (or that file), at any path
-you name. Every check warns and names its fix; none refuses: pij is a knowledge
+you name, or a shipped one as shipped:<name>[@v<n>]. Every check warns and names its fix; none refuses: pij is a knowledge
 system, not the police. Two refusals guard the record itself: a --set value that
 looks like a secret (the record is committed to the governance branch), and a
 seat already in another pod. `pij pod <verb> --help` for each verb.";
@@ -161,3 +165,27 @@ A slot's seat answering its tool canary: name each tool you can use. A tool
 you leave out is reported missing, with its fix, in `pij pod show`. Run again
 once the tools are there: a degraded slot that now confirms every tool is
 recorded confirmed, and pij hands it pod work again.";
+
+const SHIPPED: &str = "\
+pij pod templates
+pij pod adopt <name>[@v<n>] [--into <path>] --why <text>
+pij pod template-diff <path>
+
+pij ships pod templates as versioned originals that never change once shipped.
+Name one in any pod command as shipped:<name>[@v<n>], or take a copy the repo
+owns: adopt writes the version (latest unless @v<n>) to governance
+(community/pod-templates/<name>/, one commit) or to the folder --into names (as
+files you commit), recording where it came from in meta.from. Edit the copy
+freely and name it by its path. template-diff shows what changed upstream since
+the copy's version and applies nothing. None of them starts a seat.";
+
+/// `pij community --help` (PRD 010 req-03).
+pub const COMMUNITY_HELP: &str = "\
+pij community init [--seeds all|<type>,...] [--templates <name>,...] [--into <path>] --why <text>
+
+A prime's setup job, run once for a new project: copies each type's seed (what
+seats of that type are told; the repo's copy wins) and the named shipped pod
+templates into governance in one commit, or with --into puts the templates at
+<path>/<name>/ as files you commit. Anything already there is kept and listed.
+It prints what it wrote and where. pij copies nothing on its own, and init
+starts no seat.";
