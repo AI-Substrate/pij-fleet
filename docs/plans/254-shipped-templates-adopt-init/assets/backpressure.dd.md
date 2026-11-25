@@ -23,7 +23,7 @@
 | bp-0001 | AC1 | ph-0001 | BUILD | computational | A shipped version is never edited: pinned hashes. | [x] checked | — | — | cargo test -p pij-daemon pod_templates_pinned |
 | bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP tests: adopt into governance and --into; plan names the copy it read; diff lists a change and alters nothing. | [x] checked | — | — | cargo test -p pij-daemon pod_adopt |
 | bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test: init writes the types and templates where asked; with no init nothing is written. | [x] checked | — | — | cargo test -p pij-daemon community_init |
-| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter does not move across init, adopt, diff and export. | [x] checked | — | — | cargo test -p pij-daemon pod_templates_cost |
+| bp-0004 | AC4 | ph-0001 | BUILD | computational | HTTP test: init, adopt, template-diff and export launch no seat (no tmux launch); their only launches are the writer commit's git and ddocs. The live receipt after deploy is PRD 010 req-06. | [x] checked | — | — | cargo test -p pij-daemon --test directory_http shipped_templates_are_named_adopted_diffed_and_set_up_by_init |
 
 <a id="sensors"></a>
 

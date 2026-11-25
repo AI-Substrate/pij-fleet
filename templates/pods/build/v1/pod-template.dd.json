@@ -104,7 +104,7 @@
 					"id": "PROC-pods-0001",
 					"from": "repo",
 					"use": "up",
-					"describe": "Make the step's branch in its own worktree and record it as the pod's work-folder: pij proc PROC-pods-0001 --key pod-<pod> --branch <branch> --folder <folder>."
+					"describe": "Make the step's branch in its own worktree and record it as the pod's work-folder. pod up does not run it: after up, run pij proc PROC-pods-0001 s0001 --key pod-<pod> --arg branch=<branch> --arg folder=<folder>, then the same with s0002."
 				},
 				{
 					"id": "PROC-pods-0002",

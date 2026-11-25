@@ -57,7 +57,8 @@ seed text carry it:
 
 - **build**: a project manager (owns the step's PR), a coder and a required reviewer that must not run the coder's
   model. Its `up` procedure, PROC-pods-0001, makes the step's branch in its own worktree and records it as the
-  `work-folder`; its `close` procedure, PROC-pods-0002, stops `pod down` while that folder holds uncommitted work or
+  `work-folder` (`pij pod up` runs no procedure: after up, run `pij proc PROC-pods-0001 s0001 --key pod-<pod> --arg
+  branch=<branch> --arg folder=<folder>`, then `s0002`); its `close` procedure, PROC-pods-0002, stops `pod down` while that folder holds uncommitted work or
   its branch has an open PR. Both ship with the pij skill (`from: repo`, area `pods`), because a shipped template has
   no folder on disk: `pij pod show` answers its close procedure with `template: null` and the pij CLI runs it from the
   repo's or the skill's procedures.

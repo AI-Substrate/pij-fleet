@@ -526,7 +526,7 @@ mod tests {
             (
                 "build",
                 1,
-                "fbb657ddca7ec71bf0a2aa50b64d2d9b0677fd6a3eb53aebb911943326629606",
+                "dd9d32d8a07ee3bd37e4045b48fc4a2f24ba1ae4489849a59e28c4b174be19f5",
             ),
             (
                 "live-call",

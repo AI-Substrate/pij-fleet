@@ -126,7 +126,7 @@
 					"actor": "prime",
 					"priority": "must",
 					"state": "in-progress",
-					"done_when": "`pij-rs --json ping | jq .data.spawns` does not move across one `init`, one `adopt`, one `template-diff` and one `export`.",
+					"done_when": "Across one `init`, one `adopt`, one `template-diff` and one `export`, `pij-rs --json ping | jq .data.spawns` shows no seat launch beyond the named writer commits (git and ddocs), measured after deploy.",
 					"source": "AGENTS.md: resource cost is a correctness property"
 				}
 			]
@@ -214,6 +214,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #347 (s04): req-05 shipped (the build and live-call pods; the build pod's up and close procedures ship with the pij skill, area pods)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-06 done_when: no seat launch beyond the named writer commits (git and ddocs), measured after deploy; a governance write necessarily counts its writer launches (B347-R1-06, pm-001 ruling). It stays in progress until that receipt."
 				}
 			]
 		}

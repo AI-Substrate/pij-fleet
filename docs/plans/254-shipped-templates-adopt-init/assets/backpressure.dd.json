@@ -50,9 +50,9 @@
           "phase": "ph-0001",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "The spawn counter does not move across init, adopt, diff and export.",
+          "proof": "HTTP test: init, adopt, template-diff and export launch no seat (no tmux launch); their only launches are the writer commit's git and ddocs. The live receipt after deploy is PRD 010 req-06.",
           "state": "checked",
-          "probe": "cargo test -p pij-daemon pod_templates_cost"
+          "probe": "cargo test -p pij-daemon --test directory_http shipped_templates_are_named_adopted_diffed_and_set_up_by_init"
         }
       ]
     },

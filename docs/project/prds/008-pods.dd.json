@@ -423,6 +423,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "req-09 shipped: live receipt at 387362db (deployed): pij-rs --json ping .data.spawns 546→548 over 20 s idle (+2 ps.registration-native-process, background); one `pod up` of a 1-slot pod 548→579: +4 tmux (new-window, rename-window, pipe-pane attach, set-options tap owner: one spawn) and +27 writer launches (git.community +21, ddocs.community +6: record, role, members commits); then 579→581 over 20 s (+2 background). plan, show, activity, sessions: 581→581. just spawn-rate --seconds 20: no daemon children sampled."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-09: the receipt taken again in its done_when's shape, two slots and one consulted role with a live holder (B347-R1-06, pm-001 ruling): 676\u2192720 on up, two spawns' worth (+8 tmux) plus the writer commits (+36), nothing for the consulted role; plan, show, activity and sessions did not move. It stays shipped."
 				}
 			]
 		}
