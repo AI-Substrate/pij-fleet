@@ -264,21 +264,43 @@ pub fn seed_path(type_id: &str) -> std::path::PathBuf {
         .join(format!("{type_id}.md"))
 }
 
+/// A governance seed that exists but cannot be read.
+pub const E_SEED_UNREADABLE: &str = "E-RS-SEED-UNREADABLE";
+
 /// The seed pij would use for `type_id`: the governance copy under
 /// `worktree` when there is one, else the shipped one, with where it came from.
+/// Only a missing governance copy falls back to the shipped one; any other
+/// read error refuses, so a repo's seed is never silently replaced.
 ///
 /// # Errors
-/// [`E_TYPE_UNKNOWN`].
+/// [`E_TYPE_UNKNOWN`]; [`E_SEED_UNREADABLE`] naming the path.
 pub fn seed(worktree: Option<&Path>, type_id: &str) -> Result<Value, Refusal> {
     let def = get(type_id)?;
     let local = seed_path(type_id);
-    if let Some(text) = worktree.and_then(|top| std::fs::read_to_string(top.join(&local)).ok()) {
-        return Ok(json!({
-            "type": def.id,
-            "source": "governance",
-            "path": local.display().to_string(),
-            "text": text,
-        }));
+    if let Some(top) = worktree {
+        match std::fs::read_to_string(top.join(&local)) {
+            Ok(text) => {
+                return Ok(json!({
+                    "type": def.id,
+                    "source": "governance",
+                    "path": local.display().to_string(),
+                    "text": text,
+                }));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(Refusal::new(
+                    E_SEED_UNREADABLE,
+                    format!(
+                        "this repo's seed for {type_id} at {} exists but cannot be read: {error}",
+                        local.display()
+                    ),
+                )
+                .with_next(format!(
+                    "Fix or replace it: pij directory seed {type_id} --file <path> --why <text>"
+                )));
+            }
+        }
     }
     Ok(json!({
         "type": def.id,
@@ -627,6 +649,16 @@ mod tests {
         assert_eq!(ours["source"], "governance");
         assert_eq!(ours["text"], "Our coders run just ci.\n");
         assert_eq!(seed(Some(&dir), "pa").unwrap()["source"], "shipped");
+        // Review of #344: only a missing copy falls back; an unreadable one
+        // (here a directory where the file should be) refuses by name.
+        std::fs::create_dir_all(dir.join(seed_path("watcher"))).unwrap();
+        let refusal = seed(Some(&dir), "watcher").unwrap_err();
+        assert_eq!(refusal.code, E_SEED_UNREADABLE);
+        assert!(
+            refusal.message.contains("seeds/watcher.md"),
+            "{}",
+            refusal.message
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

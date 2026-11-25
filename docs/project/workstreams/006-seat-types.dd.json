@@ -51,7 +51,8 @@
 					"depends_on": ["#steps/s01"],
 					"needs": ["role:coder", "role:reviewer"],
 					"done_when": "`pij directory add` refuses a role with no type, asks for what the type requires, and pij prints each type's definition and seed template.",
-					"plan": "docs/plans/236-seat-type-on-role"
+					"plan": "docs/plans/236-seat-type-on-role",
+					"note": "req-02 and req-08 stay in progress after this step: their print and edit halves ship here, and a seat receiving its type's definition and seed at start waits on PRD 007 s02 (#345)."
 				},
 				{
 					"id": "s03",
@@ -118,6 +119,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s04 complete (plan 238)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s02 notes that req-02 and req-08 wait on PRD 007 s02 (#345) (review of #344)."
 				}
 			]
 		}
