@@ -1,0 +1,48 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a210f1-5c5c-7892-86ee-5e73df2ca217",
+				"date": "2026-11-25",
+				"head": "fd47101cacd81a1a26e36b2b68bea3d6c98a1c05",
+				"kind": "verdict",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:351",
+				"writer": "pij-official-aardwolf",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B351-R1-01: correct the first-turn authority sentence using role/position semantics, not the type flag."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just shared-build --timeout 180s -- test --locked --offline -p pij-daemon --lib -- community::first_turn community::types --then test --locked --offline -p pij-cli --lib docs:: --then test --locked --offline -p pij-cli --test docs_verbs",
+					"exit_code": 0,
+					"log": "25 focused baseline tests passed in a private exact-head archive."
+				},
+				{
+					"command": "just shared-build --timeout 600s -- test --locked --offline -p pij-daemon --lib -- the_type_part_names_its_page_and_carries_only_the_roles_rule_changes community::first_turn::tests::review_pr351_authority_tracks_role_id_not_type",
+					"exit_code": 101,
+					"log": "Original guard passed; two independent mutants killed; unmodified-production authority probe failed for both valid role/type mismatches."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "# Review #351: block\n\nHead: `fd47101cacd81a1a26e36b2b68bea3d6c98a1c05`. One reviewer, one round, covering correctness, cost and security/privacy under amended C34. The detached review worktree was kept clean; all mutations and additional probes ran in a private archive with the unchanged Cargo.lock, `--locked --offline`, the normal shared target, four jobs and shared-build's niceness-19 lock. The 25 GiB floor was never lowered.\n\n## B351-R1-01: the first turn states authority from the type, not the role\n\n**Blocking correctness, P2.** `crates/daemon/src/community/first_turn.rs:309-312` renders `Carries authority: yes|no.` using `def.authority()`. That reads the type's descriptive flag, not the position the seat will hold. `crates/daemon/src/community/holders.rs:9-23` derives that position from the role id; `directory.rs:1868-1874` uses it when indexing the assignment. Types are labels and grant nothing, as the bundled concepts page explicitly explains.\n\nA private regression probe checked that both documents pass `types::check_role`, checked their actual `seat_role_for` result, and called the unmodified `assemble`:\n\n| Role | Type | Assigned position | New first-turn sentence |\n|---|---|---|---|\n| `release-helper` | `pa` | `worker` | `Carries authority: yes.` |\n| `pa` | `worker` | `pa` | `Carries authority: no.` |\n\nThe probe fails on both mismatches. These are supported role/type combinations, not an exploit or a proposed permission model: a newly started seat is told the wrong fact about what it may do. The old type part did not make this explicit authority claim. This matters especially after moving the fuller explanation behind the page pointer.\n\n**Fix:** if the sentence describes the seat's actual authority, derive it from the existing role-id/position mechanism, never `meta.type`. Alternatively, make it explicitly a description of which position the type is intended for, retaining the statement that the type itself grants nothing. Add the role-id/type mismatch cases to the existing first-turn test. No authorization behavior should change.\n\n## Remaining scope\n\n- Reviewer and knowledge cases preserve the seed and every role-specific rule change with its reason; unchanged standard rules are omitted as requested. PA was also inspected and exercised. All ten shipped definitions and seeds are unchanged, and every removed purpose, lifecycle, keeps value and rule is present on its real bundled type page.\n- All 11 refusal/first-turn pointer pages resolve in a binary built from the exact review archive. The repository's docs-bundle sensor passes for all 14 pages. Type-refusal codes, all `with_next` expressions and the missing-type next-step declaration are byte-identical to the parent; stripping only the added message pointers leaves identical branch tokens. The type-refusal consumers use codes or substring checks, not complete message equality.\n- Cost: no new periodic loop, poll, timer, hook, sweep or process launch. Added steady-state launches are **0/s**, with no per-seat/per-tick scaling. Rule iteration replaces an existing per-request loop and is bounded by the shipped definition. Refusals format one extra sentence; first turns format less. The reported reduction is exactly **9,737 -> 6,220 characters**.\n- Security/privacy: no added account names, emails, machine-local home paths or credential-shaped tokens; no new external-input, shell-launch or permission boundary. B351-R1-01 is inaccurate onboarding text, not a privilege escalation.\n\n## Evidence\n\nThe commands below ran in the private archive with `PIJ_SHARED_TARGET` set to the resolver's normal shared target; its machine-local value is intentionally omitted.\n\n- `just pr-freeze 351`: FINAL at the full head above, checks green.\n- `just shared-build --timeout 180s -- test --locked --offline -p pij-daemon --lib -- community::first_turn community::types --then test --locked --offline -p pij-cli --lib docs:: --then test --locked --offline -p pij-cli --test docs_verbs`: **25 passed** (11 daemon, 12 CLI unit, 2 CLI integration).\n- The repository's `harness/scripts/docs-bundle-check.ts`, run with Node's TypeScript stripping at niceness 19 against a binary copied out under the shared-build lock: **14 bundled pages match their files**. Additional binary-backed comparison: all 11 pointers resolve, and all removed definition text is present.\n- Main-guard mutation batch: `just shared-build --timeout 600s -- test --locked --offline -p pij-daemon --lib -- the_type_part_names_its_page_and_carries_only_the_roles_rule_changes community::first_turn::tests::review_pr351_authority_tracks_role_id_not_type`: **original guard passed; two mutants killed; authority regression probe failed as described above**. M1 restored unchanged rules and failed on `keep-written`; M2 suppressed role changes and failed on the reviewer's compact-after-job reason. Independent private module copies let all outcomes run in one build. Cargo exit 101 is the expected assertion-failure result, not a compile error.\n- An earlier single-mutant attempt exited 4 while waiting for the shared-build lock; no cargo or mutant ran in that attempt. The batch retry retained the same lock and floor.\n- `git diff --check HEAD^ HEAD`: pass. Review worktree remains clean at the exact head.\n- CI run **45545678562** is bound to this full head: `rust-test`, `rust-lint`, `check (22)` and `check (24)` all succeeded; delivers run **45545678533** succeeded.\n- `harness boot`: advisory `ready:false`, missing worktree TS dependencies. `harness checks --quick`: dependency-limited failures (missing local tsx/vitest and incompatible ambient Biome); procedures, pij-skill, native Copilot and Copilot SDK passed. Heavy local sensors were not repeated; exact-head CI supplies the broader Rust/TS proof. This is not a claim that the local full gate is green.\n\nNo additional findings. Repeatable review/mutation work has no listed PROC entry; retain that harness gap in the reviewer memory note rather than changing the read-only tree.\n"
+		}
+	]
+}
