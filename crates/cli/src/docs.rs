@@ -191,6 +191,14 @@ The opening text for a seat of this type, as pij ships it (version {}). A repo m
     }
 }
 
+/// The checkout this binary was built from. In a target shared by several
+/// worktrees, the bundled-docs check refuses a binary another tree built
+/// instead of blaming its pages (review of #348, M1).
+pub fn built_from() -> &'static str {
+    let crate_dir = env!("CARGO_MANIFEST_DIR");
+    crate_dir.strip_suffix("/crates/cli").unwrap_or(crate_dir)
+}
+
 /// The start page `pij agents-start-here` prints.
 pub const START_PAGE: &str = "agents-start-here";
 
@@ -253,29 +261,62 @@ struct Heading<'a> {
     text: &'a str,
 }
 
+/// ATX headings outside ``` and ~~~ fences, a closing `#` run dropped.
+/// Setext headings, headings indented 1 to 3 spaces and non-ASCII case
+/// folding are not handled (plan 235); no bundled page uses them.
 fn headings(body: &str) -> Vec<Heading<'_>> {
-    let mut fenced = false;
+    let mut fence: Option<&str> = None;
     let mut found = Vec::new();
     for (line, text) in body.lines().enumerate() {
-        if text.trim_start().starts_with("```") {
-            fenced = !fenced;
+        let trimmed = text.trim_start();
+        if let Some(marker) = ["```", "~~~"].into_iter().find(|m| trimmed.starts_with(m)) {
+            match fence {
+                None => fence = Some(marker),
+                Some(open) if open == marker => fence = None,
+                Some(_) => {}
+            }
             continue;
         }
-        if fenced {
+        if fence.is_some() {
             continue;
         }
         let level = text.chars().take_while(|c| *c == '#').count();
         if (1..=6).contains(&level)
             && let Some(rest) = text[level..].strip_prefix(' ')
         {
+            let rest = rest.trim();
+            let closed = rest.trim_end_matches('#');
+            let rest = if closed.len() < rest.len() && (closed.is_empty() || closed.ends_with(' '))
+            {
+                closed.trim_end()
+            } else {
+                rest
+            };
             found.push(Heading {
                 line,
                 level,
-                text: rest.trim(),
+                text: rest,
             });
         }
     }
     found
+}
+
+/// Each heading's slug; a repeated slug gets `-1`, `-2`, as GitHub does.
+fn slugs(all: &[Heading<'_>]) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    all.iter()
+        .map(|heading| {
+            let base = slug(heading.text);
+            let repeats = seen.iter().filter(|other| **other == base).count();
+            seen.push(base.clone());
+            if repeats == 0 {
+                base
+            } else {
+                format!("{base}-{repeats}")
+            }
+        })
+        .collect()
 }
 
 /// A heading's anchor slug: lowercase, spaces to `-`, other punctuation
@@ -295,12 +336,14 @@ pub fn slug(text: &str) -> String {
 /// slug, for a suggestion.
 fn section(body: &str, wanted: &str) -> Result<String, Vec<String>> {
     let all = headings(body);
+    let slugs = slugs(&all);
     let target = slug(wanted);
-    let Some(index) = all
+    let Some(index) = slugs
         .iter()
-        .position(|h| h.text.eq_ignore_ascii_case(wanted) || slug(h.text) == target)
+        .position(|s| *s == target)
+        .or_else(|| all.iter().position(|h| h.text.eq_ignore_ascii_case(wanted)))
     else {
-        return Err(all.iter().map(|h| slug(h.text)).collect());
+        return Err(slugs);
     };
     let start = all[index].line;
     let end = all[index + 1..]
@@ -332,15 +375,21 @@ fn distance(a: &str, b: &str) -> usize {
     row[b.len()]
 }
 
-/// The candidate closest to `wanted`, preferring one that contains it.
+/// The candidate closest to `wanted`, preferring one that contains it; none
+/// when nothing is close (an edit distance above a third of its length, at
+/// least 2), so a refusal never suggests a page that has nothing to do with it.
 pub fn nearest<'a>(wanted: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
     let wanted = wanted.to_ascii_lowercase();
-    candidates.into_iter().min_by_key(|candidate| {
-        (
-            !candidate.contains(wanted.as_str()),
-            distance(&wanted, candidate),
-        )
-    })
+    let cap = (wanted.chars().count() / 3).max(2);
+    candidates
+        .into_iter()
+        .map(|candidate| {
+            let contains = wanted.chars().count() >= 3 && candidate.contains(wanted.as_str());
+            (!contains, distance(&wanted, candidate), candidate)
+        })
+        .filter(|(far, distance, _)| !far || *distance <= cap)
+        .min_by_key(|(far, distance, _)| (*far, *distance))
+        .map(|(.., candidate)| candidate)
 }
 
 /// What one docs call prints and its exit code.
@@ -437,7 +486,12 @@ fn list(json: bool) -> Outcome {
             })
         })
         .collect();
-    printed("pij docs list", text, json!({ "pages": listed }), json)
+    printed(
+        "pij docs list",
+        text,
+        json!({ "pages": listed, "built_from": built_from() }),
+        json,
+    )
 }
 
 /// `pij <verb> <args>` for `verb` `docs` or `agents-start-here`. `json` is the
@@ -626,6 +680,28 @@ mod tests {
         );
         assert_eq!(nearest("concpts", ["concepts", "pods"]), Some("concepts"));
         assert_eq!(nearest("x", Vec::<&str>::new()), None);
+        // Review of #348, M5: nothing close, no suggestion.
+        assert_eq!(
+            nearest("nope", ["types", "concepts", "agents-start-here"]),
+            None
+        );
+        assert_eq!(
+            nearest("e", ["types"]),
+            None,
+            "a short name contains nothing"
+        );
+    }
+
+    /// Review of #348, M3: ~~~ fences, a closing `#` run, repeated headings.
+    #[test]
+    fn tilde_fences_closing_hashes_and_repeated_headings() {
+        let body = "# T\n\nx\n\n## Part ##\n\none\n\n~~~\n## fenced\n```\n## still fenced\n~~~\n\n## Part\n\ntwo\n\n## C#\n";
+        assert_eq!(section(body, "part").unwrap().lines().nth(2), Some("one"));
+        assert!(section(body, "part").unwrap().contains("## still fenced"));
+        assert_eq!(section(body, "part-1").unwrap(), "## Part\n\ntwo\n");
+        assert_eq!(section(body, "C#").unwrap(), "## C#\n");
+        let missing = section(body, "fenced").unwrap_err();
+        assert_eq!(missing, ["t", "part", "part-1", "c"]);
     }
 
     #[test]
@@ -652,6 +728,11 @@ mod tests {
         assert_eq!(
             json["data"]["pages"].as_array().unwrap().len(),
             pages().len()
+        );
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        assert_eq!(
+            std::fs::canonicalize(json["data"]["built_from"].as_str().unwrap()).unwrap(),
+            std::fs::canonicalize(repo).unwrap()
         );
         assert_eq!(
             json["data"]["pages"][0]["source"],
@@ -685,6 +766,10 @@ mod tests {
 
     #[test]
     fn unknown_pages_and_headings_refuse_with_the_nearest() {
+        let far = run_words("docs", &["get", "nope"]);
+        assert_eq!(far.code, 2);
+        assert!(!far.stdout.contains("nearest"), "{}", far.stdout);
+        assert!(far.stdout.contains("pij docs list"));
         let page = run_words("docs", &["get", "agents-start"]);
         assert_eq!(page.code, 2);
         assert!(
@@ -694,7 +779,7 @@ mod tests {
             page.stdout
         );
         assert!(page.stdout.contains("pij docs list"));
-        let heading = run_words("docs", &["get", "agents-start-here#who-r-you"]);
+        let heading = run_words("docs", &["get", "agents-start-here#who-you-r"]);
         assert_eq!(heading.code, 2);
         assert!(
             heading.stdout.contains("agents-start-here#who-you-are"),

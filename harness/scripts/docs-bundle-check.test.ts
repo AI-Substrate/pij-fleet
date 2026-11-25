@@ -18,7 +18,10 @@ function io(
 		run: (args) => {
 			if (args[1] === "list") {
 				const pages = Object.keys(bundled).map((page) => ({ page }));
-				return { code: 0, stdout: JSON.stringify({ ok: true, data: { pages } }) };
+				return {
+					code: 0,
+					stdout: JSON.stringify({ ok: true, data: { pages, built_from: "/repo/here" } }),
+				};
 			}
 			const sources = bundled[args[2] ?? ""];
 			if (sources === undefined) return { code: 2, stdout: "refused" };
@@ -26,6 +29,7 @@ function io(
 		},
 		readFile: (path) => files[path],
 		cliFiles: () => Object.keys(files).filter((path) => path.startsWith("docs/cli/")),
+		isThisTree: (builtFrom) => builtFrom === "/repo/here",
 		...extra,
 	};
 }
@@ -70,6 +74,28 @@ describe("docs-bundle-check (PRD 009 req-04)", () => {
 	it("fails naming a source whose file is gone", () => {
 		const report = check(io(coder, {}));
 		expect(report.problems).toEqual([`types/coder: its source ${TYPE_PATH} is missing`]);
+	});
+
+	it("refuses a binary another checkout built, naming it, and compares nothing (review of #348, M1)", () => {
+		const other = check(
+			io(start, { [START_PATH]: `${START}edited\n` }, { isThisTree: () => false }),
+		);
+		expect(other.ok).toBe(false);
+		expect(other.checked).toBe(0);
+		expect(other.refusal).toBe(
+			"this pij-rs was built from /repo/here, not this checkout, so its pages say nothing about these files; build it here",
+		);
+		expect(other.problems).toEqual([other.refusal]);
+		const unstamped = check(
+			io(
+				start,
+				{ [START_PATH]: START },
+				{
+					run: () => ({ code: 0, stdout: JSON.stringify({ ok: true, data: { pages: [] } }) }),
+				},
+			),
+		);
+		expect(unstamped.refusal).toContain("does not say which checkout built it");
 	});
 
 	it("refuses a binary with no docs verb, no pages or no sources", () => {

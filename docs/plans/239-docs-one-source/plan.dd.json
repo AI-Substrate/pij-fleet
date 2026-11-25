@@ -52,6 +52,12 @@
           "claim": "The stage is in `.harness/extensions/checks/` after the Rust gate and in `just self-check` after `just rust-check`, so a full run checks the binary it just built.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "Review of #348, M1: the target is shared by worktrees and its debug pij-rs is whichever tree built last. `docs list --json` gives `built_from`, the checkout the binary was built from (its crate's build-time path); the check compares it with this checkout and, when it is another tree or missing, refuses (exit 2) naming it and the build command, and compares no page.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
         }
       ]
     },

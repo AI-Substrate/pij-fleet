@@ -12,11 +12,14 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 export const CLI_PAGES_DIR = "docs/cli";
+
+const BUILD_COMMAND =
+	'PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" just shared-build -- build --locked -p pij-cli --bin pij-rs';
 
 export interface Run {
 	readonly code: number;
@@ -30,10 +33,14 @@ export interface CheckIo {
 	readonly readFile: (path: string) => string | undefined;
 	/** Every `docs/cli/**.md`, repo-relative. */
 	readonly cliFiles: () => readonly string[];
+	/** Whether `builtFrom` (the checkout the binary names) is this checkout. */
+	readonly isThisTree: (builtFrom: string) => boolean;
 }
 
 export interface CheckReport {
 	readonly ok: boolean;
+	/** Set when no page was compared because the binary cannot speak for this tree. */
+	readonly refusal?: string;
 	readonly checked: number;
 	readonly problems: readonly string[];
 }
@@ -82,6 +89,16 @@ function compare(
 export function check(io: CheckIo): CheckReport {
 	const listed = data(io.run(["docs", "list", "--json"]), "pij-rs docs list --json");
 	if (typeof listed === "string") return { ok: false, checked: 0, problems: [listed] };
+	// Review of #348, M1: a target shared by worktrees holds whichever tree built
+	// last; its pages say nothing about this tree's files.
+	const builtFrom = listed.built_from;
+	if (typeof builtFrom !== "string" || !io.isThisTree(builtFrom)) {
+		const refusal =
+			typeof builtFrom === "string"
+				? `this pij-rs was built from ${builtFrom}, not this checkout, so its pages say nothing about these files; build it here`
+				: "this pij-rs does not say which checkout built it (it predates PRD 009's built_from); build it here";
+		return { ok: false, refusal, checked: 0, problems: [refusal] };
+	}
 	const pages = Array.isArray(listed.pages) ? listed.pages : [];
 	const problems: string[] = [];
 	const bundled = new Set<string>();
@@ -138,8 +155,7 @@ function main(): void {
 	const bin = binary(process.env, root);
 	if (!existsSync(bin)) {
 		process.stderr.write(
-			`docs-bundle-check: no built pij-rs at ${bin}, so no page was checked. Build it: ` +
-				'PIJ_SHARED_TARGET="$(bash harness/scripts/cargo-target.sh)" just shared-build -- build --locked -p pij-cli --bin pij-rs\n',
+			`docs-bundle-check: no built pij-rs at ${bin}, so no page was checked. Build it: ${BUILD_COMMAND}\n`,
 		);
 		process.exitCode = 2;
 		return;
@@ -165,12 +181,24 @@ function main(): void {
 				return undefined;
 			}
 		},
+		isThisTree: (builtFrom) => {
+			try {
+				return realpathSync(builtFrom) === realpathSync(root);
+			} catch {
+				return false;
+			}
+		},
 		cliFiles: () => {
 			const out: string[] = [];
 			if (existsSync(join(root, CLI_PAGES_DIR))) walk(root, CLI_PAGES_DIR, out);
 			return out.sort();
 		},
 	});
+	if (report.refusal !== undefined) {
+		process.stderr.write(`docs-bundle-check: ${bin}: ${report.refusal}: ${BUILD_COMMAND}\n`);
+		process.exitCode = 2;
+		return;
+	}
 	if (report.ok) {
 		process.stdout.write(
 			`docs-bundle-check: ${report.checked} bundled page(s) in ${bin} match their files.\n`,

@@ -35,7 +35,7 @@ _Empty._
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | `source` in docs list --json; docs-bundle-check.ts with its test; the stage in checks and self-check | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0001](#tk-0001) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | `source` in docs list --json; docs-bundle-check.ts with its test; the stage in checks and self-check | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0001](#tk-0001) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria), [ac-0002](../../../plan.dd.md#acceptance-criteria), [ac-0003](../../../plan.dd.md#acceptance-criteria), [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 

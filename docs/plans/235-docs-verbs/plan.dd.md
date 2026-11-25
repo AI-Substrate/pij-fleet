@@ -51,7 +51,7 @@ pij refuses `pij docs` today, and a seat outside the pij repo cannot read `docs/
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
 | ac-0001 | `pij agents-start-here` prints the start page (what pij is, how a seat learns who it is and who governs it, the first commands to run, pointers to existing docs) and exits 0 with no daemon. `--json` prints it in the usual envelope. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij docs list` names every bundled page with its one-line summary. `pij docs get &lt;page&gt;` prints the whole page; `pij docs get &lt;page&gt;#&lt;heading&gt;` prints only that section (the heading to the next heading of the same or higher level), the heading matched by its text or its slug, case-insensitive. An unknown page or heading refuses (exit 2) naming the nearest page or heading and `pij docs list`. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij docs list` names every bundled page with its one-line summary. `pij docs get &lt;page&gt;` prints the whole page; `pij docs get &lt;page&gt;#&lt;heading&gt;` prints only that section (the heading to the next heading of the same or higher level), the heading matched by its text or its slug, case-insensitive. An unknown page or heading refuses (exit 2) naming `pij docs list`, and the nearest page or heading when one is close (it contains the name, or is within an edit distance of a third of its length, at least 2: review of #348, M5). Headings are ATX headings outside ``` and ~~~ fences, a closing `#` run dropped; a repeated heading's slug gets `-1`, `-2` (M3). | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
 | ac-0003 | The pages are compiled into the binary from `docs/cli/`; a unit test holds the table equal to the files there, so a page file not in the table (or a row with no file) fails the build's tests. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
 | ac-0004 | The verbs run before the tokio runtime and the daemon client are built: no daemon contact, no network, no child process. The pij shim forwards `docs` and `agents-start-here` to pij-rs unchanged (pij-native-verbs.json, RS_ROUTE_TABLE, the skill's verb table and pij-rs-api.md list them). | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 
@@ -88,6 +88,8 @@ Verbs that own their grammar and help are clap subcommands with `disable_help_fl
 | risk | likelihood | impact | mitigation |
 | --- | --- | --- | --- |
 | A page goes stale against the repo file it came from. | Medium | Low | The page is the file at build time; step s02 adds the check that the installed binary's page equals the file. |
+| Known limit (review of #348, M3): setext headings, headings indented 1 to 3 spaces, and non-ASCII case folding in heading match (`Über` is case-sensitive) are not handled. | Low | Low | No bundled page uses them; a page that does would show its heading missing in `docs get &lt;page&gt;#&lt;heading&gt;`, and the fix is in `headings()` in docs.rs. |
+| Known limit (review of #348, M4): `pij docs get … \| head` can panic with exit 101 when the pipe closes early, as every pij-rs verb does (Rust ignores SIGPIPE). | Medium | Low | Fleet-wide, out of scope here; the output is complete up to the close. |
 
 <a id="execution-guardrails"></a>
 

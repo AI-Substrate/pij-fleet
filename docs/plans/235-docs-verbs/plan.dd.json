@@ -1,5 +1,7 @@
 {
-  "dd": { "schema": "builder/plan" },
+  "dd": {
+    "schema": "builder/plan"
+  },
   "sections": [
     {
       "name": "meta",
@@ -42,7 +44,7 @@
         },
         {
           "id": "ac-0002",
-          "claim": "`pij docs list` names every bundled page with its one-line summary. `pij docs get <page>` prints the whole page; `pij docs get <page>#<heading>` prints only that section (the heading to the next heading of the same or higher level), the heading matched by its text or its slug, case-insensitive. An unknown page or heading refuses (exit 2) naming the nearest page or heading and `pij docs list`.",
+          "claim": "`pij docs list` names every bundled page with its one-line summary. `pij docs get <page>` prints the whole page; `pij docs get <page>#<heading>` prints only that section (the heading to the next heading of the same or higher level), the heading matched by its text or its slug, case-insensitive. An unknown page or heading refuses (exit 2) naming `pij docs list`, and the nearest page or heading when one is close (it contains the name, or is within an edit distance of a third of its length, at least 2: review of #348, M5). Headings are ATX headings outside ``` and ~~~ fences, a closing `#` run dropped; a repeated heading's slug gets `-1`, `-2` (M3).",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
@@ -92,6 +94,18 @@
           "likelihood": "Medium",
           "impact": "Low",
           "mitigation": "The page is the file at build time; step s02 adds the check that the installed binary's page equals the file."
+        },
+        {
+          "risk": "Known limit (review of #348, M3): setext headings, headings indented 1 to 3 spaces, and non-ASCII case folding in heading match (`Über` is case-sensitive) are not handled.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "No bundled page uses them; a page that does would show its heading missing in `docs get <page>#<heading>`, and the fix is in `headings()` in docs.rs."
+        },
+        {
+          "risk": "Known limit (review of #348, M4): `pij docs get … | head` can panic with exit 101 when the pipe closes early, as every pij-rs verb does (Rust ignores SIGPIPE).",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "Fleet-wide, out of scope here; the output is complete up to the close."
         }
       ]
     },

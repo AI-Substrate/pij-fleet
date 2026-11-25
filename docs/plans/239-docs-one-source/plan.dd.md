@@ -52,6 +52,7 @@ Plan 235 compiles each page in with `include_str!`, so a page is its file at bui
 | ac-0001 | `pij docs list --json` gives each page's `source`, its path from the repository root. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
 | ac-0002 | `just docs-bundle-check` runs the checkout's built pij-rs (`&lt;cargo target&gt;/debug/pij-rs` from `harness/scripts/cargo-target.sh`, or `PIJ_RS_BIN`), lists its pages, gets each with `--json` and compares `text` with its source file byte for byte. It fails, naming each, on a page that differs, a `docs/cli/**/*.md` file that is not bundled, and a bundled page whose source is missing. With no built binary it exits non-zero with the build command, never a silent pass. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
 | ac-0003 | The stage is in `.harness/extensions/checks/` after the Rust gate and in `just self-check` after `just rust-check`, so a full run checks the binary it just built. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | Review of #348, M1: the target is shared by worktrees and its debug pij-rs is whichever tree built last. `docs list --json` gives `built_from`, the checkout the binary was built from (its crate's build-time path); the check compares it with this checkout and, when it is another tree or missing, refuses (exit 2) naming it and the build command, and compares no page. | [x] checked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 

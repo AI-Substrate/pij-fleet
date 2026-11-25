@@ -27,7 +27,8 @@
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0002",
-            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+            "../../../plan.dd.json#acceptance_criteria/ac-0003",
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
           ],
           "done": "#done_when/tk-0001"
         }
