@@ -76,7 +76,7 @@
 					"actor": "template author",
 					"priority": "must",
 					"state": "planned",
-					"done_when": "A template with one procedure of its own and one linked from the repo runs both by id, and adopting the template into another repo brings its own procedure and reports the linked one as missing.",
+					"done_when": "A template with one procedure of its own and one linked from the repo runs both by id, and adopting the template into another repo brings its own procedure and reports the linked one as missing. `pij pod down` runs the template's close procedure, then the freeze.",
 					"source": "operator rulings 2026-11-25 on procedures and seats"
 				},
 				{
@@ -184,6 +184,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Non-goal n-4: no isolation enforced between runs (Jordan's ruling 2026-11-25, round 2, ruling 5)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-01 done_when: pod down runs the template's close procedure, then the freeze (pm-001 ruling 2026-11-25 on PRD 008 req-06: the close steps live with the template's procedures, not in 008)."
 				}
 			]
 		}
