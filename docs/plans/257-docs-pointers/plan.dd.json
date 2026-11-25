@@ -1,5 +1,7 @@
 {
-  "dd": { "schema": "builder/plan" },
+  "dd": {
+    "schema": "builder/plan"
+  },
   "sections": [
     {
       "name": "meta",
@@ -14,7 +16,7 @@
     },
     {
       "name": "summary",
-      "value": "PRD 006's refusals (`E-RS-TYPE-MISSING`, `-UNKNOWN`, `-FIELD`, `-RULE`) list the ten types or name a flag, and PRD 007's first turn carried each type's purpose, lifecycle, keeps and every rule. Both now point at the page: a refusal's message ends `Read: pij docs get types` (or `types/<type>`), with its code and runnable next step unchanged, and the first turn's type part becomes the type's line, its authority, `Your type in full: pij docs get types/<type>`, only the rules the role changes (with their reasons, which no page holds) and the seed. That changes what every new seat is told: across the ten shipped types the type part shrinks from 9,737 to 6,220 characters (36%, mean 973 to 622), measured with the format strings before and after on the shipped definitions and seeds, with no rule changes. `types::DOCS_PAGE` and `types::docs_page()` name the pages for both the refusals and `pij docs`, so they cannot drift apart."
+      "value": "PRD 006's refusals (`E-RS-TYPE-MISSING`, `-UNKNOWN`, `-FIELD`, `-RULE`) list the ten types or name a flag, and PRD 007's first turn carried each type's purpose, lifecycle, keeps and every rule. Both now point at the page: a refusal's message ends `Read: pij docs get types` (or `types/<type>`), with its code and runnable next step unchanged, and the first turn's type part becomes the type's line, whether the seat carries authority (from its role's id, never its type), `Your type in full: pij docs get types/<type>`, only the rules the role changes (with their reasons, which no page holds) and the seed. That changes what every new seat is told: across the ten shipped types the type part shrinks from 9,737 to 6,220 characters (36%, mean 973 to 622), measured with the format strings before and after on the shipped definitions and seeds, with no rule changes. `types::DOCS_PAGE` and `types::docs_page()` name the pages for both the refusals and `pij docs`, so they cannot drift apart."
     },
     {
       "name": "goals",
@@ -42,7 +44,7 @@
         },
         {
           "id": "ac-0002",
-          "claim": "A first turn's type part is `You are a <type> seat (<title>): <line>`, `Carries authority: yes|no.`, `Your type in full: pij docs get types/<type>`, then `Your role changes these rules of your type:` with each changed rule's text, id and reason (only when the role changes one), then the seed. It no longer carries the type's purpose, lifecycle, keeps or unchanged rules.",
+          "claim": "A first turn's type part is `You are a <type> seat (<title>): <line>`, `Carries authority: yes|no, as your role's id makes you a <pa|pm|worker> (a type grants none).`, derived from the role id through `holders::seat_role_for`, the path assign stamps the seat role with, never from the type (review of #351, B351-R1-01),, `Your type in full: pij docs get types/<type>`, then `Your role changes these rules of your type:` with each changed rule's text, id and reason (only when the role changes one), then the seed. It no longer carries the type's purpose, lifecycle, keeps or unchanged rules.",
           "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
@@ -66,8 +68,14 @@
         }
       ]
     },
-    { "name": "tasks", "value": [] },
-    { "name": "done_when", "value": {} },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
     {
       "name": "research_context",
       "value": "Refusals: `check_role_for` and `get` in `crates/daemon/src/community/types.rs` (a `Refusal` is a code, a message and one runnable `next`; the pointer goes in the message so `next` stays the one command to run). First turn: the type part of `assemble` in `crates/daemon/src/community/first_turn.rs` (PRD 007, plan 242); `reshape_http/role_start.rs` asserts the role, parameters and creator parts, not the type part."

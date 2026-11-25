@@ -15,7 +15,7 @@ use serde_json::Value;
 
 use super::Refusal;
 use super::layout::RolePaths;
-use super::{memory, role, types};
+use super::{holders, memory, role, types};
 
 /// One part of a first turn.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -301,12 +301,15 @@ pub fn assemble(
             // PRD 009 req-06: the type's purpose, lifecycle, keeps and rules
             // are its `pij docs` page; the first turn names it and carries only
             // what the page cannot: the role's own changes to those rules.
+            // Authority comes from the role id, the way assign stamps the
+            // seat role (review of #351, B351-R1-01); the type grants none.
+            let position = holders::seat_role_for(&sources.role);
             let mut text = format!(
-                "You are a {} seat ({}): {}\nCarries authority: {}.\nYour type in full: pij docs get {}\n",
+                "You are a {} seat ({}): {}\nCarries authority: {}, as your role's id makes you a {position} (a type grants none).\nYour type in full: pij docs get {}\n",
                 def.id,
                 shown["title"].as_str().unwrap_or(&def.id),
                 def.line(),
-                if def.authority() { "yes" } else { "no" },
+                if position == "worker" { "no" } else { "yes" },
                 types::docs_page(&def.id),
             );
             let changes: Vec<String> = def
@@ -555,7 +558,7 @@ mod tests {
         let def = types::get("knowledge").unwrap();
         assert!(
             text.starts_with(&format!(
-                "You are a knowledge seat (Knowledge): {}\nCarries authority: no.\nYour type in full: pij docs get types/knowledge\n",
+                "You are a knowledge seat (Knowledge): {}\nCarries authority: no, as your role's id makes you a worker (a type grants none).\nYour type in full: pij docs get types/knowledge\n",
                 def.line()
             )),
             "{text}"
@@ -578,6 +581,31 @@ mod tests {
                 .text
                 .contains("(compact-after-job): keeps the call's context")
         );
+        // Review of #351, B351-R1-01: authority follows the role id (as assign
+        // stamps the seat role), never the type, in both directions.
+        let authority = |role: &str, kind: &str| {
+            let mut document = document();
+            document["sections"][0]["value"]["type"] = json!(kind);
+            document["sections"][2]["value"] = json!([]);
+            let mut sources = sources(document);
+            sources.role = role.to_string();
+            let (_, parts) = assemble(&sources, "", &[], &Creator::default());
+            parts[0]
+                .text
+                .lines()
+                .find(|line| line.starts_with("Carries authority"))
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(
+            authority("release-helper", "pa"),
+            "Carries authority: no, as your role's id makes you a worker (a type grants none)."
+        );
+        assert_eq!(
+            authority("pa", "worker"),
+            "Carries authority: yes, as your role's id makes you a pa (a type grants none)."
+        );
+        assert!(authority("pm-2", "coder").starts_with("Carries authority: yes"));
     }
 
     #[test]

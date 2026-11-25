@@ -1839,7 +1839,8 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
 - `directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>]
   [--packet <file>] [--instance <key>]` (plan 241) returns `first_turn` (the
   whole text) and `parts` (`heading`, `source`, `text`), in order: the type
-  (its line, whether it carries authority, `Your type in full: pij docs get
+  (its line, whether the seat carries authority, from its role's id as assign
+  stamps the seat role and never from the type, `Your type in full: pij docs get
   types/<type>`, the rules the role changes with their reasons, and the seed;
   the rest of the definition is that page, PRD 009 req-06, plan 257), the role
   (filled), the parameters, the caller's focus

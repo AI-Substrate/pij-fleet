@@ -1,7 +1,16 @@
 {
-  "dd": { "schema": "builder/backpressure" },
+  "dd": {
+    "schema": "builder/backpressure"
+  },
   "sections": [
-    { "name": "meta", "value": { "title": "Plan 257 backpressure", "plan": "../plan.dd.json#meta", "certainty": "Confident" } },
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 257 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
     {
       "name": "rows",
       "value": [
@@ -21,7 +30,7 @@
           "phase": "ph-0001",
           "mode": "BUILD",
           "tier": "computational",
-          "proof": "first_turn.rs the_type_part_names_its_page_and_carries_only_the_roles_rule_changes: a knowledge seat's first turn starts with its line, `Carries authority: no.` and `Your type in full: pij docs get types/knowledge`, carries none of its rules' text and keeps its seed; a reviewer role that changes compact-after-job carries that change and not the unchanged `independent` rule. reshape_http role_start passes unchanged.",
+          "proof": "first_turn.rs the_type_part_names_its_page_and_carries_only_the_roles_rule_changes: a knowledge seat's first turn starts with its line, its authority line and `Your type in full: pij docs get types/knowledge`, carries none of its rules' text and keeps its seed; a reviewer role that changes compact-after-job carries that change and not the unchanged `independent` rule. reshape_http role_start passes unchanged. Authority follows the role id, both ways: role `release-helper` of type pa says no (worker), role `pa` of type worker says yes (pa); mutant: rendering from the type's flag again fails it.",
           "state": "checked",
           "probe": "cargo test -p pij-daemon --lib community::first_turn"
         },
@@ -37,6 +46,16 @@
         }
       ]
     },
-    { "name": "sensors", "value": [{ "id": "sn-0001", "name": "done gate", "command": "harness checks", "dimension": "correctness" }] }
+    {
+      "name": "sensors",
+      "value": [
+        {
+          "id": "sn-0001",
+          "name": "done gate",
+          "command": "harness checks",
+          "dimension": "correctness"
+        }
+      ]
+    }
   ]
 }
