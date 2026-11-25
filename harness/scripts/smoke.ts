@@ -12,6 +12,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { inheritedGitDirRefusal, scrubGitEnvInPlace } from "../driver/git-env.js";
 import { exerciseExternalRoundtrip } from "../driver/governance-external.js";
 import { type CommandResult, PrivateGovernanceFixture } from "../driver/governance-fixture.js";
 import { loadScenario, runScenario, type Scenario } from "../driver/index.js";
@@ -463,6 +464,12 @@ async function main(): Promise<void> {
 const isMainModule =
 	process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename;
 if (isMainModule) {
+	const gitRefusal = inheritedGitDirRefusal(process.env, "smoke");
+	if (gitRefusal !== undefined) {
+		console.error(gitRefusal);
+		process.exit(2);
+	}
+	scrubGitEnvInPlace(process.env);
 	main().catch((err: Error) => {
 		console.error(err.message);
 		process.exit(2);

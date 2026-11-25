@@ -7424,7 +7424,8 @@ PEC notice";
         let linked = root.join("linked");
         std::fs::create_dir_all(&main).expect("main checkout");
         let git = |cwd: &std::path::Path, args: &[&str]| {
-            let status = std::process::Command::new("/usr/bin/git")
+            let mut command = std::process::Command::new("/usr/bin/git");
+            let status = pij_testkit::git_env::scrub(&mut command)
                 .args(args)
                 .current_dir(cwd)
                 .env("GIT_CONFIG_GLOBAL", "/dev/null")

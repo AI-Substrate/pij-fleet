@@ -1,0 +1,146 @@
+//! Incident #354: a seat exported GIT_DIR/GIT_WORK_TREE and the tests' git
+//! fixtures wrote into the real shared repository (core.worktree, a `pij test`
+//! identity, branches `wt-branch` and `dup`).
+//!
+//! The test runs the incident's fixture operations through
+//! [`pij_testkit::git_env`] in a child test process whose environment points
+//! GIT_DIR and GIT_WORK_TREE at a decoy repository, then proves the decoy's
+//! config, refs and worktrees are byte-identical. The child is this binary run
+//! directly, not through cargo's runner, so the runner's refusal does not hide
+//! the helper.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use pij_testkit::git_env;
+
+const CHILD_SCRATCH: &str = "PIJ_GIT_ENV_TEST_SCRATCH";
+const TEST_NAME: &str = "a_fixture_under_an_inherited_git_dir_leaves_the_decoy_untouched";
+
+#[test]
+fn a_fixture_under_an_inherited_git_dir_leaves_the_decoy_untouched() {
+    if let Some(scratch) = std::env::var_os(CHILD_SCRATCH) {
+        incident_fixture(Path::new(&scratch));
+        return;
+    }
+    let root = pij_testkit::fresh_dir("pij-git-env-decoy")
+        .canonicalize()
+        .expect("canonical root");
+    let decoy = root.join("decoy");
+    let scratch = root.join("scratch");
+    std::fs::create_dir_all(&decoy).expect("decoy dir");
+    std::fs::create_dir_all(&scratch).expect("scratch dir");
+    for args in [
+        &["init", "-q", "-b", "main"][..],
+        &[
+            "-c",
+            "user.name=decoy",
+            "-c",
+            "user.email=decoy@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "decoy",
+        ],
+    ] {
+        run(git_env::git(&decoy).args(args));
+    }
+    let before = snapshot(&decoy.join(".git"));
+
+    let child = Command::new(std::env::current_exe().expect("this test binary"))
+        .args([TEST_NAME, "--exact", "--nocapture", "--test-threads", "1"])
+        .env(CHILD_SCRATCH, &scratch)
+        .env("GIT_DIR", decoy.join(".git"))
+        .env("GIT_WORK_TREE", &decoy)
+        .output()
+        .expect("run the child test");
+    let after = snapshot(&decoy.join(".git"));
+    let made_own_repo = scratch.join(".git/config").is_file();
+    std::fs::remove_dir_all(&root).expect("remove the decoy root");
+
+    assert!(
+        child.status.success(),
+        "the child fixture failed: {}\n{}",
+        String::from_utf8_lossy(&child.stdout),
+        String::from_utf8_lossy(&child.stderr)
+    );
+    assert_eq!(
+        changed(&before, &after),
+        Vec::<String>::new(),
+        "the decoy's config, refs or worktrees changed"
+    );
+    assert!(made_own_repo, "the fixture never built its own repository");
+}
+
+/// What the incident's fixtures did: init, a local identity, a commit, a
+/// branch and a linked worktree.
+fn incident_fixture(scratch: &Path) {
+    let mut steps: Vec<Vec<String>> = [
+        &["init", "-q", "-b", "main"][..],
+        &["config", "user.name", "pij test"],
+        &["config", "user.email", "pij@example.invalid"],
+        &["commit", "-q", "--allow-empty", "-m", "fixture"],
+        &["branch", "dup"],
+    ]
+    .iter()
+    .map(|args| args.iter().map(|arg| (*arg).to_string()).collect())
+    .collect();
+    let linked = scratch.with_file_name("scratch-linked");
+    steps.push(vec![
+        "worktree".into(),
+        "add".into(),
+        "-q".into(),
+        "-b".into(),
+        "wt-branch".into(),
+        linked.display().to_string(),
+    ]);
+    for args in &steps {
+        let mut command = git_env::git(scratch);
+        run(git_env::scrub_identity(&mut command).args(args));
+    }
+}
+
+fn run(command: &mut Command) {
+    let output = command.output().expect("run git");
+    assert!(
+        output.status.success(),
+        "{command:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Every byte of the decoy's config, HEAD, refs, packed refs and worktrees.
+fn snapshot(git_dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = BTreeMap::new();
+    for name in ["config", "HEAD", "packed-refs", "refs", "worktrees"] {
+        collect(git_dir, &git_dir.join(name), &mut files);
+    }
+    files
+}
+
+fn collect(base: &Path, path: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+    if path.is_dir() {
+        for entry in std::fs::read_dir(path).expect("read a decoy dir") {
+            collect(base, &entry.expect("a decoy entry").path(), files);
+        }
+    } else if path.is_file() {
+        let relative = path
+            .strip_prefix(base)
+            .expect("inside the decoy")
+            .to_path_buf();
+        files.insert(relative, std::fs::read(path).expect("read a decoy file"));
+    }
+}
+
+fn changed(before: &BTreeMap<PathBuf, Vec<u8>>, after: &BTreeMap<PathBuf, Vec<u8>>) -> Vec<String> {
+    let mut names: Vec<&PathBuf> = before.keys().chain(after.keys()).collect();
+    names.sort();
+    names.dedup();
+    names
+        .into_iter()
+        .filter(|name| before.get(*name) != after.get(*name))
+        .map(|name| name.display().to_string())
+        .collect()
+}

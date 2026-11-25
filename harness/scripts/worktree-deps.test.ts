@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../driver/git-env.js";
 import { removeTemporaryTree } from "../test-utils.js";
 
 const script = join(import.meta.dirname, "worktree-deps.mjs");
@@ -38,7 +39,7 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "pij-worktree-deps-"));
 	main = join(root, 'main with "quotes"');
 	worktree = join(root, "linked worktree");
-	const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8" });
+	const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8", env: gitEnv() });
 	git("init", "--quiet", main);
 	git(
 		"-C",
@@ -210,7 +211,7 @@ describe("worktree-deps CLI", () => {
 
 	it("preserves trailing whitespace in the checkout path instead of mutating a sibling", () => {
 		const spaced = join(root, "trailing ");
-		execFileSync("git", ["-C", main, "worktree", "move", worktree, spaced]);
+		execFileSync("git", ["-C", main, "worktree", "move", worktree, spaced], { env: gitEnv() });
 		worktree = spaced;
 		target = join(worktree, "node_modules");
 		mkdirSync(spaced.trimEnd());

@@ -2,7 +2,6 @@
 //! standing `prime-governance` worktree, never the live governance branch.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub(crate) struct Scratch {
     pub root: PathBuf,
@@ -73,12 +72,9 @@ impl Scratch {
 
     /// Run git in `dir`, asserting success; returns stdout.
     pub fn git(&self, dir: &Path, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(dir)
+        let mut command = pij_testkit::git_env::git(dir);
+        let output = pij_testkit::git_env::scrub_identity(&mut command)
             .args(args)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_INDEX_FILE")
             .output()
             .expect("run git");
         assert!(

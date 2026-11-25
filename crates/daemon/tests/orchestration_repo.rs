@@ -3,7 +3,6 @@ mod repo;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use pij_core::model::SeatId;
 use pij_core::orchestration::{Project, mint_ordinal, plan_stream_creation};
@@ -49,9 +48,7 @@ impl FixtureRepo {
 
 impl Drop for FixtureRepo {
     fn drop(&mut self) {
-        let _ = Command::new("git")
-            .arg("-C")
-            .arg(&self.root)
+        let _ = pij_testkit::git_env::git(&self.root)
             .args(["worktree", "remove", "--force"])
             .arg(self.cleanup_root.join("s011-linked"))
             .output();
@@ -139,9 +136,8 @@ async fn dirty_source_tree_does_not_block_stream_creation() {
 }
 
 fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
+    let mut command = pij_testkit::git_env::git(root);
+    let output = pij_testkit::git_env::scrub_identity(&mut command)
         .args(args)
         .output()
         .expect("run git");
@@ -154,9 +150,7 @@ fn git(root: &Path, args: &[&str]) {
 }
 
 fn git_output(root: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
+    let output = pij_testkit::git_env::git(root)
         .args(args)
         .output()
         .expect("run git");

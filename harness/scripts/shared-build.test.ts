@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../driver/git-env.js";
 import { scaled } from "../driver/time-scale.js";
 
 // Plan 198: `just shared-build`, driven with a fake cargo and a fake df in
@@ -176,7 +177,7 @@ function fixture(): Fixture {
 		mkdirSync(join(worktree, "crates", crate, "src"), { recursive: true });
 		writeFileSync(join(worktree, "crates", crate, "src", file), "\n");
 	}
-	spawnSync("git", ["init", "-q", worktree], { env: { ...process.env, ...HERMETIC_GIT } });
+	spawnSync("git", ["init", "-q", worktree], { env: gitEnv(HERMETIC_GIT) });
 	const target = join(root, "target");
 	const log = join(root, "cargo.log");
 	const free = join(root, "free-kib");
@@ -243,8 +244,7 @@ function fixture(): Fixture {
 		log,
 		free,
 		env: {
-			...process.env,
-			...HERMETIC_GIT,
+			...gitEnv(HERMETIC_GIT),
 			PATH: `${bin}:${process.env.PATH}`,
 			PIJ_SHARED_TARGET: target,
 			PIJ_SHARED_BUILD_DF: df,
@@ -427,7 +427,7 @@ describe("just shared-build", () => {
 		const other = join(f.root, "other");
 		mkdirSync(join(other, "crates", "alpha", "src"), { recursive: true });
 		writeFileSync(join(other, "crates", "alpha", "src", "lib.rs"), "\n");
-		spawnSync("git", ["init", "-q", other], { env: { ...process.env, ...HERMETIC_GIT } });
+		spawnSync("git", ["init", "-q", other], { env: gitEnv(HERMETIC_GIT) });
 		await run({ ...f, worktree: other }, ["--", "build"], { ARTIFACT: "1" });
 		expect(await touched(f)).toBe(true);
 		expect(await touched(f)).toBe(false);
@@ -468,7 +468,7 @@ describe("just shared-build", () => {
 		const other = join(f.root, "other");
 		mkdirSync(join(other, "crates", "alpha", "src"), { recursive: true });
 		writeFileSync(join(other, "crates", "alpha", "src", "lib.rs"), "\n");
-		spawnSync("git", ["init", "-q", other], { env: { ...process.env, ...HERMETIC_GIT } });
+		spawnSync("git", ["init", "-q", other], { env: gitEnv(HERMETIC_GIT) });
 		const touchedAfter = async (env: NodeJS.ProcessEnv, from: Fixture, args: string[]) => {
 			await run(f, ["--", "build"], { ARTIFACT: "1" });
 			utimesSync(lib, 1_000_000, 1_000_000);
@@ -525,7 +525,7 @@ describe("just shared-build", () => {
 		const other = join(f.root, "other");
 		mkdirSync(join(other, "crates", "alpha", "src"), { recursive: true });
 		writeFileSync(join(other, "crates", "alpha", "src", "lib.rs"), "\n");
-		spawnSync("git", ["init", "-q", other], { env: { ...process.env, ...HERMETIC_GIT } });
+		spawnSync("git", ["init", "-q", other], { env: gitEnv(HERMETIC_GIT) });
 		const stamp = join(f.target, ".pij-shared-build-tree");
 		const noMktemp = join(f.root, "no-mktemp");
 		executable(noMktemp, "exit 1");

@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { gitEnv } from "../driver/git-env.js";
 
 // Plan 227: `pij fleet-map`, the skill tool at skills/pij/tools/fleet-map.
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -84,7 +85,7 @@ function listing(dir: string): string[] {
 }
 
 function git(cwd: string, ...args: string[]): void {
-	const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
+	const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnv() });
 	if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
 }
 
@@ -688,9 +689,10 @@ describe("project defaults, through the pij shim", () => {
 		const folder = join(realpathSync(gov), ".harness", "government", "fleet-map");
 		const add = `git -C ${folder} add fleet-map.structure.json`;
 		expect(init.stdout).toContain(`new file: run \`${add}\` before committing`);
-		expect(spawnSync("sh", ["-c", add]).status).toBe(0);
+		expect(spawnSync("sh", ["-c", add], { env: gitEnv() }).status).toBe(0);
 		const staged = spawnSync("git", ["-C", gov, "diff", "--cached", "--name-only"], {
 			encoding: "utf8",
+			env: gitEnv(),
 		});
 		expect(staged.stdout.trim()).toBe(".harness/government/fleet-map/fleet-map.structure.json");
 		expect(existsSync(structure)).toBe(true);

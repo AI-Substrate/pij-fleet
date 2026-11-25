@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-
+import { gitEnv } from "../driver/git-env.js";
 import { scanRepository, scanText, shouldScanFile } from "./local-path-check.js";
 
 describe("local-path-check", () => {
@@ -61,14 +61,14 @@ describe("local-path-check", () => {
 	it("scans both tracked and untracked non-ignored operational files", () => {
 		const root = mkdtempSync(join(tmpdir(), "pij-local-path-check-"));
 		try {
-			execFileSync("git", ["init", "--quiet"], { cwd: root });
+			execFileSync("git", ["init", "--quiet"], { cwd: root, env: gitEnv() });
 			writeFileSync(join(root, "justfile"), 'open("/Users/tracked/.config/tool.json")\n');
 			mkdirSync(join(root, "harness", "scripts"), { recursive: true });
 			writeFileSync(
 				join(root, "harness", "scripts", "new-tool.ts"),
 				'const config = "/home/untracked/.config/tool.json";\n',
 			);
-			execFileSync("git", ["add", "justfile"], { cwd: root });
+			execFileSync("git", ["add", "justfile"], { cwd: root, env: gitEnv() });
 
 			expect(
 				scanRepository(root)

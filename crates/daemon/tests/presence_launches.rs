@@ -14,7 +14,6 @@
 //! ONE test on purpose: it reads the process-wide launch counter.
 
 use std::path::Path;
-use std::process::Command;
 use std::sync::Arc;
 
 use pij_core::config::{AdapterChoice, Adapters, Config};
@@ -30,9 +29,8 @@ use pij_testkit::fakes::FakeSessionStatus;
 const GIT_SITE: &str = "git.pa-watchdog-common-dir";
 
 fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
+    let mut command = pij_testkit::git_env::git(dir);
+    let output = pij_testkit::git_env::scrub_identity(&mut command)
         .args(args)
         .env("GIT_AUTHOR_NAME", "t")
         .env("GIT_AUTHOR_EMAIL", "t@t")
