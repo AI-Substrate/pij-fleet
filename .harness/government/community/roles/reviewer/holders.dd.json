@@ -3059,6 +3059,16 @@
 					"seat": "pij-stormy-eagle",
 					"to": "2026-11-25T00:57:31.649Z",
 					"why": "#344 PRD 006 single review (amended C34; Jordan-approved)"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T01:50:01.277Z",
+					"harness": "copilot",
+					"harness_session": "82804a25-6885-4a9d-a21d-4de38db11f26",
+					"instance_key": "348",
+					"machine": "studio",
+					"seat": "pij-geographical-meerkat",
+					"why": "#348 PRD 009 part 1 single review (amended C34; Jordan-approved)"
 				}
 			]
 		}
