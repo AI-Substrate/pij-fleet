@@ -3119,7 +3119,10 @@
 					"harness_session": "bc9736e7-ad4e-46e5-a42f-216a97d941bb",
 					"instance_key": "352",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-potential-coral",
+					"to": "2026-11-25T05:08:38.813Z",
 					"why": "one C34 review of #352 (close --stop fix) at 7baacf2"
 				}
 			]
