@@ -13,6 +13,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("down") => Some(DOWN),
         Some("add" | "release") => Some(RESHAPE),
         Some("sessions") => Some(SESSIONS),
+        Some("activity") => Some(ACTIVITY),
         _ => None,
     }
 }
@@ -30,6 +31,7 @@ Usage:
   pij pod add <pod> role:<id>[/<instance>] [--set <name>=<value>]... | <seat>
   pij pod release <pod> <seat>
   pij pod sessions <pod> [--limit <n>]       every member's harness sessions
+  pij pod activity <pod> [--since <time>]    what the pod did, in order; open to any seat
   pij pod confirm <pod> --tool <tool>...      a slot's seat answering its tool canary
 
 A template is a folder holding pod-template.dd.json (or that file), at any path
@@ -105,6 +107,16 @@ harness, model, session id, transcript, the context in use at its end, and why
 it changed (spawn, revive, compact, rebind or relaunch), as `pij sessions
 --history --seat <seat>` lists them. Read from the event log; the context from
 at most the last 256 KiB of each transcript, else unknown. Launches nothing.";
+
+const ACTIVITY: &str = "\
+pij pod activity <pod> [--since <time>]
+
+What the pod did, in time order: each member's state changes, reports, memory
+notes and outputs, the sends it received, and the sends members made to the
+pod's consulted roles; then where each member's transcript is. --since takes
+milliseconds since the epoch or a time like 2026-11-25T04:00:00.000Z. Any seat
+may run it, in the pod or not. Reads the event log; writes and launches
+nothing.";
 
 const SHOW: &str = "\
 pij pod show <pod>

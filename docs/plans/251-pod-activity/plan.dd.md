@@ -47,9 +47,9 @@
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij pod activity &lt;pod&gt; [--since &lt;time&gt;]` reads the members' state changes, outputs and sends (between members and to consulted roles) from the event log, and each member's transcript location, in time order. It writes nothing and launches nothing. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | Any seat may run it, whether or not it is in the pod or holds a role there. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Cost: indexed event-log reads per member when asked. No launch, loop, poll or timer. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij pod activity &lt;pod&gt; [--since &lt;time&gt;]` reads the members' state changes, outputs and sends (between members and to consulted roles) from the event log, and each member's transcript location, in time order. It writes nothing and launches nothing. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | Any seat may run it, whether or not it is in the pod or holds a role there. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Cost: indexed event-log reads per member when asked. No launch, loop, poll or timer. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -57,7 +57,7 @@
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Pod activity view (workstream 008 s05) | One phase on PR #346. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Pod activity view (workstream 008 s05) | One phase on PR #346. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

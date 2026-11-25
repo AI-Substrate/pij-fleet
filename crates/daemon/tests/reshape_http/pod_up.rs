@@ -596,3 +596,80 @@ async fn session_history_reads_the_event_log_per_seat_and_per_member() {
     );
     rig.server.abort();
 }
+
+/// Plan 251: a seat in no pod and no role there reads what the pod did, in
+/// order, with each member's transcript location; nothing launches.
+#[tokio::test]
+async fn pod_activity_is_open_to_any_seat_and_reads_in_time_order() {
+    let repo = repo("pij-pod-activity");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let up = pod(
+        rig.addr,
+        &repo,
+        &[
+            "up",
+            "pods/build",
+            "--set",
+            "subject=planning",
+            "--session",
+            "work",
+        ],
+    )
+    .await;
+    let lead = up["data"]["members"][0]["seat"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    rig.delivery
+        .send(SEAT.into(), lead.as_str().into(), "hello lead\nsecond line")
+        .await
+        .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    rig.bus
+        .publish(pij_core::model::Event {
+            seq: None,
+            v: 1,
+            at: u64::try_from(now).unwrap() + 1,
+            kind: "seat.activity".to_string(),
+            seat: Some(lead.as_str().into()),
+            payload: json!({"state": "idle"}).to_string(),
+        })
+        .await
+        .unwrap();
+    let launched = super::role_start::launches(&rig.tmux);
+
+    let seen = pod(rig.addr, &repo, &["activity", "build"]).await;
+    assert_eq!(seen["ok"], true, "{seen}");
+    let lines: Vec<&str> = seen["data"]["activity"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|line| line["seat"] == lead.as_str())
+        .map(|line| line["line"].as_str().unwrap())
+        .collect();
+    let hello = lines
+        .iter()
+        .position(|line| *line == format!("{SEAT} -> {lead}: hello lead…"))
+        .unwrap_or_else(|| panic!("{lines:?}"));
+    let idle = lines
+        .iter()
+        .position(|line| *line == format!("{lead} is idle"))
+        .unwrap_or_else(|| panic!("{lines:?}"));
+    assert!(hello < idle, "in time order: {lines:?}");
+    assert_eq!(seen["data"]["transcripts"][0]["seat"], lead.as_str());
+    let later = pod(
+        rig.addr,
+        &repo,
+        &["activity", "build", "--since", "4102444800000"],
+    )
+    .await;
+    assert_eq!(later["data"]["activity"], json!([]), "{later}");
+    assert_eq!(super::role_start::launches(&rig.tmux), launched);
+    rig.server.abort();
+}

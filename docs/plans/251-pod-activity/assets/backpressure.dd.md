@@ -20,8 +20,8 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: a seat outside the pod reads its activity in order; nothing is written. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_activity |
-| bp-0002 | AC2 | ph-0001 | BUILD | computational | The spawn counter does not move across activity. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_activity_cost |
+| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: a seat outside the pod reads its activity in order; nothing is written. | [x] checked | — | — | cargo test -p pij-daemon pod_activity |
+| bp-0002 | AC2 | ph-0001 | BUILD | computational | The spawn counter does not move across activity. | [x] checked | — | — | cargo test -p pij-daemon pod_activity_cost |
 
 <a id="sensors"></a>
 

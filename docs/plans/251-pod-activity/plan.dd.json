@@ -36,19 +36,19 @@
         {
           "id": "ac-0001",
           "claim": "`pij pod activity <pod> [--since <time>]` reads the members' state changes, outputs and sends (between members and to consulted roles) from the event log, and each member's transcript location, in time order. It writes nothing and launches nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "Any seat may run it, whether or not it is in the pod or holds a role there.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "Cost: indexed event-log reads per member when asked. No launch, loop, poll or timer.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         }
       ]
@@ -60,7 +60,7 @@
           "id": "ph-0001",
           "title": "Pod activity view (workstream 008 s05)",
           "brief": "One phase on PR #346.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

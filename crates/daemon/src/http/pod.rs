@@ -58,6 +58,7 @@ struct Call {
     name: Option<String>,
     session: Option<String>,
     limit: Option<usize>,
+    since: Option<String>,
     fresh: bool,
     no_start: bool,
     tools: Vec<String>,
@@ -90,6 +91,7 @@ fn parse(argv: &[String]) -> Result<Call, Refusal> {
             }
             "--name" => call.name = Some(value("--name")?),
             "--session" => call.session = Some(value("--session")?),
+            "--since" => call.since = Some(value("--since")?),
             "--limit" => {
                 call.limit = Some(
                     value("--limit")?
@@ -163,6 +165,7 @@ pub(crate) async fn handle(
         "add" => add(&state, &call, &request.caller, &actor).await,
         "release" => release(&state, &call, &request.caller, &actor).await,
         "sessions" => sessions(&state, &call, &request.caller).await,
+        "activity" => activity(&state, &call, &request.caller).await,
         verb => Err(Refusal::new(
             "E-RS-UNPORTED",
             format!("pod {verb}: unknown command; pij pod --help"),
@@ -1405,6 +1408,171 @@ async fn sessions(state: &AppState, call: &Call, caller: &CallerContext) -> Resu
     Ok(json!({"pod": pod_name, "sessions": members}))
 }
 
+/// The event kinds `pod activity` reads for a member, in one indexed query.
+const ACTIVITY_KINDS: [&str; 6] = [
+    "seat.activity",
+    "report.now",
+    "message.pushed",
+    "memory.note",
+    "spawn.launched",
+    "seat.tombstone",
+];
+
+/// The first line of `body`, at most 120 characters, as a send's summary.
+fn summary(body: &str) -> String {
+    let line = body.lines().next().unwrap_or_default();
+    let mut shown: String = line.chars().take(120).collect();
+    if line.chars().count() > 120 || body.lines().nth(1).is_some() {
+        shown.push('…');
+    }
+    shown
+}
+
+/// One activity line for a member's event, or `None` for one not shown.
+fn activity_line(kind: &str, seat: &str, payload: &Value) -> Option<String> {
+    Some(match kind {
+        "seat.activity" => format!("{seat} is {}", payload["state"].as_str()?),
+        "report.now" => format!(
+            "{seat} reported: {}{}",
+            payload["did"].as_str().unwrap_or("-"),
+            payload["next"]
+                .as_str()
+                .map(|next| format!("; next: {next}"))
+                .unwrap_or_default()
+        ),
+        "message.pushed" => format!(
+            "{} -> {seat}: {}",
+            payload["from"].as_str().unwrap_or("?"),
+            summary(payload["body"].as_str().unwrap_or_default())
+        ),
+        "memory.note" => format!(
+            "{seat} wrote a memory note for {}",
+            payload["role"].as_str().unwrap_or("?")
+        ),
+        "spawn.launched" => format!("{seat} started"),
+        "seat.tombstone" => format!("{seat} closed"),
+        _ => return None,
+    })
+}
+
+/// When `--since` names: milliseconds since the epoch, or a time as holders
+/// documents write it (`2026-11-25T04:00:00.000Z`).
+fn since_ms(given: &str) -> Result<u64, Refusal> {
+    if let Ok(ms) = given.parse::<u64>() {
+        return Ok(ms);
+    }
+    holders::parse_time(given)
+        .and_then(|at| u64::try_from(at.unix_timestamp_nanos() / 1_000_000).ok())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                "--since takes milliseconds since the epoch or a time like 2026-11-25T04:00:00.000Z",
+            )
+        })
+}
+
+/// `pij pod activity <pod> [--since <time>]` (req-15): what the pod did, in
+/// time order: its members' state changes, reports, memory notes, outputs and
+/// the sends they received, and the sends members made to its consulted
+/// roles' holders; then where each member's transcript is. Open to every
+/// seat: no membership or role test. Reads only.
+async fn activity(state: &AppState, call: &Call, caller: &CallerContext) -> Result<Value, Refusal> {
+    let pod_name = position(call, 0, "pij pod activity <pod> [--since <time>]")?;
+    let since = call
+        .since
+        .as_deref()
+        .map(since_ms)
+        .transpose()?
+        .unwrap_or(0);
+    let opened = open(state, caller, pod_name).await?;
+    let members: Vec<(String, String, String)> = pod::records(&opened.document, "members")
+        .iter()
+        .map(|member| {
+            (
+                member["seat"].as_str().unwrap_or_default().to_string(),
+                member["slot"].as_str().unwrap_or_default().to_string(),
+                member["role"].as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    let mut lines: Vec<(u64, Value)> = Vec::new();
+    let mut transcripts = Vec::new();
+    for (seat, slot, role_id) in &members {
+        let id = SeatId::from(seat.as_str());
+        let events = state
+            .services
+            .spine
+            .all_matching(&id, &ACTIVITY_KINDS)
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
+        for event in events.iter().filter(|event| event.at >= since) {
+            let payload: Value = serde_json::from_str(&event.payload).unwrap_or(Value::Null);
+            if let Some(line) = activity_line(&event.kind, seat, &payload) {
+                lines.push((
+                    event.at,
+                    json!({"at": event.at, "slot": slot, "seat": seat, "line": line}),
+                ));
+            }
+        }
+        let outputs = state
+            .services
+            .directory
+            .store()
+            .outputs_for_role(&opened.record.project, role_id, 50)
+            .await
+            .unwrap_or_default();
+        for output in outputs
+            .into_iter()
+            .filter(|output| &output.writer == seat && output.created_at >= since)
+        {
+            lines.push((
+                output.created_at,
+                json!({"at": output.created_at, "slot": slot, "seat": seat,
+                       "line": format!("{seat} wrote {} {} on {}: {}", output.role, output.kind, output.subject, output.path)}),
+            ));
+        }
+        let history = super::shim::seat_history(state, &id, 1).await;
+        transcripts.push(json!({
+            "slot": slot,
+            "seat": seat,
+            "session": history["sessions"][0]["session"],
+            "transcript": history["sessions"][0]["transcript"],
+        }));
+    }
+    for consulted in pod::records(&opened.document, "consulted") {
+        let role_id = consulted["role"].as_str().unwrap_or_default();
+        for holder in holders_of(state, &opened.record.project, role_id).await {
+            let events = state
+                .services
+                .spine
+                .all_matching(&SeatId::from(holder.as_str()), &["message.pushed"])
+                .await
+                .unwrap_or_default();
+            for event in events.iter().filter(|event| event.at >= since) {
+                let payload: Value = serde_json::from_str(&event.payload).unwrap_or(Value::Null);
+                let from = payload["from"].as_str().unwrap_or_default();
+                if let Some((_, slot, _)) = members.iter().find(|(seat, _, _)| seat == from) {
+                    let line = format!(
+                        "{from} -> {holder} (consulted {role_id}): {}",
+                        summary(payload["body"].as_str().unwrap_or_default())
+                    );
+                    lines.push((
+                        event.at,
+                        json!({"at": event.at, "slot": slot, "seat": from, "line": line}),
+                    ));
+                }
+            }
+        }
+    }
+    lines.sort_by_key(|(at, _)| *at);
+    Ok(json!({
+        "pod": pod_name,
+        "since": since,
+        "activity": lines.into_iter().map(|(_, line)| line).collect::<Vec<_>>(),
+        "transcripts": transcripts,
+    }))
+}
+
 /// The template a pod's record names: relative to the repo, or absolute.
 ///
 /// # Errors
@@ -1738,5 +1906,26 @@ mod tests {
             refused.message.contains("unknown flag --force"),
             "{refused}"
         );
+    }
+
+    #[test]
+    fn an_activity_line_names_the_seat_and_a_send_shows_one_short_line() {
+        assert_eq!(
+            activity_line("seat.activity", "pij-a", &json!({"state": "idle"})).as_deref(),
+            Some("pij-a is idle")
+        );
+        let long = format!("{}\nsecond line", "x".repeat(200));
+        let line = activity_line(
+            "message.pushed",
+            "pij-a",
+            &json!({"from": "pij-b", "body": long}),
+        )
+        .unwrap();
+        assert!(line.starts_with("pij-b -> pij-a: xxx"), "{line}");
+        assert_eq!(line.chars().count(), "pij-b -> pij-a: ".len() + 121);
+        assert!(activity_line("delivery.outcome", "pij-a", &json!({})).is_none());
+        assert_eq!(since_ms("1795579000000").unwrap(), 1_795_579_000_000);
+        assert_eq!(since_ms("2026-11-25T00:00:00.000Z").unwrap() % 1000, 0);
+        assert!(since_ms("yesterday").is_err());
     }
 }

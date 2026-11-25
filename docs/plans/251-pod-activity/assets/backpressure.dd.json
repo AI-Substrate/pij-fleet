@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: a seat outside the pod reads its activity in order; nothing is written.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_activity"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "The spawn counter does not move across activity.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_activity_cost"
         }
       ]

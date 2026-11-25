@@ -88,7 +88,7 @@
 				{
 					"id": "s05",
 					"title": "Pod activity view",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/008-pods.dd.json#requirements/req-15"],
 					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-pod-activity"],
 					"depends_on": ["#steps/s02"],
@@ -145,6 +145,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s04 complete on #346 (plans 250)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s05 complete on #346 (plans 251)."
 				}
 			]
 		}

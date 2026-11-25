@@ -232,7 +232,7 @@
 					"statement": "`pij pod activity <pod>` shows, read only, what the pod did: its members' state changes, outputs, sends between members and to consulted roles, and where each member's transcript is. It is open to every seat: there is no observer role, no membership test and no way to hide a pod.",
 					"actor": "any seat",
 					"priority": "must",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A seat that is not in the pod and holds no role in it runs `pij pod activity <pod>` and sees each member's state changes, outputs and sends in order, with each transcript's location; the read launches nothing and writes nothing.",
 					"source": "Jordan's ruling 2026-11-25, round 2, ruling 8"
 				},
@@ -398,6 +398,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #346 (s04): req-13 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #346 (s05): req-15 shipped."
 				}
 			]
 		}

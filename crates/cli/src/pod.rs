@@ -122,6 +122,59 @@ pub fn render(data: &Value) -> String {
                 .map(|slot| format!("  {}: {}", text(&slot["slot"]), text(&slot["canary"]))),
         );
     }
+    if let Some(activity) = data["activity"].as_array() {
+        lines.push(format!("{} event(s):", activity.len()));
+        lines.extend(activity.iter().map(|line| {
+            format!(
+                "  {} [{}] {}",
+                line["at"]
+                    .as_u64()
+                    .map_or("-".to_string(), |at| at.to_string()),
+                text(&line["slot"]),
+                text(&line["line"])
+            )
+        }));
+        if let Some(transcripts) = data["transcripts"].as_array() {
+            lines.push("transcripts:".to_string());
+            lines.extend(transcripts.iter().map(|member| {
+                format!(
+                    "  {} {}: {}",
+                    text(&member["slot"]),
+                    text(&member["seat"]),
+                    text(&member["transcript"])
+                )
+            }));
+        }
+    }
+    if let Some(members) = data["sessions"].as_array() {
+        for member in members {
+            lines.push(format!(
+                "{} {}: {} session(s)",
+                text(&member["slot"]),
+                text(&member["seat"]),
+                member["total"].as_u64().unwrap_or(0)
+            ));
+            for session in member["sessions"].as_array().into_iter().flatten() {
+                lines.push(
+                    format!(
+                        "  {} -> {}  {}  {} {}  session {}  context {}",
+                        session["started_at"]
+                            .as_u64()
+                            .map_or("-".to_string(), |at| at.to_string()),
+                        session["ended_at"]
+                            .as_u64()
+                            .map_or("running".to_string(), |at| at.to_string()),
+                        text(&session["why"]),
+                        text(&session["harness"]),
+                        text(&session["model"]),
+                        text(&session["session"]),
+                        session["context_tokens"]
+                    )
+                    .replace('"', ""),
+                );
+            }
+        }
+    }
     for key in ["canary", "started", "writes"] {
         if let Some(line) = data[key].as_str() {
             lines.push(format!("{key}: {line}"));
