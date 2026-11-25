@@ -54,14 +54,14 @@ A fixed rule, an unknown rule or a change with no reason refuses (`E-RS-TYPE-RUL
 
 ## The seed
 
-A seat of the role's type is told its type's seed at start. pij ships one per type; a repo may keep its own in governance:
+Each type has a seed: the opening text for a seat of that type. pij ships one per type; a repo may keep its own in governance. Starting a seat in a role with its seed is planned (PRD 007); today, read it and hand it over yourself:
 
     pij directory types <type> --seed
     pij directory seed <type> --file <path> --why "<why>"
 
 ## Hold it
 
-Assign the role to a seat; the seat is told about it and gets the role's memory index:
+Assign the role to a seat; requests queued for the role are delivered to it:
 
     pij directory assign <role> <seat> --why "<why>"
 

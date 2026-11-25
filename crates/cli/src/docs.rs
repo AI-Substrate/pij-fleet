@@ -166,7 +166,7 @@ fn type_page(def: &'static TypeDef) -> Page {
         body,
         "\nA fixed rule holds for every role of this type. A role may change a default rule with a reason: `pij directory edit <role> --why <text> --type-change <rule>=<why>`.\n\n\
 ## Seed\n\n\
-What a seat of this type is told at start, as pij ships it (version {}). A repo may keep its own: `pij directory types {} --seed` shows the one pij would use there.\n\n\
+The opening text for a seat of this type, as pij ships it (version {}). A repo may keep its own: `pij directory types {} --seed` shows the one pij would use there. Starting a seat in a role with its seed is planned (PRD 007).\n\n\
 ```text\n{}\n```\n\n\
 ## Source\n\n`{}` and `{}`.\n",
         def.version,

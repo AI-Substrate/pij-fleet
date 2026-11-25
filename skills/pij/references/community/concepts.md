@@ -1,10 +1,10 @@
 # pij concepts
 
-What a seat, a role, a type, a position, a pod, a seed and a template are in pij, how they relate, and how the team's records (governance) differ from the work (the repo).
+What a seat, a role, a type, a position, a pod, a seed and a template are in pij, how they relate, and how the team's records (governance) differ from its work.
 
-## The factory and the product
+## A team and its work
 
-pij builds the thing that builds the thing. The **repo** is the product. The **factory** that builds it has two parts: the **fleet** (the seats, their roles, and what they know) and the **engineering harness** (the tooling, checks and rules the work must pass). Governance is the fleet's HR: who exists, what each is for, what each is told and what each has learned.
+A pij fleet is a team of agent seats and the work they do. Some fleets build a product: there the repo is the product and the fleet is the factory that builds it, with the engineering harness (tooling, checks, rules) as the factory's other half. Others are operating teams that do recurring work and build nothing. Either way, governance is the team's HR: who exists, what each is for, what each is told and what each has learned.
 
 ## The terms
 
@@ -14,29 +14,30 @@ pij builds the thing that builds the thing. The **repo** is the product. The **f
 | role | What is it responsible for? | A job a community invents as the work needs it: `coder`, `security`, `live-notes`. Written by `pij directory add` and held by a seat through `pij directory assign`. A role is not a seat: it outlives every seat that holds it and keeps its memory notes. |
 | type | How does it live? | One of pij's ten fixed kinds: prime, pa, project-manager, coder, reviewer, worker, knowledge, steward, watcher, human-window. A role names exactly one; it sets when the holder is compacted or closed, what it must keep, and the rules every role of that type follows. `pij docs get types`. |
 | position | Who governs whom? | Where a seat sits in the fleet: the designated prime of a project, or a seat role of `pm`, `pa` or `worker` under a parent. Authority comes from here and nowhere else. |
-| pod | Which roles were stood up together? | A named group of role instances started, shown and taken down as one, with shared parameters. A seat is in one pod or none. |
-| seed | What is a seat told at start? | The opening text for a type. pij ships one per type; a repo may keep its own in governance (`pij directory types <type> --seed` shows the one pij would use). A seat's first turn is the seed plus its role's text, the filled parameters, the creator's packet and the role's memory index. |
-| template | Where does a role or pod start from? | A shipped, versioned example to copy and adapt: role templates (`pij directory templates`) and pod templates. A repo owns its copy; templates are examples, never a checklist. |
+| pod | Which roles were stood up together? | Planned (PRD 008): a named group of role instances started, shown and taken down as one. Not in this pij yet; see [Coming](#coming). |
+| seed | What is a seat of a type told? | The opening text for a type. pij ships one per type, and a repo may keep its own in governance: `pij directory types <type> --seed` shows the one pij would use. Starting a seat with it is planned; see [Coming](#coming). |
+| template | Where does a role start from? | A shipped, versioned example to copy and adapt: role templates (`pij directory templates`). A role made from one records the template and version, and `pij directory template-diff` shows what changed since. Templates are examples, never a checklist. Pod templates are planned; see [Coming](#coming). |
 
 ## A type is a label, never authority
 
 A seat's TYPE (in `pij list` and `pij directory`) is the type of the roles it holds. It tells you how the seat lives, not what it may do. Authority comes from position: the prime designation (`pij project show <slug>`) and the seat roles `pm` and `pa`. The prime, pa and project-manager types describe the seats that hold those positions; giving a role one of those types grants nothing. A `pm` seat holding a coder role shows `coder` and keeps a project manager's powers.
 
+This is how this pij works; where authority comes from is under review and may change in a later version.
+
 Types are checked when a role is written (`pij directory add` refuses a role with no type, an unknown type, or one missing what its type requires) and never enforced on a running seat.
 
 ## How they fit together
 
-- A **community** is everything one project's fleet has: its roles, who holds them, their memory, and its pods. There is one per project.
+- A **community** is everything one project's fleet has: its roles, who holds them and their memory. There is one per project.
 - A **role** names a **type**. A **seat** holds roles; holding a role makes the seat that role's holder until it is released or the seat closes.
 - A seat's **position** says who governs it. Its roles say what it does; their type says how it lives.
-- A **pod** groups role instances that work together. A shared expert (a knowledge seat many pods consult) is in no pod; pods name the roles they consult.
-- **Memory** belongs to a role instance (role plus subject), never to a seat, and is never shared across subjects. Closing a seat keeps it; a seat or a pod can be revived.
+- **Memory** belongs to a role, never to a seat: `pij directory memory <role>`. Closing a seat keeps it, and the role's next holder reads it.
 
 ## Governance and the repo
 
 | | Governance (the team) | The repo (the work) |
 |---|---|---|
-| Holds | rulings, the role directory and holders, role memory, seeds, pod templates and pod folders | the product's code and docs, its PRDs and plans, its procedures |
+| Holds | rulings, the role directory and holders, role memory, a repo's own seeds | the work's code and docs, its PRDs and plans, its procedures |
 | Lives on | the project's governance branch, under `community/` | the main branch |
 | Written by | pij's single writer, with a reason on every change (`--why`) | anyone, through pull requests |
 
@@ -47,9 +48,17 @@ A procedure belongs to the work, not to a seat: it lives in the repo and is true
 ## Two fleets
 
 - **A build fleet** builds software. A prime runs it; a project manager runs a workstream and hands out steps; coders build each step in its own worktree and are compacted after every job; reviewers give one verdict per pull request and are compacted after it; a PA keeps seats healthy.
-- **An operating fleet** runs recurring work, such as covering a meeting. A pod is stood up per occurrence (a note taker, a researcher, a validator), consults a knowledge seat that keeps the area's notes current, and comes down when the work ends; the knowledge seat stays.
+- **An operating fleet** runs recurring work, such as covering a meeting, and builds no product. A note taker, a researcher and a validator do each occurrence's work and consult a knowledge seat that keeps the area's notes current; the knowledge seat stays when the others close.
 
-The same constructs serve both: only the roles, types and pods differ.
+The same constructs serve both: only the roles and types differ.
+
+## Coming
+
+Planned and not in this pij yet. Each is described here so the terms above make sense; this section changes as each ships.
+
+- **Starting a seat in a role (PRD 007).** `spawn` with a role named, and one assembled first turn: the type's seed, the role's text, its filled parameters, the creator's packet and the role's memory index.
+- **Pods (PRD 008).** A named group of role instances, started, shown and taken down as one, with shared parameters. A seat is in one pod or none; a shared expert (a knowledge seat many pods consult) is in no pod, and pods name the roles they consult. Memory is kept per role instance (role plus subject), never shared across subjects, and a closed pod can be revived.
+- **Pod templates (PRD 010).** Shipped, versioned pod templates a repo copies and adapts. The pod commands take a path to a template, so it may sit in governance or in the main repo.
 
 ## Read more
 
