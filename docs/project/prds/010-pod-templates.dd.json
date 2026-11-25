@@ -125,7 +125,7 @@
 					"statement": "`pij pod adopt`, `pij pod export`, `template-diff` and `pij community init` start no seat and add no loop, poll or timer.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "Across one `init`, one `adopt`, one `template-diff` and one `export`, `pij-rs --json ping | jq .data.spawns` shows no seat launch beyond the named writer commits (git and ddocs), measured after deploy.",
 					"source": "AGENTS.md: resource cost is a correctness property"
 				}
@@ -219,6 +219,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "req-06 done_when: no seat launch beyond the named writer commits (git and ddocs), measured after deploy; a governance write necessarily counts its writer launches (B347-R1-06, pm-001 ruling). It stays in progress until that receipt."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-06 shipped: live receipt on the deployed daemon at 7b250e72, pij-rs --json ping .data.spawns: 535\u2192544 over a 20 s idle baseline (other seats), then pod templates, pod plan shipped:build, pod adopt build --into <dir>, pod template-diff <dir>, community init --templates live-call --into <dir>, pod export receipt2 --as-template <dir> and directory export performance --as-template <dir> each 544\u2192544; 544 after a further 20 s; just spawn-rate --seconds 20: 26.1/s machine-wide, no daemon children. With file targets none launched anything; a governance target adds only its writer commit's git and ddocs launches (as PRD 008 req-09's receipt counts)."
 				}
 			]
 		}
