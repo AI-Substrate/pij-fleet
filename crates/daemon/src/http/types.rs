@@ -232,6 +232,10 @@ pub struct AsRole {
     /// `--fresh`: leave earlier memory out of the first turn (PRD 008 req-12).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fresh: bool,
+    /// `--pod <pod>`: start the seat into this pod as a member (PRD 008
+    /// req-04), after `pij pod up --no-start`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pod: Option<String>,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.

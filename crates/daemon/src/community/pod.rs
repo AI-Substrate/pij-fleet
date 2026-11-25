@@ -412,6 +412,14 @@ pub fn document(template: &Template, filled: &[(String, String)], pod: &NewPod) 
             {"name": "meta", "value": meta},
             {"name": "parameters", "value": filled.iter().map(|(name, value)| json!({"name": name, "value": value})).collect::<Vec<_>>()},
             {"name": "members", "value": []},
+            {"name": "consulted", "value": template.consulted.iter().map(|role| json!({"role": role.role, "before_up": if role.before_up { "yes" } else { "no" }})).collect::<Vec<_>>()},
+            {"name": "deliverables", "value": template.deliverables.iter().map(|deliverable| {
+                let mut row = json!({"id": deliverable.id, "owner": deliverable.owner, "stages": deliverable.stages});
+                if let Some(role) = &deliverable.write_back {
+                    row["write_back"] = json!(role);
+                }
+                row
+            }).collect::<Vec<_>>()},
             {"name": "log", "value": [{"at": pod.at, "by": pod.by, "change": format!("up from {} (version {}, sha256 {})", template.source, template.version, &template.hash[..12])}]},
         ],
         "references": [],
@@ -427,6 +435,205 @@ pub fn logged(mut document: Value, at: &str, by: &str, change: &str) -> Value {
         rows.push(json!({"at": at, "by": by, "change": change}));
     }
     document
+}
+
+/// What a pod check found and the command that fixes it. Every check warns;
+/// none refuses (decision d-12).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Warning {
+    /// The slot, role or deliverable it is about.
+    pub about: String,
+    /// What is wrong.
+    pub text: String,
+    /// The command (or step) that fixes it.
+    pub fix: String,
+}
+
+impl Warning {
+    /// One line: `<about>: <text>. Fix: <fix>`.
+    pub fn line(&self) -> String {
+        format!("{}: {}. Fix: {}", self.about, self.text, self.fix)
+    }
+}
+
+/// One slot as `plan` and `up` resolve it before any launch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotPlan {
+    /// The template's slot.
+    pub slot: Slot,
+    /// The filled `--set` values the slot uses, as `<name>=<value>`.
+    pub sets: Vec<String>,
+    /// The role's harness, from its launch settings, when it names one.
+    pub harness: Option<String>,
+    /// The role's model, from its launch settings, when it names one.
+    pub model: Option<String>,
+    /// The assembled first turn, or why it did not build.
+    pub first_turn: Result<String, String>,
+}
+
+/// The `--set` values `slot` uses, as `<name>=<value>`, in its order.
+pub fn slot_sets(slot: &Slot, filled: &[(String, String)]) -> Vec<String> {
+    slot.parameters
+        .iter()
+        .filter_map(|name| {
+            filled
+                .iter()
+                .find(|(given, _)| given == name)
+                .map(|(name, value)| format!("{name}={value}"))
+        })
+        .collect()
+}
+
+/// The checks `plan` prints and `up` logs, from facts read before any
+/// launch: `live` says whether a role has a live holder in the project, and
+/// `exists` whether the project has the role. Warnings only (d-12).
+pub fn checks(
+    template: &Template,
+    plans: &[SlotPlan],
+    live: &dyn Fn(&str) -> bool,
+    exists: &dyn Fn(&str) -> bool,
+) -> Vec<Warning> {
+    let mut warnings = Vec::new();
+    for plan in plans {
+        if let Err(why) = &plan.first_turn {
+            warnings.push(Warning {
+                about: format!("slot {}", plan.slot.id),
+                text: format!("role {} cannot start: {why}", plan.slot.role),
+                fix: format!(
+                    "pij directory show {} --first-turn, then add or edit the role (pij directory --help)",
+                    plan.slot.role
+                ),
+            });
+        }
+    }
+    for consulted in template.consulted.iter().filter(|role| role.before_up) {
+        if !live(&consulted.role) {
+            warnings.push(Warning {
+                about: format!("consulted role {}", consulted.role),
+                text: "it is needed before up and has no live holder".to_string(),
+                fix: format!("pij spawn --as role:{} <harness> ...", consulted.role),
+            });
+        }
+    }
+    for plan in plans {
+        let Some(other) = &plan.slot.not_model_of else {
+            continue;
+        };
+        let Some(author) = plans.iter().find(|known| &known.slot.id == other) else {
+            continue;
+        };
+        let shared = match (&plan.model, &author.model) {
+            (Some(mine), Some(theirs)) if mine == theirs => Some(format!(
+                "it runs {mine}, the same model as slot {other}, whose work it reviews"
+            )),
+            (Some(_), Some(_)) => None,
+            _ => Some(format!(
+                "pij cannot tell whether it shares a model with slot {other}: a role names none"
+            )),
+        };
+        if let Some(text) = shared {
+            warnings.push(Warning {
+                about: format!("slot {}", plan.slot.id),
+                text,
+                fix: format!(
+                    "pij directory edit {} --model <another model> --why <text>",
+                    plan.slot.role
+                ),
+            });
+        }
+    }
+    for deliverable in &template.deliverables {
+        let roles = std::iter::once(("owner", &deliverable.owner)).chain(
+            deliverable
+                .write_back
+                .iter()
+                .map(|role| ("write-back", role)),
+        );
+        for (what, role) in roles {
+            if !exists(role) {
+                warnings.push(Warning {
+                    about: format!("deliverable {}", deliverable.id),
+                    text: format!("its {what} role {role} does not exist in this project"),
+                    fix: format!("pij directory add {role} --type <type> --why <text>"),
+                });
+            }
+        }
+    }
+    warnings
+}
+
+/// The canary message a slot's seat is sent after it starts (req-19).
+pub fn canary_prompt(pod: &str, slot: &Slot) -> String {
+    format!(
+        "pij pod {pod}: tool canary for slot {}. Confirm each tool this slot needs that you can use: {}. Run:\n\n  pij pod confirm {pod} --tool <tool> [--tool <tool>]...\n\nnaming only the tools you can use. Leave out any you cannot; pij reports it with its fix.",
+        slot.id,
+        slot.tools.join(", ")
+    )
+}
+
+/// The tools `slot` names that `confirmed` leaves out.
+pub fn missing(slot: &Slot, confirmed: &[String]) -> Vec<String> {
+    slot.tools
+        .iter()
+        .filter(|tool| !confirmed.contains(tool))
+        .cloned()
+        .collect()
+}
+
+/// A member's canary line: what is missing and how to fix it.
+pub fn degraded(pod: &str, missing: &[String], seat: &str) -> String {
+    format!(
+        "degraded: {seat} did not confirm {}; pij hands it no pod work until it does. Fix: give the seat those tools, then have it run pij pod confirm {pod} --tool <tool>...",
+        missing.join(", ")
+    )
+}
+
+/// One member row for the pod's record.
+pub fn member(slot: &Slot, seat: &str, canary: &str) -> Value {
+    let mut row = json!({"slot": slot.id, "role": slot.role, "seat": seat, "canary": canary});
+    if !slot.instance.is_empty() {
+        row["instance"] = json!(slot.instance);
+    }
+    if slot.keep_open {
+        row["keep_open"] = json!("yes");
+    }
+    row
+}
+
+/// `document` with `rows` appended to its members.
+pub fn with_members(mut document: Value, rows: Vec<Value>) -> Value {
+    if let Some(members) = section_mut(&mut document, "members").and_then(Value::as_array_mut) {
+        members.extend(rows);
+    }
+    document
+}
+
+/// `document` with `seat`'s canary set to `canary`.
+pub fn with_canary(mut document: Value, seat: &str, canary: &str) -> Value {
+    if let Some(members) = section_mut(&mut document, "members").and_then(Value::as_array_mut) {
+        for member in members.iter_mut().filter(|member| member["seat"] == seat) {
+            member["canary"] = json!(canary);
+        }
+    }
+    document
+}
+
+fn section_mut<'a>(document: &'a mut Value, name: &str) -> Option<&'a mut Value> {
+    document["sections"]
+        .as_array_mut()?
+        .iter_mut()
+        .find(|section| section["name"] == name)
+        .map(|section| &mut section["value"])
+}
+
+/// A pod record's section `name` (its rows, for an array section).
+pub fn records<'a>(document: &'a Value, name: &str) -> &'a [Value] {
+    rows(document, name)
+}
+
+/// A pod record's meta.
+pub fn meta(document: &Value) -> Value {
+    section(document, "meta").cloned().unwrap_or(Value::Null)
 }
 
 #[cfg(test)]
@@ -533,5 +740,80 @@ mod tests {
             Path::new(COMMUNITY).join("pods/build-s01/pod.dd.json")
         );
         assert!(PodPaths::new("../x").is_err());
+    }
+
+    fn planned(template: &Template, models: [Option<&str>; 3]) -> Vec<SlotPlan> {
+        template
+            .slots
+            .iter()
+            .zip(models)
+            .map(|(slot, model)| SlotPlan {
+                slot: slot.clone(),
+                sets: Vec::new(),
+                harness: None,
+                model: model.map(str::to_string),
+                first_turn: Ok(String::new()),
+            })
+            .collect()
+    }
+
+    /// d-12: each check warns with its fix; nothing here refuses.
+    #[test]
+    fn the_checks_warn_with_their_fixes_and_only_when_a_fact_is_missing() {
+        let template = parse(&template_bytes("branch"), "pods/build").unwrap();
+        let mut plans = planned(&template, [Some("m1"), Some("m1"), Some("m1")]);
+        let warned = checks(&template, &plans, &|_| false, &|_| false);
+        let abouts: Vec<&str> = warned
+            .iter()
+            .map(|warning| warning.about.as_str())
+            .collect();
+        assert_eq!(
+            abouts,
+            [
+                "consulted role security",
+                "slot reviewer",
+                "deliverable pr",
+                "deliverable pr"
+            ]
+        );
+        assert!(warned[1].text.contains("the same model as slot coder"));
+        assert!(warned[3].text.contains("write-back role docs-keeper"));
+        assert!(warned[3].fix.starts_with("pij directory add docs-keeper"));
+
+        plans[1].first_turn = Err("role coder does not exist".to_string());
+        plans[2].model = Some("m2".to_string());
+        let warned = checks(&template, &plans, &|_| true, &|_| true);
+        assert_eq!(warned.len(), 1, "{warned:?}");
+        assert!(
+            warned[0]
+                .line()
+                .starts_with("slot coder: role coder cannot start")
+        );
+    }
+
+    #[test]
+    fn a_tool_left_unconfirmed_degrades_only_that_seat() {
+        let template = parse(&template_bytes("branch"), "pods/build").unwrap();
+        let coder = &template.slots[1];
+        assert!(missing(coder, &["git".to_string()]).is_empty());
+        let left = missing(coder, &[]);
+        assert_eq!(left, ["git"]);
+        let document = with_members(
+            json!({"sections": [{"name": "members", "value": []}]}),
+            vec![
+                member(coder, "pij-a", "pending"),
+                member(&template.slots[0], "pij-b", "none asked"),
+            ],
+        );
+        let document = with_canary(document, "pij-a", &degraded("build", &left, "pij-a"));
+        let members = records(&document, "members");
+        assert!(
+            members[0]["canary"]
+                .as_str()
+                .unwrap()
+                .starts_with("degraded: pij-a did not confirm git")
+        );
+        assert_eq!(members[0]["instance"], "build");
+        assert_eq!(members[1]["canary"], "none asked");
     }
 }

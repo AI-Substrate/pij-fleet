@@ -36,32 +36,33 @@
         {
           "id": "ac-0001",
           "claim": "`pij pod plan <template-path> --set <name>=<value>...` prints each slot's seat with its model and first turn, each consulted role and whether it has a live holder, each deliverable and its owner, and each warning with the command that fixes it: a consulted role needed before up with no live holder (`pij spawn --as role:<id>`), a reviewing slot on its author's model, a deliverable whose owner role is missing (`pij directory add ...`), and the tools each slot will be checked for. It writes nothing and launches nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij pod up <template-path> --set ...` creates the pod folder, then starts each slot as `pij spawn --as role:<id>` does (plan 242), once per slot. Each warning is printed with its fix and written to the pod's log; up never refuses on one. It creates no branch or worktree. `--no-start` creates the pod only; `pij spawn --as role:<id> --pod <pod>` starts one member into it.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "Tool canary: after a slot's seat starts, pij sends it one message asking it to confirm each tool the slot names, and waits a bounded time on a subscription for the answer. A slot that does not confirm every tool is degraded, shown with the missing tools and the fix in up's report, the log and show; pij hands it no pod work (a brake on pij's own dispatch, not a gate on the prime, whose messages still reach it).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         },
         {
           "id": "ac-0004",
           "claim": "`pij pod show <pod>` lists members with their types, seats and states (from the database), consulted roles, deliverables with owners, and degraded slots with their fixes.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0005",
           "claim": "Cost: up launches one spawn per slot and nothing for a consulted role; plan and show launch nothing; the canary is one message and one bounded wait per new seat. No loop, poll or timer.",
           "state": "unchecked",
-          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004",
+          "note": "the live spawn-counter receipt is taken after deploy"
         }
       ]
     },
@@ -72,7 +73,7 @@
           "id": "ph-0001",
           "title": "Plan, up and show, with warnings (workstream 008 s02)",
           "brief": "One phase on PR #346.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

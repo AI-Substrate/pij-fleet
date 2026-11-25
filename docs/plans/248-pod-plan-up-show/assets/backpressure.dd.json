@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: plan names each warning with its fix and moves no commit.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_plan"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: up on three slots starts three seats, logs warnings, creates no branch; --no-start launches none.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_up"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: a slot that does not confirm a tool is degraded with its fix, gets no pod work, and a prime's message still reaches it.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_canary"
         },
         {
@@ -52,7 +52,8 @@
           "tier": "computational",
           "proof": "The spawn counter before and after up and plan.",
           "state": "unchecked",
-          "probe": "cargo test -p pij-daemon pod_cost"
+          "probe": "cargo test -p pij-daemon pod_cost",
+          "note": "the live spawn-counter receipt is taken after deploy"
         }
       ]
     },

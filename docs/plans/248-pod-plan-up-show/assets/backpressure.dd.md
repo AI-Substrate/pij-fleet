@@ -20,10 +20,10 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: plan names each warning with its fix and moves no commit. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_plan |
-| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: up on three slots starts three seats, logs warnings, creates no branch; --no-start launches none. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_up |
-| bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test: a slot that does not confirm a tool is degraded with its fix, gets no pod work, and a prime's message still reaches it. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_canary |
-| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter before and after up and plan. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_cost |
+| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: plan names each warning with its fix and moves no commit. | [x] checked | — | — | cargo test -p pij-daemon pod_plan |
+| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: up on three slots starts three seats, logs warnings, creates no branch; --no-start launches none. | [x] checked | — | — | cargo test -p pij-daemon pod_up |
+| bp-0003 | AC3 | ph-0001 | BUILD | computational | HTTP test: a slot that does not confirm a tool is degraded with its fix, gets no pod work, and a prime's message still reaches it. | [x] checked | — | — | cargo test -p pij-daemon pod_canary |
+| bp-0004 | AC4 | ph-0001 | BUILD | computational | The spawn counter before and after up and plan. | [ ] unchecked | the live spawn-counter receipt is taken after deploy | — | cargo test -p pij-daemon pod_cost |
 
 <a id="sensors"></a>
 

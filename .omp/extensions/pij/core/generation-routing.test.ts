@@ -319,6 +319,7 @@ describe("explicit generation forcing", () => {
 			"delivered",
 			"output",
 			"outputs",
+			"pod",
 			"project",
 			"requests",
 		];

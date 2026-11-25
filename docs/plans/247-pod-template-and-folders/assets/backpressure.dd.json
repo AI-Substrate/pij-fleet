@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Schema validation tests for a template from the main repo and from governance; an undeclared parameter refuses.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_template"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Writer test: the pod folder holds what it should and no seat paths; a hand edit refuses naming the path.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_folder"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "Memory per subject and --fresh: unit tests on the first turn's memory part.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon pod_memory"
         }
       ]

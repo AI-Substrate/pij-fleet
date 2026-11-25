@@ -36,6 +36,7 @@ export interface RsNativeRoute extends RouteIdentity {
 		| "docs"
 		| "output"
 		| "outputs"
+		| "pod"
 		| "project"
 		| "requests";
 }
@@ -326,6 +327,7 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 			"delivered",
 			"output",
 			"outputs",
+			"pod",
 			"project",
 			"requests",
 		] as const

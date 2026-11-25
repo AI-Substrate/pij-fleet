@@ -105,6 +105,9 @@
             },
             "keep_open": {
               "type": "string"
+            },
+            "canary": {
+              "type": "string"
             }
           }
         }
@@ -130,6 +133,54 @@
             },
             "change": {
               "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "consulted": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "role"
+          ],
+          "fields": {
+            "role": {
+              "type": "string"
+            },
+            "before_up": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "deliverables": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "owner"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "owner": {
+              "type": "string"
+            },
+            "stages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "write_back": {
+              "type": "string"
             }
           }
         }

@@ -22,7 +22,7 @@
 				{
 					"id": "s01",
 					"title": "The pod template and pod folders",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/008-pods.dd.json#requirements/req-01",
 						"../prds/008-pods.dd.json#requirements/req-02",
@@ -38,7 +38,7 @@
 				{
 					"id": "s02",
 					"title": "Plan, up and show, with warnings",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/008-pods.dd.json#requirements/req-03",
 						"../prds/008-pods.dd.json#requirements/req-04",
@@ -130,6 +130,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Steps re-cut for the amended PRD 008: s01 to s03 keep their scope with the round-2 changes; s04 (session history), s05 (activity view) and s06 (deliverables) are new. Each step names its plan (247 to 252) and the blueprint 005 components it builds (Jordan's ruling 2026-11-25, round 2; pod dogfood input 2026-11-25)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s01, s02 complete on #346 (plans 247, 248)."
 				}
 			]
 		}

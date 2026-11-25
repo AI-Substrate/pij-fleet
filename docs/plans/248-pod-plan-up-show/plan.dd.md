@@ -47,11 +47,11 @@
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij pod plan &lt;template-path&gt; --set &lt;name&gt;=&lt;value&gt;...` prints each slot's seat with its model and first turn, each consulted role and whether it has a live holder, each deliverable and its owner, and each warning with the command that fixes it: a consulted role needed before up with no live holder (`pij spawn --as role:&lt;id&gt;`), a reviewing slot on its author's model, a deliverable whose owner role is missing (`pij directory add ...`), and the tools each slot will be checked for. It writes nothing and launches nothing. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij pod up &lt;template-path&gt; --set ...` creates the pod folder, then starts each slot as `pij spawn --as role:&lt;id&gt;` does (plan 242), once per slot. Each warning is printed with its fix and written to the pod's log; up never refuses on one. It creates no branch or worktree. `--no-start` creates the pod only; `pij spawn --as role:&lt;id&gt; --pod &lt;pod&gt;` starts one member into it. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | Tool canary: after a slot's seat starts, pij sends it one message asking it to confirm each tool the slot names, and waits a bounded time on a subscription for the answer. A slot that does not confirm every tool is degraded, shown with the missing tools and the fix in up's report, the log and show; pij hands it no pod work (a brake on pij's own dispatch, not a gate on the prime, whose messages still reach it). | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | `pij pod show &lt;pod&gt;` lists members with their types, seats and states (from the database), consulted roles, deliverables with owners, and degraded slots with their fixes. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | Cost: up launches one spawn per slot and nothing for a consulted role; plan and show launch nothing; the canary is one message and one bounded wait per new seat. No loop, poll or timer. | [ ] unchecked | — | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij pod plan &lt;template-path&gt; --set &lt;name&gt;=&lt;value&gt;...` prints each slot's seat with its model and first turn, each consulted role and whether it has a live holder, each deliverable and its owner, and each warning with the command that fixes it: a consulted role needed before up with no live holder (`pij spawn --as role:&lt;id&gt;`), a reviewing slot on its author's model, a deliverable whose owner role is missing (`pij directory add ...`), and the tools each slot will be checked for. It writes nothing and launches nothing. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij pod up &lt;template-path&gt; --set ...` creates the pod folder, then starts each slot as `pij spawn --as role:&lt;id&gt;` does (plan 242), once per slot. Each warning is printed with its fix and written to the pod's log; up never refuses on one. It creates no branch or worktree. `--no-start` creates the pod only; `pij spawn --as role:&lt;id&gt; --pod &lt;pod&gt;` starts one member into it. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | Tool canary: after a slot's seat starts, pij sends it one message asking it to confirm each tool the slot names, and waits a bounded time on a subscription for the answer. A slot that does not confirm every tool is degraded, shown with the missing tools and the fix in up's report, the log and show; pij hands it no pod work (a brake on pij's own dispatch, not a gate on the prime, whose messages still reach it). | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | `pij pod show &lt;pod&gt;` lists members with their types, seats and states (from the database), consulted roles, deliverables with owners, and degraded slots with their fixes. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | Cost: up launches one spawn per slot and nothing for a consulted role; plan and show launch nothing; the canary is one message and one bounded wait per new seat. No loop, poll or timer. | [ ] unchecked | the live spawn-counter receipt is taken after deploy | — | [bp-0004](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -59,7 +59,7 @@
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Plan, up and show, with warnings (workstream 008 s02) | One phase on PR #346. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Plan, up and show, with warnings (workstream 008 s02) | One phase on PR #346. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

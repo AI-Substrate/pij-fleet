@@ -20,9 +20,9 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | Schema validation tests for a template from the main repo and from governance; an undeclared parameter refuses. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_template |
-| bp-0002 | AC3 | ph-0001 | BUILD | computational | Writer test: the pod folder holds what it should and no seat paths; a hand edit refuses naming the path. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_folder |
-| bp-0003 | AC4,AC5 | ph-0001 | BUILD | computational | Memory per subject and --fresh: unit tests on the first turn's memory part. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_memory |
+| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | Schema validation tests for a template from the main repo and from governance; an undeclared parameter refuses. | [x] checked | — | — | cargo test -p pij-daemon pod_template |
+| bp-0002 | AC3 | ph-0001 | BUILD | computational | Writer test: the pod folder holds what it should and no seat paths; a hand edit refuses naming the path. | [x] checked | — | — | cargo test -p pij-daemon pod_folder |
+| bp-0003 | AC4,AC5 | ph-0001 | BUILD | computational | Memory per subject and --fresh: unit tests on the first turn's memory part. | [x] checked | — | — | cargo test -p pij-daemon pod_memory |
 
 <a id="sensors"></a>
 

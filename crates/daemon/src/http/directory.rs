@@ -2786,6 +2786,11 @@ fn read_batch(dir: &Path) -> Result<Vec<(String, Value)>, Refusal> {
 }
 
 pub(super) fn refused(refusal: &Refusal) -> Response {
+    refused_as(COMMAND, refusal)
+}
+
+/// [`refused`], answered as `command`.
+pub(super) fn refused_as(command: &str, refusal: &Refusal) -> Response {
     let status = match refusal.code {
         "E-RS-ARG" | "E-RS-UNPORTED" => StatusCode::BAD_REQUEST,
         "E-RS-OWNERSHIP" | "E-RS-OUTPUT-NOT-HOLDER" => StatusCode::FORBIDDEN,
@@ -2794,7 +2799,7 @@ pub(super) fn refused(refusal: &Refusal) -> Response {
         _ => StatusCode::CONFLICT,
     };
     let mut body = Envelope::<Value>::refused(
-        COMMAND,
+        command,
         if status.is_server_error() {
             ErrorKind::Adapter
         } else {

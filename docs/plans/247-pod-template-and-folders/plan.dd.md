@@ -47,11 +47,11 @@ A pod template is a folder at any path a command names (the main repo or governa
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | Schemas `pij/pod-template` and `pij/pod` under `.dd/schemas/pij/`. A template: parameters (name, need), slots (role id, type, the parameters it uses, the tools it needs, a slot whose model it must not share, keep-open), wiring (which slot feeds which), per-slot seed text, consulted roles (role id, needed before up), deliverables (id, owner role, stages, write-back role) and its own procedures. Validated with ddocs; a slot naming an undeclared parameter refuses by name. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | Every pod command takes the template's path; pij reads it where it is and records the path and version in the pod's folder. pij does not enforce where a template lives. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | A pod folder `community/pods/&lt;pod&gt;/`: filled parameters, template path and version, slot to seat id, each first turn, a change log. Written only through the writer; a hand edit is refused by the next pod command naming the path. Seat facts are not copied. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | Memory per role and subject: a member's notes are filed under its role and the pod's subject; two subjects never share notes; `pod up --fresh` leaves the memory index out of every first turn and says so. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | The words are pod and pod template only; the docs and help use no others. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | Schemas `pij/pod-template` and `pij/pod` under `.dd/schemas/pij/`. A template: parameters (name, need), slots (role id, type, the parameters it uses, the tools it needs, a slot whose model it must not share, keep-open), wiring (which slot feeds which), per-slot seed text, consulted roles (role id, needed before up), deliverables (id, owner role, stages, write-back role) and its own procedures. Validated with ddocs; a slot naming an undeclared parameter refuses by name. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | Every pod command takes the template's path; pij reads it where it is and records the path and version in the pod's folder. pij does not enforce where a template lives. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | A pod folder `community/pods/&lt;pod&gt;/`: filled parameters, template path and version, slot to seat id, each first turn, a change log. Written only through the writer; a hand edit is refused by the next pod command naming the path. Seat facts are not copied. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | Memory per role and subject: a member's notes are filed under its role and the pod's subject; two subjects never share notes; `pod up --fresh` leaves the memory index out of every first turn and says so. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | The words are pod and pod template only; the docs and help use no others. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -59,7 +59,7 @@ A pod template is a folder at any path a command names (the main repo or governa
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | The pod template and pod folders (workstream 008 s01) | One phase on PR #346. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | The pod template and pod folders (workstream 008 s01) | One phase on PR #346. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

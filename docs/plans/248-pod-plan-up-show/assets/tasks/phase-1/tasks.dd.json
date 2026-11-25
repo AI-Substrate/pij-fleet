@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "plan",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
@@ -33,7 +33,7 @@
           "id": "tk-0002",
           "title": "up and show",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -43,7 +43,7 @@
           "id": "tk-0003",
           "title": "tool canary",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
@@ -53,7 +53,7 @@
           "id": "tk-0004",
           "title": "cost receipt",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
           ],
@@ -68,7 +68,7 @@
           {
             "id": "dw-0001",
             "assertion": "plan",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -76,7 +76,7 @@
           {
             "id": "dw-0002",
             "assertion": "up and show",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -84,7 +84,7 @@
           {
             "id": "dw-0003",
             "assertion": "tool canary",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -92,7 +92,7 @@
           {
             "id": "dw-0004",
             "assertion": "cost receipt",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ]
