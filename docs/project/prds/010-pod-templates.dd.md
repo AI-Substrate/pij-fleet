@@ -12,7 +12,7 @@
 | title | PRD 010: pod templates |
 | status | draft |
 | updated | 2026-11-25 |
-| owner | pij-autonomous-parrot |
+| owner | pm-001 |
 | summary | pij ships a set of pod templates and seed templates, a repo takes copies it owns and changes, and a prime sets them up once. A repo can turn a pod that worked into a template of its own. |
 
 <a id="why"></a>
@@ -77,3 +77,4 @@ PRD 008 lets a prime stand a pod up from a definition folder. That definition ha
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-autonomous-parrot | First draft. |
+| 2026-11-25 | pij-multiple-nightingale | Owner moves from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010 (operator's approval, 2026-11-25). |
