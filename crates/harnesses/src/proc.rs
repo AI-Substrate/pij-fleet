@@ -103,6 +103,28 @@ impl LivenessPort for ProcLiveness {
         })?;
         classify(pid, output)
     }
+
+    async fn terminate(&self, proc: pij_core::model::ProcIdentity) -> Result<bool> {
+        if self.proc_start(proc.pid).await? != Some(proc.proc_start) {
+            return Ok(false);
+        }
+        let raw = i32::try_from(proc.pid)
+            .ok()
+            .filter(|raw| *raw > 1)
+            .ok_or_else(|| PijError::Adapter {
+                adapter: ADAPTER.to_string(),
+                message: format!("refusing to signal pid {}", proc.pid),
+            })?;
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(raw),
+            nix::sys::signal::Signal::SIGTERM,
+        )
+        .map(|()| true)
+        .map_err(|error| PijError::Adapter {
+            adapter: ADAPTER.to_string(),
+            message: format!("could not signal pid {}: {error}", proc.pid),
+        })
+    }
 }
 
 /// What the kernel says about a pid, read without launching anything.

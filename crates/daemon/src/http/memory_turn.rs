@@ -288,6 +288,9 @@ pub(crate) enum Then {
         actor: SeatId,
         /// The close reason.
         reason: String,
+        /// `--stop` (PRD 007 req-12): close and stop the process only when the
+        /// seat wrote its note; otherwise leave it open and tell the prime.
+        stop: bool,
     },
 }
 
@@ -355,11 +358,22 @@ pub(crate) fn hold(
     answer["held"] = json!(HELD);
     answer["memory_turn"] = held(action, &turn, bound);
     answer["memory_turn"]["deadline_ms"] = json!(deadline_ms);
+    let stop = matches!(then, Then::Close { stop: true, .. });
     let state = state.clone();
     tokio::spawn(async move {
-        let (mut report, late) =
-            run(&state, &seat.id, turn, action, bound, held_at, deadline).await;
-        let (then, closed) = proceed(&state, &seat, then, report.note.as_deref()).await;
+        let (mut report, late) = run(
+            &state, &seat.id, turn, action, bound, held_at, deadline, stop,
+        )
+        .await;
+        let (then, closed) = if stop && report.ended != Ended::NoteWritten {
+            // PRD 007 req-12: not ready, so the seat is left open and running.
+            (
+                super::lifecycle::not_ready(&state, &seat, &report).await,
+                None,
+            )
+        } else {
+            proceed(&state, &seat, then, report.note.as_deref()).await
+        };
         if closed.is_some() {
             grant_note_grace(&state, &seat);
         }
@@ -567,7 +581,7 @@ async fn proceed(
     then: Then,
     missed: Option<&str>,
 ) -> (String, Option<Value>) {
-    let (actor, reason) = match then {
+    let (actor, reason, stop) = match then {
         Then::Compact(msg) => {
             if let Err(skipped) = current(state, held, Action::Compact).await {
                 return (skipped, None);
@@ -577,7 +591,11 @@ async fn proceed(
                 Err(error) => (format!("failed: {error}"), None),
             };
         }
-        Then::Close { actor, reason } => (actor, reason),
+        Then::Close {
+            actor,
+            reason,
+            stop,
+        } => (actor, reason, stop),
     };
     // F194, a policy: past the bound (or an undelivered prompt) the close runs
     // without the note, and its recorded reason says the note may be missing.
@@ -616,7 +634,13 @@ async fn proceed(
         )
         .await
         {
-            Ok(data) => return ("closed".to_string(), Some(data)),
+            Ok(mut data) => {
+                if stop {
+                    data["stopped"] = super::lifecycle::stop_process(state, held).await;
+                    return ("closed and stopped".to_string(), Some(data));
+                }
+                return ("closed".to_string(), Some(data));
+            }
             Err(super::lifecycle::CloseRefused::Changed(_)) => tokio::task::yield_now().await,
             Err(super::lifecycle::CloseRefused::Other(refused)) => {
                 return (
@@ -988,9 +1012,13 @@ fn settled(
     }
 }
 
+/// The line a `close --stop` adds to the memory prompt (PRD 007 req-12).
+pub const STOP_LINE: &str = "pij close --stop: once your note is written, pij stops this seat's process. Write the note, then end your turn; with no note, the seat is left running and the prime is told.";
+
 /// Deliver the memory prompt to `seat` and wait until its turn ends or
 /// `bound` passes. When the bound passes during the prompt's admission, the
 /// admission comes back with the report, still running.
+#[allow(clippy::too_many_arguments)]
 async fn run(
     state: &AppState,
     seat: &SeatId,
@@ -999,6 +1027,7 @@ async fn run(
     bound: Duration,
     started: Instant,
     deadline: tokio::time::Instant,
+    stop: bool,
 ) -> (Report, Option<Admission>) {
     let services = &state.services;
     // Subscribed before the send, so no fact can slip past: the prompt's
@@ -1016,7 +1045,11 @@ async fn run(
     let msg = Msg {
         from: SeatId::from(pij_core::BG_ACTOR),
         to: seat.clone(),
-        body: prompt(action, &turn, bound),
+        body: if stop {
+            format!("{}\n\n{STOP_LINE}", prompt(action, &turn, bound))
+        } else {
+            prompt(action, &turn, bound)
+        },
         msg_id: msg_id.clone(),
         from_machine: None,
         in_reply_to: None,

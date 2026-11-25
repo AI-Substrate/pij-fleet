@@ -41,6 +41,8 @@ struct Call {
     seat: Option<SeatId>,
     reason: String,
     dry_run: bool,
+    /// `close --stop` (PRD 007 req-12).
+    stop: bool,
 }
 
 fn nonempty(value: &Value, name: &str) -> std::result::Result<String, String> {
@@ -58,7 +60,7 @@ fn parse(body: Value, operation: Operation) -> std::result::Result<Call, String>
     for key in object.keys() {
         let allowed = matches!(key.as_str(), "argv" | "caller" | "actor")
             || match operation {
-                Operation::Close => matches!(key.as_str(), "seat" | "reason"),
+                Operation::Close => matches!(key.as_str(), "seat" | "reason" | "stop"),
                 Operation::Reap => key == "dry_run",
             };
         if !allowed {
@@ -77,12 +79,13 @@ fn parse(body: Value, operation: Operation) -> std::result::Result<Call, String>
         seat: None,
         reason: pij_core::model::OWNER_CLOSE.to_string(),
         dry_run: false,
+        stop: false,
     };
     if let Some(actor) = object.get("actor") {
         call.attribution.push(nonempty(actor, "actor")?.into());
     }
     if let Some(argv) = object.get("argv") {
-        if ["seat", "reason", "dry_run"]
+        if ["seat", "reason", "dry_run", "stop"]
             .iter()
             .any(|key| object.contains_key(*key))
         {
@@ -118,6 +121,7 @@ fn parse(body: Value, operation: Operation) -> std::result::Result<Call, String>
                 "--dry-run" if matches!(operation, Operation::Reap) && !call.dry_run => {
                     call.dry_run = true
                 }
+                "--stop" if matches!(operation, Operation::Close) && !call.stop => call.stop = true,
                 value
                     if matches!(operation, Operation::Close)
                         && !value.starts_with('-')
@@ -143,6 +147,9 @@ fn parse(body: Value, operation: Operation) -> std::result::Result<Call, String>
                     .transpose()?;
                 if let Some(reason) = object.get("reason") {
                     call.reason = nonempty(reason, "reason")?;
+                }
+                if let Some(stop) = object.get("stop") {
+                    call.stop = stop.as_bool().ok_or("stop must be boolean")?;
                 }
             }
             Operation::Reap => {
@@ -538,6 +545,28 @@ async fn handle(
                 }
                 _ => None,
             };
+            // PRD 007 req-12: `--stop` needs the recorded process, still
+            // running with its recorded start, and a seat warm enough to ask.
+            if call.stop && pending.is_none() {
+                if let Err(why) = stoppable(&state, &expected).await {
+                    return not_stopped(command, &target, &why, Value::Null);
+                }
+                if turn.is_some()
+                    && let Some(price) = cold_price(&state, &expected).await
+                {
+                    let why = format!("it is cold and was sent nothing: {price}");
+                    let told = tell_primes(
+                        &state,
+                        &target,
+                        format!(
+                            "pij: pij close --stop left {} running: {why}",
+                            pij_core::render::seat(target.as_str())
+                        ),
+                    )
+                    .await;
+                    return not_stopped(command, &target, &why, told);
+                }
+            }
             // A held answer says the close leaves the process running.
             let respond = |held: Result<Value, Box<Response>>, note: String| match held {
                 Ok(mut data) => {
@@ -553,11 +582,17 @@ async fn handle(
                     &actor.id,
                     target,
                     call.reason,
-                    Some(expected),
+                    Some(expected.clone()),
                 )
                 .await
                 {
-                    Ok(data) => envelope(StatusCode::OK, &Envelope::ok(command, data)),
+                    Ok(mut data) => {
+                        // Nothing to remember, or its note is written: ready.
+                        if call.stop {
+                            data["stopped"] = stop_process(&state, &expected).await;
+                        }
+                        envelope(StatusCode::OK, &Envelope::ok(command, data))
+                    }
                     Err(refused) => refused.into_response(),
                 },
                 (Some(held), _) => {
@@ -576,6 +611,7 @@ async fn handle(
                         memory_turn::Then::Close {
                             actor: actor.id,
                             reason: call.reason,
+                            stop: call.stop,
                         },
                     );
                     respond(held, note)
@@ -583,6 +619,130 @@ async fn handle(
             }
         }
     }
+}
+
+/// Why `close --stop` may not stop `seat`'s process: no recorded process, or
+/// its pid no longer has the recorded start. Each missing fact leaves the seat
+/// running (plan 245 ac-0005).
+async fn stoppable(state: &AppState, seat: &SeatDescriptor) -> std::result::Result<(), String> {
+    let Some(proc) = seat.proc else {
+        return Err("pij recorded no process for it".to_string());
+    };
+    match state.services.liveness.proc_start(proc.pid).await {
+        Ok(Some(start)) if start == proc.proc_start => Ok(()),
+        Ok(Some(_)) => Err(format!(
+            "its pid {} now belongs to another process",
+            proc.pid
+        )),
+        Ok(None) => Err(format!("its process {} is already gone", proc.pid)),
+        Err(error) => Err(format!("its process could not be read: {error}")),
+    }
+}
+
+/// The wake price when the cold-wake guard would refuse a normal send to
+/// `seat`, else `None` (a read that fails counts as warm: the turn is asked).
+async fn cold_price(state: &AppState, seat: &SeatDescriptor) -> Option<String> {
+    let now = super::system_time_ms().ok()?;
+    let verdict = super::cold_wake::verdict(&state.services, seat, now)
+        .await
+        .ok()?;
+    pij_core::cold_wake::refusal(&seat.id, &verdict)
+}
+
+/// `close --stop` that stopped nothing: the seat is left open and running.
+fn not_stopped(command: &str, seat: &SeatId, why: &str, told: Value) -> Response {
+    let mut answer: Envelope<Value> = Envelope::refused(
+        command,
+        ErrorKind::Refused,
+        format!(
+            "{E_NOT_STOPPED}: {seat} was not stopped and stays open: {why}. `pij close {seat}` without --stop closes it and leaves its process"
+        ),
+    );
+    answer.details =
+        Some(json!({"code": E_NOT_STOPPED, "seat": seat, "why": why, "prime_told": told}));
+    envelope(StatusCode::CONFLICT, &answer)
+}
+
+/// `close --stop` left the seat open and running (PRD 007 req-12).
+pub const E_NOT_STOPPED: &str = "E-RS-NOT-STOPPED";
+
+/// SIGTERM to `seat`'s recorded process, only while its pid has the recorded
+/// start (the liveness port checks again). A POLICY: the seat's ready answer
+/// decided to stop it; what is sent is decided by these facts alone, never a
+/// name or pattern.
+pub(super) async fn stop_process(state: &AppState, seat: &SeatDescriptor) -> Value {
+    let Some(proc) = seat.proc else {
+        return json!({"stopped": false, "why": "pij recorded no process for it"});
+    };
+    match state.services.liveness.terminate(proc).await {
+        Ok(true) => json!({"stopped": true, "pid": proc.pid}),
+        Ok(false) => {
+            json!({"stopped": false, "pid": proc.pid, "why": "its pid no longer has the recorded start time"})
+        }
+        Err(error) => json!({"stopped": false, "pid": proc.pid, "why": error.to_string()}),
+    }
+}
+
+/// A held `close --stop` whose seat was not ready (its turn ended with no
+/// note, the bound passed, or the prompt was not delivered): it is left open
+/// and running, and its project's prime is told which seat and why.
+pub(super) async fn not_ready(
+    state: &AppState,
+    seat: &SeatDescriptor,
+    report: &memory_turn::Report,
+) -> String {
+    let why = report
+        .note
+        .clone()
+        .unwrap_or_else(|| "its turn ended with no memory note".to_string());
+    let told = tell_primes(
+        state,
+        &seat.id,
+        format!(
+            "pij: pij close --stop left {} open and running: {why}",
+            pij_core::render::seat(seat.id.as_str())
+        ),
+    )
+    .await;
+    format!("not stopped, left open: {why} (prime told: {told})")
+}
+
+/// Hold one FYI for the prime of each project `seat` holds a role in, else
+/// the machine's designated prime. Told even when that prime ran the close:
+/// a held close answers before the outcome is known.
+async fn tell_primes(state: &AppState, seat: &SeatId, body: String) -> Value {
+    let store = state.services.directory.store();
+    let mut projects: Vec<String> = store
+        .open_assignments(seat.as_str())
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| row.project)
+        .collect();
+    projects.sort();
+    projects.dedup();
+    if projects.is_empty() {
+        return super::routes::tell_prime(
+            &state.services,
+            "",
+            &SeatId::from(pij_core::BG_ACTOR),
+            body,
+        )
+        .await;
+    }
+    let mut told = Vec::new();
+    for project in projects {
+        told.push(
+            super::routes::tell_prime(
+                &state.services,
+                &project,
+                &SeatId::from(pij_core::BG_ACTOR),
+                body.clone(),
+            )
+            .await,
+        );
+    }
+    json!(told)
 }
 
 /// Why a close did not land. `Changed`: the row moved between the caller's

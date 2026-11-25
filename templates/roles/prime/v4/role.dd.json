@@ -23,7 +23,7 @@
 					"Owns the community directory and the rulings, and merges.",
 					"Routes work to the role that owns it rather than doing it.",
 					"Creates roles from what the project's work needs; templates are examples, not a checklist.",
-					"Creates the role and starts the seat the work needs when sure (`pij spawn --as role:<id>`); when not sure, asks the operator. Any seat may create one too, and pij tells the prime; a seat that would rather not records a suggestion (`pij directory suggest`), which the prime answers yes, no or not yet, with a reason.",
+					"Creates the role and starts the seat the work needs when sure (`pij spawn --as 'role:<id>'`); when not sure, asks the operator. Any seat may create one too, and pij tells the prime; a seat that would rather not records a suggestion (`pij directory suggest`), which the prime answers yes, no or not yet, with a reason.",
 					"Keeps the operator informed and asks the operator for rulings that are theirs to make."
 				]
 			}

@@ -1462,3 +1462,159 @@ async fn a_held_close_skips_a_seat_its_owner_closed_during_the_turn() {
     );
     rig.server.abort();
 }
+
+/// PRD 007 req-12 (plan 245): `prime`, `holder` and `plain` live in a fake
+/// process table the test keeps, so it can see what `close --stop` signalled.
+async fn stop_rig() -> (Rig, Arc<FakeLiveness>) {
+    let live = Arc::new((0..3).fold(FakeLiveness::new(), |live, index| {
+        live.with_proc(ProcIdentity {
+            pid: 920_001 + index,
+            proc_start: 7,
+        })
+    }));
+    let kept = Arc::clone(&live);
+    let rig = rig_with(Duration::from_secs(30), &["holder"], move |services| {
+        services.liveness = kept;
+    })
+    .await;
+    designate_project_prime(&rig, "prime").await;
+    (rig, live)
+}
+
+fn close_stop(seat: &str, caller: &str) -> Value {
+    let mut body = close(seat, caller);
+    body["stop"] = json!(true);
+    body
+}
+
+/// Plan 245 ac-0001: a warm holder is told pij will stop it, writes its note,
+/// and is closed and its recorded process (and only it) stopped.
+#[tokio::test]
+async fn close_stop_closes_and_stops_a_holder_once_its_note_is_written() {
+    let (rig, live) = stop_rig().await;
+    let held = post(rig.addr, "/v1/close", close_stop("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    assert!(
+        prompt
+            .body
+            .contains(pij_daemon::http::memory_turn::STOP_LINE),
+        "{}",
+        prompt.body
+    );
+    deliver(&rig, "holder", &prompt).await;
+    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let turn = turn_event(&rig, "holder").await;
+    assert_eq!(turn["ended"], "note-written", "{turn}");
+    assert_eq!(turn["then"], "closed and stopped", "{turn}");
+    assert_eq!(turn["closed"]["stopped"]["stopped"], true, "{turn}");
+    assert!(tombstoned(&rig, "holder").await);
+    assert_eq!(
+        live.terminated(),
+        [920_002],
+        "the holder's recorded pid only"
+    );
+    rig.server.abort();
+}
+
+/// Plan 245 ac-0002: a holder whose turn ends with no note is left open and
+/// running, and the prime is told which seat and why.
+#[tokio::test]
+async fn close_stop_leaves_a_seat_with_no_note_running_and_tells_the_prime() {
+    let (rig, live) = stop_rig().await;
+    post(rig.addr, "/v1/close", close_stop("holder", "prime")).await;
+    let prompt = prompt_for(&rig, "holder").await;
+    take_turn(&rig, "holder", &prompt).await;
+    let turn = turn_event(&rig, "holder").await;
+    assert!(
+        turn["then"]
+            .as_str()
+            .unwrap()
+            .starts_with("not stopped, left open"),
+        "{turn}"
+    );
+    assert!(!tombstoned(&rig, "holder").await);
+    assert!(live.terminated().is_empty());
+    assert_eq!(
+        rig.queue.pending_fyi_count(&"prime".into()).await.unwrap(),
+        1
+    );
+    rig.server.abort();
+}
+
+/// Plan 245 ac-0003 and ac-0005: a cold holder with no note is sent nothing,
+/// left open, and the answer prints the wake price; a seat whose recorded
+/// process is gone is left as it is and the answer says why. `pij close`
+/// without `--stop` is unchanged (the tests above this block).
+#[tokio::test]
+async fn close_stop_never_wakes_a_cold_seat_and_never_guesses_a_process() {
+    let live = Arc::new((0..3).fold(FakeLiveness::new(), |live, index| {
+        live.with_proc(ProcIdentity {
+            pid: 920_001 + index,
+            proc_start: 7,
+        })
+    }));
+    let now = now_ms();
+    let status = pij_core::session_status::SessionStatusReply::Status(
+        pij_core::session_status::SeatStatus {
+            model: pij_core::session_status::Fact::native("claude-opus-5-5".to_string()),
+            context_used_tokens: pij_core::session_status::Fact::derived(720_000),
+            last_call_at_ms: pij_core::session_status::Fact::native(now - 2 * 60 * 60 * 1_000),
+            ..pij_core::session_status::SeatStatus::unknown()
+        },
+    );
+    let kept = Arc::clone(&live);
+    let rig2 = rig_with(Duration::from_secs(30), &["holder"], move |services| {
+        services.liveness = kept;
+        services.session_status = Arc::new(
+            pij_testkit::fakes::FakeSessionStatus::new().with_reply("cold-session", status),
+        );
+    })
+    .await;
+    designate_project_prime(&rig2, "prime").await;
+    let mut cold = rig2.registry.get(&"holder".into()).await.unwrap().unwrap();
+    cold.harness = Harness::Claude;
+    cold.harness_session = Some("cold-session".to_string());
+    cold.state = SystemState::Idle;
+    rig2.registry.put(cold).await.unwrap();
+
+    let refused = post(rig2.addr, "/v1/close", close_stop("holder", "prime")).await;
+    assert_eq!(refused["details"]["code"], "E-RS-NOT-STOPPED", "{refused}");
+    let why = refused["details"]["why"].as_str().unwrap();
+    assert!(
+        why.contains("cold") && why.contains('$'),
+        "the wake price: {why}"
+    );
+    assert!(
+        rig2.queue
+            .peek(&[delivery_kind(&"holder".into())])
+            .await
+            .unwrap()
+            .is_none(),
+        "sent nothing"
+    );
+    assert!(!tombstoned(&rig2, "holder").await);
+    assert_eq!(
+        rig2.queue.pending_fyi_count(&"prime".into()).await.unwrap(),
+        1
+    );
+
+    let mut gone = rig2.registry.get(&"plain".into()).await.unwrap().unwrap();
+    gone.proc = Some(ProcIdentity {
+        pid: 939_999,
+        proc_start: 1,
+    });
+    rig2.registry.put(gone).await.unwrap();
+    let left = post(rig2.addr, "/v1/close", close_stop("plain", "prime")).await;
+    assert_eq!(left["details"]["code"], "E-RS-NOT-STOPPED", "{left}");
+    assert!(
+        left["details"]["why"]
+            .as_str()
+            .unwrap()
+            .contains("already gone"),
+        "{left}"
+    );
+    assert!(!tombstoned(&rig2, "plain").await);
+    assert!(live.terminated().is_empty());
+    rig2.server.abort();
+}

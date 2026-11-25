@@ -3290,6 +3290,7 @@ impl HarnessPort for FakeHarness {
 #[derive(Default)]
 pub struct FakeLiveness {
     procs: Mutex<HashMap<u32, u64>>,
+    terminated: Mutex<Vec<u32>>,
 }
 
 impl FakeLiveness {
@@ -3305,6 +3306,11 @@ impl FakeLiveness {
             .expect("fake liveness mutex")
             .insert(proc.pid, proc.proc_start);
         self
+    }
+
+    /// The pids [`LivenessPort::terminate`] signalled, in order.
+    pub fn terminated(&self) -> Vec<u32> {
+        self.terminated.lock().expect("fake liveness mutex").clone()
     }
 
     /// Arrange a DIFFERENT process at the same pid — the recycled case.
@@ -3326,6 +3332,19 @@ impl LivenessPort for FakeLiveness {
             .expect("fake liveness mutex")
             .get(&pid)
             .copied())
+    }
+
+    async fn terminate(&self, proc: ProcIdentity) -> Result<bool> {
+        let mut procs = self.procs.lock().expect("fake liveness mutex");
+        if procs.get(&proc.pid) != Some(&proc.proc_start) {
+            return Ok(false);
+        }
+        procs.remove(&proc.pid);
+        self.terminated
+            .lock()
+            .expect("fake liveness mutex")
+            .push(proc.pid);
+        Ok(true)
     }
 }
 
