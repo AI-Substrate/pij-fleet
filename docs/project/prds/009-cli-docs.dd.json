@@ -118,7 +118,8 @@
 					"priority": "must",
 					"state": "in-progress",
 					"done_when": "`pij docs list` names each of those pages, and the concepts page defines every one of the seven terms.",
-					"source": "operator, 2026-11-25: we don't document the fleet and its semantics and constructs very well"
+					"source": "operator, 2026-11-25: we don't document the fleet and its semantics and constructs very well",
+					"note": "In progress: every page but pods shipped with #348 (plan 246). The pods page waits on workstream 008 step s02 and comes in a follow-up PR."
 				},
 				{
 					"id": "req-06",

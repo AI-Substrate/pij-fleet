@@ -66,7 +66,7 @@
 					"depends_on": ["#steps/s03"],
 					"needs": ["role:coder", "role:reviewer"],
 					"done_when": "A refusal for a missing type names its page, and a seat's first turn names the page for its type.",
-					"note": "Also waits on workstream 007 step s02 (seats started in a role); link it here when workstream 007 is on main."
+					"note": "Waits on workstream 007 step s02 (seats started in a role); link it here when workstream 007 is on main. Comes in the follow-up PR after #348, with the pods page."
 				}
 			]
 		},
