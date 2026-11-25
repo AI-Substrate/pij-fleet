@@ -103,6 +103,29 @@ pub struct AssignRequest {
     pub first_turn: Option<String>,
 }
 
+/// How an assign failed (review of #345, N1).
+#[derive(Debug)]
+pub enum AssignError {
+    /// Refused before its commit: nothing was written.
+    Refused(Refusal),
+    /// Its commit landed on the branch, then indexing it failed.
+    Landed {
+        /// The commit that holds the holding.
+        commit: String,
+        /// What failed after it.
+        refusal: Refusal,
+    },
+}
+
+impl AssignError {
+    /// The refusal, as `assign_many` has always answered.
+    pub fn into_refusal(self) -> Refusal {
+        match self {
+            Self::Refused(refusal) | Self::Landed { refusal, .. } => refusal,
+        }
+    }
+}
+
 /// What `pij directory edit` changes (plan 206, F20).
 #[derive(Clone, Debug)]
 pub enum RoleEdit {
@@ -1608,6 +1631,33 @@ impl DirectoryService {
         &self,
         requests: Vec<AssignRequest>,
     ) -> Result<Vec<HoldingReceipt>, Refusal> {
+        self.assign_landing(requests)
+            .await
+            .map_err(AssignError::into_refusal)
+    }
+
+    /// [`Self::assign_many`], saying whether its commit landed: a refusal
+    /// before the commit wrote nothing; one after it (indexing the store,
+    /// flushing pending ends) left the holding committed on the branch
+    /// (review of #345, N1).
+    ///
+    /// # Errors
+    /// [`AssignError::Refused`] or [`AssignError::Landed`].
+    pub async fn assign_landing(
+        &self,
+        requests: Vec<AssignRequest>,
+    ) -> Result<Vec<HoldingReceipt>, AssignError> {
+        let (written, built) = self
+            .assign_commit(&requests)
+            .await
+            .map_err(AssignError::Refused)?;
+        let commit = written.commit.clone();
+        self.assign_index(written, built, &requests)
+            .await
+            .map_err(|refusal| AssignError::Landed { commit, refusal })
+    }
+
+    async fn assign_commit(&self, requests: &[AssignRequest]) -> Result<(Written, Built), Refusal> {
         let Some(first) = requests.first().cloned() else {
             return Err(Refusal::new(
                 "E-RS-ARG",
@@ -1801,9 +1851,18 @@ impl DirectoryService {
                 Ok(files)
             })
             .await?;
+        Ok((written, built))
+    }
+
+    async fn assign_index(
+        &self,
+        written: Written,
+        built: Built,
+        requests: &[AssignRequest],
+    ) -> Result<Vec<HoldingReceipt>, Refusal> {
         self.flushed(&built.landed, &written).await?;
         let mut receipts = Vec::new();
-        for ((row, warning), request) in built.batch.iter().zip(&requests) {
+        for ((row, warning), request) in built.batch.iter().zip(requests) {
             let store = self.store.clone();
             let indexed = row.clone();
             let seat_role = seat_role_for(&row.role).to_string();

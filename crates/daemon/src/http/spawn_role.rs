@@ -101,7 +101,7 @@ pub(super) async fn prepare(
     let packet = as_role
         .packet
         .as_deref()
-        .map(|file| read_packet(&caller, file))
+        .map(|file| read_packet(&caller, file, &repo))
         .transpose()
         .map_err(refuse("reading --packet"))?;
     let sets = parameter_sets(&as_role.set).map_err(refuse("filling the role's parameters"))?;
@@ -170,8 +170,9 @@ pub(super) async fn commit(
         why,
     } = prepared;
     let directory = &state.services.directory;
-    let receipt = directory
-        .assign(AssignRequest {
+    let path = crate::community::layout::RolePaths::new(&role)?.first_turn(seat.id.as_str());
+    let landed = directory
+        .assign_landing(vec![AssignRequest {
             project: project.clone(),
             repo,
             role: role.clone(),
@@ -181,9 +182,24 @@ pub(super) async fn commit(
             why: format!("started in the role by {creator} (pij spawn --as)"),
             machine: state.machine_alias.clone(),
             first_turn: Some(first_turn.clone()),
-        })
-        .await?;
-    let path = crate::community::layout::RolePaths::new(&role)?.first_turn(seat.id.as_str());
+        }])
+        .await;
+    // Review of #345, N1: only a commit that did not land rolls the spawn
+    // back. Once it landed, the holding and the first turn are on the branch,
+    // so the seat stays and the indexing failure is named with its fix.
+    let (commit, seat_role) = match landed {
+        Ok(mut receipts) => {
+            let receipt = receipts.remove(0);
+            (receipt.commit, receipt.seat_role)
+        }
+        Err(crate::community::directory::AssignError::Refused(refusal)) => return Err(refusal),
+        Err(crate::community::directory::AssignError::Landed { commit, refusal }) => {
+            warnings.push(format!(
+                "the role commit {commit} landed, but pij could not index it ({refusal}); the seat keeps its role on the branch. Index it: pij directory rebuild --project {project}"
+            ));
+            (commit, None)
+        }
+    };
     let queued = match state
         .services
         .delivery
@@ -240,10 +256,10 @@ pub(super) async fn commit(
             "role": role,
             "instance": (!instance.is_empty()).then_some(instance),
             "creator": creator,
-            "commit": receipt.commit,
+            "commit": commit,
             "first_turn": path.display().to_string(),
             "first_turn_msg_id": queued,
-            "seat_role": receipt.seat_role,
+            "seat_role": seat_role,
             "drained": drained,
             "routes": routes,
         },

@@ -1618,3 +1618,35 @@ async fn close_stop_never_wakes_a_cold_seat_and_never_guesses_a_process() {
     assert!(live.terminated().is_empty());
     rig2.server.abort();
 }
+
+/// Review of #345, N2: a holder whose recorded pid now belongs to another
+/// process (a recycled pid, another start time) is never signalled: the
+/// close refuses with the reason and nothing is terminated.
+#[tokio::test]
+async fn close_stop_never_signals_a_recycled_pid() {
+    let live = Arc::new(
+        FakeLiveness::new()
+            .with_proc(ProcIdentity {
+                pid: 920_001,
+                proc_start: 7,
+            })
+            .with_recycled(920_002, 99),
+    );
+    let kept = Arc::clone(&live);
+    let rig = rig_with(Duration::from_secs(30), &["holder"], move |services| {
+        services.liveness = kept;
+    })
+    .await;
+    let refused = post(rig.addr, "/v1/close", close_stop("holder", "prime")).await;
+    assert_eq!(refused["details"]["code"], "E-RS-NOT-STOPPED", "{refused}");
+    assert!(
+        refused["details"]["why"]
+            .as_str()
+            .unwrap()
+            .contains("now belongs to another process"),
+        "{refused}"
+    );
+    assert!(live.terminated().is_empty());
+    assert!(!tombstoned(&rig, "holder").await);
+    rig.server.abort();
+}

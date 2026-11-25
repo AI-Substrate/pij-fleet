@@ -142,6 +142,7 @@ pub fn start(
     if !instance.is_empty() {
         super::layout::check_instance(instance)?;
     }
+    refuse_secrets(sets, creator)?;
     let sources = load(worktree, id)?;
     let filled = role::fill_parameters(id, &sources.document, sets)?;
     let (first_turn, parts) = assemble(&sources, instance, &filled, creator);
@@ -186,6 +187,79 @@ fn strings(value: Option<&Value>) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// A creator's text that looks like a secret (review of #345, N5).
+pub const E_SECRET: &str = "E-RS-FIRST-TURN-SECRET";
+
+/// The 1-based line of `text` that looks like a secret: a name holding KEY,
+/// TOKEN, SECRET or PASSWORD followed by `=` or `:` and a value of eight or
+/// more characters, or a run of 32 or more key characters mixing upper case,
+/// lower case and digits. A seat id, a commit hash or a UUID has no upper
+/// case, so it never matches.
+pub fn secret_line(text: &str) -> Option<usize> {
+    const NAMES: [&str; 4] = ["KEY", "TOKEN", "SECRET", "PASSWORD"];
+    let assigned = |line: &str| {
+        let upper = line.to_ascii_uppercase();
+        NAMES.iter().any(|name| {
+            upper.match_indices(name).any(|(at, _)| {
+                let rest = upper[at + name.len()..]
+                    .trim_start_matches(|ch: char| ch.is_ascii_alphanumeric() || ch == '_')
+                    .trim_start();
+                let Some(value) = rest.strip_prefix(['=', ':']) else {
+                    return false;
+                };
+                let value: String = value
+                    .trim_start()
+                    .trim_start_matches(['"', '\''])
+                    .chars()
+                    .take_while(|ch| !ch.is_whitespace() && !matches!(ch, '"' | '\''))
+                    .collect();
+                value.chars().count() >= 8 && !value.starts_with('<')
+            })
+        })
+    };
+    let run = |line: &str| {
+        line.split(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '_' | '-')))
+            .any(|word| {
+                word.len() >= 32
+                    && word.chars().any(|ch| ch.is_ascii_uppercase())
+                    && word.chars().any(|ch| ch.is_ascii_lowercase())
+                    && word.chars().any(|ch| ch.is_ascii_digit())
+            })
+    };
+    text.lines()
+        .position(|line| assigned(line) || run(line))
+        .map(|index| index + 1)
+}
+
+/// Refuse a first turn whose creator text looks like a secret: the parts
+/// the creator adds (`--set` values, `--focus`, `--packet`) are committed to
+/// the governance branch, which may be public. A BRAKE: it only ever commits
+/// less. The refusal names where, never the text.
+fn refuse_secrets(sets: &[(String, String)], creator: &Creator) -> Result<(), Refusal> {
+    let mut parts: Vec<(String, &str)> = sets
+        .iter()
+        .map(|(name, value)| (format!("--set {name}"), value.as_str()))
+        .collect();
+    if let Some(focus) = &creator.focus {
+        parts.push(("--focus".to_string(), focus));
+    }
+    if let Some((file, text)) = &creator.packet {
+        parts.push((format!("--packet {file}"), text));
+    }
+    for (source, text) in parts {
+        if let Some(line) = secret_line(text) {
+            return Err(Refusal::new(
+                E_SECRET,
+                format!(
+                    "{source}, line {line}, looks like a secret (a key, token or password); the first turn is committed to the governance branch"
+                ),
+            )
+            .with_next("Take the secret out and point the seat at where it lives instead"));
+        }
+    }
+    Ok(())
 }
 
 /// `text` with each filled parameter's `<name>` placeholder replaced.
@@ -459,6 +533,35 @@ mod tests {
         assert_eq!(parts[3].source, "--focus by pij-brisk-marten");
         assert!(text.starts_with("# First turn: role notes\n"));
         assert_eq!(text.matches("\nsource: ").count(), parts.len());
+    }
+
+    #[test]
+    fn a_secret_looking_line_is_found_and_ordinary_text_is_not() {
+        assert_eq!(secret_line("first\napi_key = sk-live-abcdef123"), Some(2));
+        assert_eq!(secret_line("PASSWORD: hunter2hunter2"), Some(1));
+        assert_eq!(secret_line("token=\"abcdefgh\""), Some(1));
+        assert_eq!(
+            secret_line("x AKIAIOSFODNN7EXAMPLEkeyMaterial1234 y"),
+            Some(1)
+        );
+        for clean in [
+            "Review the key decisions: there are three.",
+            "token: <token>",
+            "commit 49ef44281f92522ffabd4d3ca6e1fa4e75d09ef3, seat pij-multiple-nightingale",
+            "session 7c8a587b-d7e7-4cef-ac26-b7dfd31eb0e0",
+            "Never read credential files or commit secrets.",
+        ] {
+            assert_eq!(secret_line(clean), None, "{clean}");
+        }
+        let creator = Creator {
+            seat: "pij-a".into(),
+            focus: Some("ok\nSECRET=abcdefgh12".into()),
+            packet: None,
+        };
+        let refused = refuse_secrets(&[], &creator).unwrap_err();
+        assert_eq!(refused.code, E_SECRET);
+        assert!(refused.message.starts_with("--focus, line 2"), "{refused}");
+        assert!(!refused.message.contains("abcdefgh12"), "never echoes it");
     }
 
     #[test]

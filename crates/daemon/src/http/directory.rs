@@ -1550,7 +1550,7 @@ async fn show(
         focus: call.get("focus"),
         packet: call
             .get("packet")
-            .map(|file| read_packet(caller, &file))
+            .map(|file| read_packet(caller, &file, &repo))
             .transpose()?,
     };
     let instance = call.get("instance").unwrap_or_default();
@@ -1569,6 +1569,10 @@ async fn show(
     Ok(data)
 }
 
+/// A `--packet` file outside the caller's folder and the project's repo
+/// (review of #345, N5).
+pub const E_PACKET_OUTSIDE: &str = "E-RS-PACKET-OUTSIDE";
+
 /// `--set <name>=<value>` values as pairs, in the order given.
 pub(super) fn parameter_sets(sets: &[String]) -> Result<Vec<(String, String)>, Refusal> {
     sets.iter()
@@ -1586,9 +1590,37 @@ pub(super) fn parameter_sets(sets: &[String]) -> Result<Vec<(String, String)>, R
 }
 
 /// A `--packet <file>` named by the caller: `(the name as given, its text)`.
-pub(super) fn read_packet(caller: &CallerContext, file: &str) -> Result<(String, String), Refusal> {
+/// Review of #345, N5: its text is committed to the governance branch, which
+/// may be public, so the file must sit inside the caller's folder or the
+/// project's repo once links are followed. A BRAKE: it only ever reads less.
+pub(super) fn read_packet(
+    caller: &CallerContext,
+    file: &str,
+    repo: &Path,
+) -> Result<(String, String), Refusal> {
     let path = caller_path(caller, file)?;
-    std::fs::read_to_string(&path)
+    let real = std::fs::canonicalize(&path).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("--packet: cannot read {}: {error}", path.display()),
+        )
+    })?;
+    let inside = |root: Option<&Path>| {
+        root.and_then(|root| std::fs::canonicalize(root).ok())
+            .is_some_and(|root| real.starts_with(root))
+    };
+    let folder = caller.cwd.as_deref().map(Path::new);
+    if !inside(folder) && !inside(Some(repo)) {
+        return Err(Refusal::new(
+            E_PACKET_OUTSIDE,
+            format!(
+                "--packet {}: the file is outside your folder and the project's repo; its text would be committed to the governance branch",
+                real.display()
+            ),
+        )
+        .with_next("Copy what the seat needs into a file in your folder or the repo, then pass that"));
+    }
+    std::fs::read_to_string(&real)
         .map(|text| (file.to_string(), text))
         .map_err(|error| {
             Refusal::new(

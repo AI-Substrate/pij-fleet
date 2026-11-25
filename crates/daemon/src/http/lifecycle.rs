@@ -547,7 +547,17 @@ async fn handle(
             };
             // PRD 007 req-12: `--stop` needs the recorded process, still
             // running with its recorded start, and a seat warm enough to ask.
-            if call.stop && pending.is_none() {
+            // Review of #345, N3: a pending turn was asked for without
+            // --stop, so it would close and leave the process running.
+            if call.stop && pending.is_some() {
+                return not_stopped(
+                    command,
+                    &target,
+                    "a memory turn is already pending for it, asked for without --stop; run `pij close --stop` again once that turn ends",
+                    Value::Null,
+                );
+            }
+            if call.stop {
                 if let Err(why) = stoppable(&state, &expected).await {
                     return not_stopped(command, &target, &why, Value::Null);
                 }

@@ -535,3 +535,120 @@ async fn the_prime_is_told_of_what_others_create_and_suggestions_are_answered() 
     assert_eq!(bad["details"]["code"], "E-RS-ARG", "{bad}");
     rig.server.abort();
 }
+
+/// Review of #345, N1: a role commit that lands but cannot be indexed keeps
+/// the seat (the holding and first turn are on the branch) and warns with
+/// the fix; only a commit that never landed rolls the spawn back.
+#[tokio::test]
+async fn a_role_commit_that_lands_but_is_not_indexed_keeps_the_seat_and_warns() {
+    let repo = repo("pij-spawn-as-unindexed");
+    let rig = rig(Arc::new(NoHook)).await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    add_notes(addr, &repo).await;
+    let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
+        .await
+        .unwrap();
+    sqlx::query(
+        "CREATE TRIGGER refuse_index BEFORE INSERT ON community_assignments \
+         BEGIN SELECT RAISE(ABORT, 'injected index failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+    let before = head(&repo);
+
+    let started = spawn(
+        addr,
+        &repo,
+        Some(json!({"role": "notes", "set": ["subject=planning"]})),
+    )
+    .await;
+    assert_eq!(started["ok"], true, "{started}");
+    let seat = started["data"]["id"].as_str().unwrap().to_string();
+    let count = git(
+        &repo.gov,
+        &["rev-list", "--count", &format!("{before}..HEAD")],
+    );
+    assert_eq!(count.trim(), "1", "the commit landed");
+    let warning = started["details"]["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .find(|warning| warning.contains("could not index"))
+        .unwrap_or_else(|| panic!("an indexing warning: {started}"))
+        .to_string();
+    assert!(
+        warning.contains("pij directory rebuild --project fleet"),
+        "{warning}"
+    );
+    let row = rig
+        .services
+        .registry
+        .get(&SeatId::from(seat.as_str()))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(row.tombstoned_at.is_none(), "the seat is kept: {row:?}");
+    assert!(
+        !rig.tmux
+            .calls()
+            .iter()
+            .any(|call| call.starts_with("kill:")),
+        "no pane is removed"
+    );
+    rig.server.abort();
+}
+
+/// Review of #345, N5: a `--packet` outside the caller's folder and the repo
+/// is refused, and creator text that looks like a secret is refused naming
+/// where, never the text.
+#[tokio::test]
+async fn a_first_turn_reads_no_outside_packet_and_commits_no_secret() {
+    let repo = repo("pij-first-turn-brakes");
+    let (addr, server, _fresh) = daemon().await;
+    fleet(addr, &repo).await;
+    add_notes(addr, &repo).await;
+    let outside = repo.root.join("outside.md");
+    std::fs::write(&outside, "elsewhere\n").unwrap();
+    let refused = directory(
+        addr,
+        &repo,
+        &[
+            "show",
+            "notes",
+            "--first-turn",
+            "--set",
+            "subject=a",
+            "--packet",
+            outside.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert_eq!(
+        refused["details"]["code"], "E-RS-PACKET-OUTSIDE",
+        "{refused}"
+    );
+    let secret = directory(
+        addr,
+        &repo,
+        &[
+            "show",
+            "notes",
+            "--first-turn",
+            "--set",
+            "subject=a",
+            "--focus",
+            "api_key = abcdefgh1234",
+        ],
+    )
+    .await;
+    assert_eq!(
+        secret["details"]["code"], "E-RS-FIRST-TURN-SECRET",
+        "{secret}"
+    );
+    assert!(!secret.to_string().contains("abcdefgh1234"), "{secret}");
+    server.abort();
+}

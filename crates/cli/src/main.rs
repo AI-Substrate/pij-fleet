@@ -4930,6 +4930,10 @@ fn print_spawn_warnings(details: Option<&Value>) {
     let Some(details) = details else {
         return;
     };
+    // Review of #345, N5: say where the first turn was committed.
+    if let Some(path) = details["role"]["first_turn"].as_str() {
+        eprintln!("first turn committed to governance: {path}");
+    }
     if let Some(warning) = details["warning"].as_str() {
         let argv: Vec<String> = std::env::args()
             .skip(1)

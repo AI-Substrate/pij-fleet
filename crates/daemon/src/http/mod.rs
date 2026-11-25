@@ -1952,12 +1952,6 @@ async fn launch_owned(
     .await
 }
 
-/// F255: a keyed spawn sent again after its answer was lost (a daemon bounce
-/// cut it). `launched` is every row naming its key. The live one is answered
-/// as the first send would have been: waited on until it binds, or at once
-/// with `no_wait`. Nothing is launched. BRAKES, each of which only refuses:
-/// no live row, or a row for a different request (harness, folder, parent or
-/// explicit id), since a key repeats one request.
 /// Roll a launch back: remove its own pane (by id, never by name or pattern),
 /// withdraw its watch and, when its row was written, tombstone that row. The
 /// one path for a failed row write and a refused role commit (PRD 007 req-07),
@@ -1994,6 +1988,12 @@ async fn roll_back(
     }
 }
 
+/// F255: a keyed spawn sent again after its answer was lost (a daemon bounce
+/// cut it). `launched` is every row naming its key. The live one is answered
+/// as the first send would have been: waited on until it binds, or at once
+/// with `no_wait`. Nothing is launched. BRAKES, each of which only refuses:
+/// no live row, or a row for a different request (harness, folder, parent or
+/// explicit id), since a key repeats one request.
 async fn answer_again(
     state: &AppState,
     command_name: &'static str,
@@ -2047,6 +2047,37 @@ async fn answer_again(
         .spawn_waits
         .watch_again(launch, seat.proc.is_some());
     drop(spawn_guard);
+    // Review of #345, N4: a resend of a spawn with a role answers with the
+    // first send's seat; when that seat holds no such role (the first send's
+    // role commit never landed), say so with the assign that gives it one.
+    let details = match request.as_role.as_ref() {
+        Some(as_role) => {
+            let held = state
+                .services
+                .directory
+                .store()
+                .open_assignments(seat.id.as_str())
+                .await
+                .unwrap_or_default()
+                .iter()
+                .any(|row| row.role == as_role.role && row.instance == as_role.instance);
+            (!held).then(|| {
+                let address = if as_role.instance.is_empty() {
+                    as_role.role.clone()
+                } else {
+                    format!("{}/{}", as_role.role, as_role.instance)
+                };
+                serde_json::json!({"warnings": [format!(
+                    "this resend found seat {}, which the first send launched, holding no role {}: its role commit did not land. Give it the role: pij directory assign {} {} --why <text>",
+                    seat.id,
+                    pij_core::render::name(&as_role.role),
+                    pij_core::directory::shell_word(&address),
+                    seat.id
+                )]})
+            })
+        }
+        None => None,
+    };
     let (status_path, log_path) = spawn_evidence_paths(key);
     answer_launch(
         state,
@@ -2058,7 +2089,7 @@ async fn answer_again(
             trust_folder: request.trust_folder,
             no_wait: request.no_wait,
             wait_seconds: request.wait_seconds.unwrap_or(DEFAULT_SPAWN_WAIT_SECONDS),
-            details: None,
+            details,
             watch,
             status_path,
             log_path,
