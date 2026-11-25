@@ -807,3 +807,335 @@ async fn stages_never_wait_on_a_late_member_and_each_is_written_back_as_a_reques
     }
     rig.server.abort();
 }
+
+// --- #346 review round 1 (B346-R1-01..09): each finding's regression.
+
+async fn no_start(rig: &Rig, repo: &Repo, extra: &[&str]) -> Value {
+    let mut argv = vec![
+        "up",
+        "pods/build",
+        "--set",
+        "subject=planning",
+        "--no-start",
+    ];
+    argv.extend_from_slice(extra);
+    pod(rig.addr, repo, &argv).await
+}
+
+async fn confirm_as(addr: SocketAddr, repo: &Repo, seat: &str, tools: &[&str]) -> Value {
+    let mut argv = vec!["pod", "confirm", "build"];
+    for tool in tools {
+        argv.extend_from_slice(&["--tool", tool]);
+    }
+    reqwest::Client::new()
+        .post(format!("http://{addr}/v1/pod"))
+        .bearer_auth(KEY)
+        .json(&json!({"argv": argv, "caller": {"PIJ_SESSION_ID": seat, "cwd": repo.main}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+/// The lead's canary once it is no longer pending (or the bound passes).
+async fn settled_canary(repo: &Repo) -> String {
+    let deadline = std::time::Instant::now() + scaled(std::time::Duration::from_secs(10));
+    loop {
+        let record: Value =
+            serde_json::from_slice(&std::fs::read(repo.gov.join(POD)).unwrap()).unwrap();
+        let canary = section(&record, "members")[0]["canary"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        if canary != "pending" || std::time::Instant::now() > deadline {
+            return canary;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+async fn up_started(rig: &Rig, repo: &Repo) -> (String, String) {
+    let up = pod(
+        rig.addr,
+        repo,
+        &[
+            "up",
+            "pods/build",
+            "--set",
+            "subject=planning",
+            "--session",
+            "work",
+        ],
+    )
+    .await;
+    assert_eq!(up["ok"], true, "{up}");
+    let seat = |index: usize| {
+        up["data"]["members"][index]["seat"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    (seat(0), seat(1))
+}
+
+/// B346-R1-01: a secret-shaped `--set` value, used or not, is refused before
+/// anything is committed, at up (even --no-start) and at set; the refusal
+/// names the parameter and never the value. Mutant: make
+/// `refuse_secret_parameters` return Ok and both commits land.
+#[tokio::test]
+async fn a_secret_shaped_parameter_is_refused_before_any_commit() {
+    let repo = repo("pij-pod-secret");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let before = head(&repo);
+    let secret = "branch=API_TOKEN=abcd1234EFGH5678";
+    let refused = no_start(&rig, &repo, &["--set", secret]).await;
+    assert_eq!(
+        refused["details"]["code"], "E-RS-FIRST-TURN-SECRET",
+        "{refused}"
+    );
+    assert!(
+        refused["meta"].as_str().unwrap().contains("--set branch"),
+        "{refused}"
+    );
+    assert!(
+        !refused.to_string().contains("abcd1234EFGH5678"),
+        "{refused}"
+    );
+    assert_eq!(head(&repo), before, "nothing committed");
+
+    assert_eq!(no_start(&rig, &repo, &[]).await["ok"], true);
+    let created = head(&repo);
+    let late = pod(rig.addr, &repo, &["set", "build", secret]).await;
+    assert_eq!(late["details"]["code"], "E-RS-FIRST-TURN-SECRET", "{late}");
+    assert_eq!(head(&repo), created, "set committed nothing");
+    rig.server.abort();
+}
+
+/// B346-R1-02: two sets at once both survive: each update reads the record
+/// inside the writer's serialized build. Mutant: give `mutate`'s change the
+/// record read before the write and one value is lost.
+#[tokio::test]
+async fn two_concurrent_sets_both_survive() {
+    let repo = repo("pij-pod-concurrent");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    assert_eq!(no_start(&rig, &repo, &[]).await["ok"], true);
+    let (branch, subject) = tokio::join!(
+        pod(rig.addr, &repo, &["set", "build", "branch=feature/x"]),
+        pod(rig.addr, &repo, &["set", "build", "subject=updated"]),
+    );
+    assert_eq!(branch["ok"], true, "{branch}");
+    assert_eq!(subject["ok"], true, "{subject}");
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    let parameters = shown["data"]["parameters"].as_array().unwrap();
+    for expected in [
+        json!({"name": "branch", "value": "feature/x"}),
+        json!({"name": "subject", "value": "updated"}),
+    ] {
+        assert!(parameters.contains(&expected), "{expected}: {shown}");
+    }
+    assert_eq!(
+        shown["data"]["meta"]["subject"], "updated",
+        "one source (R1-06)"
+    );
+    rig.server.abort();
+}
+
+/// B346-R1-03: the printed fix works after the canary settled: confirming
+/// every tool brings the degraded slot back, so pod work reaches it again.
+#[tokio::test]
+async fn confirming_after_the_canary_settled_recovers_a_degraded_slot() {
+    let repo = repo("pij-pod-recover");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let (lead, _) = up_started(&rig, &repo).await;
+    assert_eq!(
+        confirm_as(rig.addr, &repo, &lead, &["git"]).await["ok"],
+        true
+    );
+    assert!(settled_canary(&repo).await.starts_with("degraded"));
+    let fixed = confirm_as(rig.addr, &repo, &lead, &["git", "gh"]).await;
+    assert_eq!(fixed["data"]["canary"], "confirmed", "{fixed}");
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    assert_eq!(shown["data"]["degraded"], json!([]), "{shown}");
+    let set = pod(rig.addr, &repo, &["set", "build", "subject=again"]).await;
+    assert!(
+        set["data"]["sent"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(lead)),
+        "{set}"
+    );
+    rig.server.abort();
+}
+
+/// B346-R1-04: a template named relative to the caller's folder is recorded
+/// as resolved, so a later verb asked from elsewhere reads the same one.
+#[tokio::test]
+async fn a_caller_relative_template_is_read_again_from_anywhere() {
+    let repo = repo("pij-pod-relative");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let up = call(
+        rig.addr,
+        "/v1/pod",
+        &[
+            "pod",
+            "up",
+            "build",
+            "--set",
+            "subject=planning",
+            "--no-start",
+        ],
+        &repo.main.join("pods"),
+    )
+    .await;
+    assert_eq!(up["ok"], true, "{up}");
+    let set = pod(rig.addr, &repo, &["set", "build", "branch=feature/x"]).await;
+    assert_eq!(set["ok"], true, "{set}");
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    assert_eq!(shown["data"]["meta"]["template"], "pods/build", "{shown}");
+    rig.server.abort();
+}
+
+/// B346-R1-05: a seat in one pod is refused by a second, naming the first
+/// and the release that frees it.
+#[tokio::test]
+async fn a_seat_in_one_pod_is_refused_by_a_second() {
+    let repo = repo("pij-pod-two");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    assert_eq!(no_start(&rig, &repo, &[]).await["ok"], true);
+    assert_eq!(
+        no_start(&rig, &repo, &["--name", "other"]).await["ok"],
+        true
+    );
+    assert_eq!(
+        pod(rig.addr, &repo, &["add", "build", SEAT]).await["ok"],
+        true
+    );
+    let second = pod(rig.addr, &repo, &["add", "other", SEAT]).await;
+    assert_eq!(second["details"]["code"], "E-RS-POD-MEMBER", "{second}");
+    assert!(
+        second["meta"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("pij pod release build {SEAT}")),
+        "{second}"
+    );
+    assert_eq!(
+        pod(rig.addr, &repo, &["release", "build", SEAT]).await["ok"],
+        true
+    );
+    assert_eq!(
+        pod(rig.addr, &repo, &["add", "other", SEAT]).await["ok"],
+        true
+    );
+    rig.server.abort();
+}
+
+/// B346-R1-06: a work folder set after up drives down's freeze.
+#[tokio::test]
+async fn a_late_work_folder_drives_the_freeze() {
+    let repo = repo("pij-pod-late-folder");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    assert_eq!(no_start(&rig, &repo, &[]).await["ok"], true);
+    let folder = format!("work-folder={}", repo.main.display());
+    let set = pod(rig.addr, &repo, &["set", "build", &folder]).await;
+    assert_eq!(set["ok"], true, "{set}");
+    let down = pod(rig.addr, &repo, &["down", "build"]).await;
+    assert!(
+        down["data"]["freeze"]
+            .as_str()
+            .is_some_and(|line| line.contains("is on main at")),
+        "{down}"
+    );
+    rig.server.abort();
+}
+
+/// B346-R1-07: a write-back to a role a degraded member holds is not sent;
+/// the stage is still recorded and the member named. Mutant: drop the
+/// degraded-holder check and a request is created.
+#[tokio::test]
+async fn a_write_back_to_a_degraded_member_is_held_by_the_brake() {
+    let repo = repo("pij-pod-write-back-brake");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let file = repo.main.join("pods/build/pod-template.dd.json");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    document["sections"][4]["value"] =
+        json!([{"id": "report", "owner": "notes", "write_back": "notes"}]);
+    std::fs::write(&file, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+    let (lead, _) = up_started(&rig, &repo).await;
+    assert_eq!(
+        confirm_as(rig.addr, &repo, &lead, &["git"]).await["ok"],
+        true
+    );
+    assert!(settled_canary(&repo).await.starts_with("degraded"));
+    let staged = pod(
+        rig.addr,
+        &repo,
+        &["stage", "build", "report", "done", "--output", "out/r.md"],
+    )
+    .await;
+    assert_eq!(staged["ok"], true, "{staged}");
+    assert_eq!(staged["data"]["write_back"], Value::Null, "{staged}");
+    assert!(
+        staged["data"]["warnings"]
+            .to_string()
+            .contains(&format!("its holder {lead} is a degraded member")),
+        "{staged}"
+    );
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    assert_eq!(
+        shown["data"]["deliverables"][0]["stages"][0]["recorded"], true,
+        "{shown}"
+    );
+    rig.server.abort();
+}
+
+/// B346-R1-09: a canary that settles after the pod went down writes and
+/// sends nothing.
+#[tokio::test]
+async fn a_canary_settling_after_down_writes_and_sends_nothing() {
+    let repo = repo("pij-pod-late-canary");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let (lead, _) = up_started(&rig, &repo).await;
+    assert_eq!(pod(rig.addr, &repo, &["down", "build"]).await["ok"], true);
+    let downed = head(&repo);
+    assert_eq!(
+        confirm_as(rig.addr, &repo, &lead, &["git"]).await["ok"],
+        true
+    );
+    tokio::time::sleep(scaled(std::time::Duration::from_millis(500))).await;
+    assert_eq!(head(&repo), downed, "no settlement commit");
+    let told = rig
+        .services
+        .queue
+        .pending_fyi_count(&SEAT.into())
+        .await
+        .unwrap();
+    assert_eq!(told, 0, "no degraded FYI for a pod that is down");
+    rig.server.abort();
+}

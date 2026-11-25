@@ -243,15 +243,33 @@ pub fn secret_line(text: &str) -> Option<usize> {
         .map(|index| index + 1)
 }
 
+/// Whether one `--set` value looks like a secret. The long-run check counts
+/// `/` as a key character, so a whole absolute path with one capital letter
+/// would read as a secret: a path is checked one segment at a time (#346
+/// review, B346-R1-01).
+pub fn secret_value(value: &str) -> bool {
+    if value.starts_with('/') || value.starts_with("~/") {
+        secret_line(&value.replace('/', "\n")).is_some()
+    } else {
+        secret_line(value).is_some()
+    }
+}
+
 /// Refuse a first turn whose creator text looks like a secret: the parts
 /// the creator adds (`--set` values, `--focus`, `--packet`) are committed to
 /// the governance branch, which may be public. A BRAKE: it only ever commits
 /// less. The refusal names where, never the text.
 fn refuse_secrets(sets: &[(String, String)], creator: &Creator) -> Result<(), Refusal> {
-    let mut parts: Vec<(String, &str)> = sets
-        .iter()
-        .map(|(name, value)| (format!("--set {name}"), value.as_str()))
-        .collect();
+    if let Some((name, _)) = sets.iter().find(|(_, value)| secret_value(value)) {
+        return Err(Refusal::new(
+            E_SECRET,
+            format!(
+                "--set {name} looks like a secret (a key, token or password); the first turn is committed to the governance branch"
+            ),
+        )
+        .with_next("Take the secret out and point the seat at where it lives instead"));
+    }
+    let mut parts: Vec<(String, &str)> = Vec::new();
     if let Some(focus) = &creator.focus {
         parts.push(("--focus".to_string(), focus));
     }
@@ -693,6 +711,20 @@ mod tests {
         assert_eq!(refused.code, E_SECRET);
         assert!(refused.message.starts_with("--focus, line 2"), "{refused}");
         assert!(!refused.message.contains("abcdefgh12"), "never echoes it");
+    }
+
+    /// #346 review B346-R1-01: a `--set` path with capital letters is not a
+    /// secret; a secret held in one of its segments still is.
+    #[test]
+    fn a_path_value_is_checked_one_segment_at_a_time() {
+        assert!(!secret_value("/Users/Someone/Work/pij-laneA/T/pij-run-123"));
+        assert!(secret_value("/tmp/aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA"));
+        assert!(secret_value("API_TOKEN=abcd1234EFGH5678"));
+        let creator = Creator {
+            seat: "pij-a".into(),
+            ..Creator::default()
+        };
+        assert!(refuse_secrets(&[("work-folder".into(), "/Users/A/B".into())], &creator).is_ok());
     }
 
     #[test]

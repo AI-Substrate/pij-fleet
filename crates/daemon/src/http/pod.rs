@@ -42,6 +42,8 @@ const COMMAND: &str = "pij pod";
 /// A seat's answer to its tool canary (`pij pod confirm`).
 pub const CANARY_EVENT_KIND: &str = "pod.canary";
 
+/// A canary settlement for a pod no longer up: nothing is written or sent.
+const E_POD_NOT_UP: &str = "E-RS-POD-NOT-UP";
 /// How long `up` waits for the canary answers, from the canary's send. Long
 /// enough for a seat to bind, take its first turn and answer.
 pub const CANARY_BOUND: Duration = Duration::from_secs(15 * 60);
@@ -163,7 +165,7 @@ pub(crate) async fn handle(
             .map(|planned| planned.answer()),
         "up" => up(&state, &call, &request.caller, &actor).await,
         "show" => show(&state, &call, &request.caller).await,
-        "confirm" => confirm(&state, &call, &actor).await,
+        "confirm" => confirm(&state, &call, &request.caller, &actor).await,
         "set" => set(&state, &call, &request.caller, &actor).await,
         "down" => down(&state, &call, &request.caller, &actor).await,
         "add" => add(&state, &call, &request.caller, &actor).await,
@@ -228,10 +230,20 @@ impl Planned {
                 "stages": deliverable.stages,
                 "write_back": deliverable.write_back,
             })).collect::<Vec<_>>(),
+            "wiring": wiring_answer(&self.template),
             "warnings": warnings(&self.warnings),
             "writes": "nothing: pij pod up <template> ... starts it",
         })
     }
+}
+
+/// How the slots feed each other, as the template says (req-01).
+fn wiring_answer(template: &Template) -> Vec<Value> {
+    template
+        .wiring
+        .iter()
+        .map(|(from, to, what)| json!({"from": from, "to": to, "what": what}))
+        .collect()
 }
 
 fn slot_answer(plan: &SlotPlan) -> Value {
@@ -298,6 +310,7 @@ async fn plan(
             format!("pij pod {} <template> [--set <name>=<value>]...", call.verb),
         )
     })?;
+    pod::refuse_secret_parameters(&call.sets)?;
     let template = pod::read(&template_path(given, caller)?, given)?;
     let filled = pod::fill(&template, &call.sets)?;
     let (project, repo) = project_and_repo(state, caller, None).await?;
@@ -328,7 +341,8 @@ async fn plan(
                 &pairs,
                 &Creator {
                     seat: actor.to_string(),
-                    focus: None,
+                    // The same focus up gives the slot's spawn (#346 R1-10).
+                    focus: slot.seed.clone(),
                     packet: None,
                     subject: subject.clone(),
                     fresh: call.fresh,
@@ -446,6 +460,41 @@ fn pod_file(document: &Value, paths: &PodPaths, existing: Existing) -> NewFile {
     }
 }
 
+/// Apply `change` to the pod's record as it is inside the writer's
+/// serialized build, never to a snapshot read before it (#346 B346-R1-02):
+/// the commit, the record written and `change`'s own value.
+///
+/// # Errors
+/// `change`'s refusal, a missing record, or any writer refusal.
+async fn mutate<T: Send + 'static>(
+    state: &AppState,
+    record: &Record,
+    what: &str,
+    change: impl FnOnce(&Path, Value) -> Result<(Value, T), Refusal> + Send + 'static,
+) -> Result<(String, Value, T), Refusal> {
+    let (paths, pod_name, project) = (
+        record.paths.clone(),
+        record.pod.clone(),
+        record.project.clone(),
+    );
+    let (written, (document, value)) = state
+        .services
+        .directory
+        .write_built(
+            &record.project,
+            record.repo.clone(),
+            format!("pij pod {} {what}", record.pod),
+            move |root| {
+                let current = recorded(&root.worktree, &project, &pod_name)?;
+                let (document, value) = change(&root.worktree, current)?;
+                let file = pod_file(&document, &paths, Existing::Replace);
+                Ok((vec![file], (document, value)))
+            },
+        )
+        .await?;
+    Ok((written.commit, document, value))
+}
+
 async fn commit(
     state: &AppState,
     planned_project: &str,
@@ -492,8 +541,14 @@ async fn up(
         ));
     }
     let at = holders::now();
+    // B346-R1-04: record the template as resolved, so a later verb reads the
+    // same one wherever it is asked from.
+    let resolved = Template {
+        source: planned.shown.clone(),
+        ..planned.template.clone()
+    };
     let mut document = pod::document(
-        &planned.template,
+        &resolved,
         &planned.filled,
         &pod::NewPod {
             pod: planned.pod.clone(),
@@ -582,39 +637,35 @@ async fn up(
         }
     }
     let at = holders::now();
-    document = pod::with_members(document, members.clone());
-    for warning in &late {
-        document = pod::logged(
-            document,
-            &at,
-            actor.as_str(),
-            &format!("warning: {}", warning.line()),
-        );
-    }
-    let seats: Vec<&str> = started.iter().map(|(_, seat)| seat.as_str()).collect();
-    document = pod::logged(
-        document,
-        &at,
-        actor.as_str(),
-        &format!(
-            "started {}",
-            if seats.is_empty() {
-                "no seat".to_string()
-            } else {
-                seats.join(", ")
-            }
-        ),
-    );
-    match commit(
+    let seats: Vec<String> = started.iter().map(|(_, seat)| seat.clone()).collect();
+    let mut lines: Vec<String> = late
+        .iter()
+        .map(|warning| format!("warning: {}", warning.line()))
+        .collect();
+    lines.push(format!(
+        "started {}",
+        if seats.is_empty() {
+            "no seat".to_string()
+        } else {
+            seats.join(", ")
+        }
+    ));
+    let (by, new_members) = (actor.to_string(), members.clone());
+    match mutate(
         state,
-        &planned.project,
-        &planned.repo,
-        pod_file(&document, &planned.paths, Existing::Replace),
-        format!("pij pod up {}: its members (by {actor})", planned.pod),
+        &record_of(&planned),
+        &format!("up: its members (by {actor})"),
+        move |_, document| {
+            let mut document = pod::with_members(document, new_members);
+            for line in &lines {
+                document = pod::logged(document, &at, &by, line);
+            }
+            Ok((document, ()))
+        },
     )
     .await
     {
-        Ok(commit) => answer["members_commit"] = json!(commit),
+        Ok((commit, _, ())) => answer["members_commit"] = json!(commit),
         Err(refusal) => late.push(Warning {
             about: format!("pod {}", planned.pod),
             text: format!("its seats started but pij could not record its members ({refusal})"),
@@ -647,21 +698,19 @@ async fn up(
         ))
     };
     if !asked.is_empty() {
-        canary(
-            state,
-            Record {
-                pod: planned.pod.clone(),
-                project: planned.project.clone(),
-                repo: planned.repo.clone(),
-                worktree: planned.worktree.clone(),
-                paths: planned.paths.clone(),
-            },
-            actor,
-            asked,
-        )
-        .await;
+        canary(state, record_of(&planned), actor, asked).await;
     }
     Ok(answer)
+}
+
+fn record_of(planned: &Planned) -> Record {
+    Record {
+        pod: planned.pod.clone(),
+        project: planned.project.clone(),
+        repo: planned.repo.clone(),
+        worktree: planned.worktree.clone(),
+        paths: planned.paths.clone(),
+    }
 }
 
 fn address(slot: &pod::Slot) -> String {
@@ -821,7 +870,9 @@ async fn canary(state: &AppState, record: Record, actor: &SeatId, asked: Vec<(po
 }
 
 /// Record each asked seat's canary outcome in one commit, and tell the seat
-/// that ran `up` which slots are degraded and how to fix them.
+/// that ran `up` which slots are degraded and how to fix them. A pod taken
+/// down before the answers settle gets nothing written and nothing sent
+/// (#346 B346-R1-09).
 async fn settle(
     state: &AppState,
     record: &Record,
@@ -829,47 +880,47 @@ async fn settle(
     asked: &[(pod::Slot, String)],
     confirmed: &std::collections::BTreeMap<String, Vec<String>>,
 ) {
-    let (project, repo, paths, pod_name) = (
-        record.project.as_str(),
-        record.repo.as_path(),
-        &record.paths,
-        record.pod.as_str(),
-    );
-    let Ok(bytes) = std::fs::read(record.worktree.join(&paths.document)) else {
-        eprintln!("pij-rs could not read pod {pod_name}'s record to settle its canary");
-        return;
-    };
-    let mut document: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+    let pod_name = record.pod.clone();
     let at = holders::now();
-    let mut degraded = Vec::new();
-    for (slot, seat) in asked {
-        let missing = pod::missing(slot, confirmed.get(seat).map_or(&[][..], Vec::as_slice));
-        let outcome = if missing.is_empty() {
-            "confirmed".to_string()
-        } else {
-            let line = pod::degraded(pod_name, &missing, seat);
-            degraded.push(format!("slot {} ({seat}): {line}", slot.id));
-            line
-        };
-        document = pod::with_canary(document, seat, &outcome);
-        document = pod::logged(
-            document,
-            &at,
-            pij_core::BG_ACTOR,
-            &format!("canary {seat}: {outcome}"),
-        );
-    }
-    if let Err(refusal) = commit(
-        state,
-        project,
-        repo,
-        pod_file(&document, paths, Existing::Replace),
-        format!("pij pod up {pod_name}: its tool canary"),
-    )
-    .await
-    {
-        eprintln!("pij-rs could not record pod {pod_name}'s canary: {refusal}");
-    }
+    let (asked_owned, confirmed_owned, name) =
+        (asked.to_vec(), confirmed.clone(), pod_name.clone());
+    let settled = mutate(state, record, "up: its tool canary", move |_, document| {
+        if pod::meta(&document)["state"] != "up" {
+            return Err(Refusal::new(E_POD_NOT_UP, "the pod was taken down first"));
+        }
+        let mut document = document;
+        let mut degraded = Vec::new();
+        for (slot, seat) in &asked_owned {
+            let missing = pod::missing(
+                slot,
+                confirmed_owned.get(seat).map_or(&[][..], Vec::as_slice),
+            );
+            let outcome = if missing.is_empty() {
+                "confirmed".to_string()
+            } else {
+                let line = pod::degraded(&name, &missing, seat);
+                degraded.push(format!("slot {} ({seat}): {line}", slot.id));
+                line
+            };
+            document = pod::with_canary(document, seat, &outcome);
+            document = pod::logged(
+                document,
+                &at,
+                pij_core::BG_ACTOR,
+                &format!("canary {seat}: {outcome}"),
+            );
+        }
+        Ok((document, degraded))
+    })
+    .await;
+    let degraded = match settled {
+        Ok((_, _, degraded)) => degraded,
+        Err(refusal) if refusal.code == E_POD_NOT_UP => return,
+        Err(refusal) => {
+            eprintln!("pij-rs could not record pod {pod_name}'s canary: {refusal}");
+            return;
+        }
+    };
     if !degraded.is_empty() {
         let body = format!(
             "pij: pod {pod_name}'s tool canary left {} degraded (pij hands them no pod work; your messages still reach them):\n{}",
@@ -917,22 +968,6 @@ async fn open(state: &AppState, caller: &CallerContext, pod_name: &str) -> Resul
     })
 }
 
-async fn save(
-    state: &AppState,
-    record: &Record,
-    document: &Value,
-    what: &str,
-) -> Result<String, Refusal> {
-    commit(
-        state,
-        &record.project,
-        &record.repo,
-        pod_file(document, &record.paths, Existing::Replace),
-        format!("pij pod {} {what}", record.pod),
-    )
-    .await
-}
-
 fn position<'a>(call: &'a Call, index: usize, usage: &str) -> Result<&'a str, Refusal> {
     call.positions
         .get(index)
@@ -954,6 +989,7 @@ async fn set(
     let (name, value) = position(call, 1, USAGE)?
         .split_once('=')
         .ok_or_else(|| Refusal::new("E-RS-ARG", USAGE))?;
+    pod::refuse_secret_parameters(&[(name.to_string(), value.to_string())])?;
     let opened = open(state, caller, pod_name).await?;
     let template = template_of(&opened.record.repo, &opened.document)?;
     pod::fill(
@@ -968,17 +1004,20 @@ async fn set(
         &[(name.to_string(), value.to_string())],
     )?;
     let at = holders::now();
-    let document = pod::logged(
-        pod::with_parameter(opened.document, name, value),
-        &at,
-        actor.as_str(),
-        &format!("set {name}={value}"),
-    );
-    let committed = save(
+    let (by, name_owned, value_owned) = (actor.to_string(), name.to_string(), value.to_string());
+    let (committed, document, ()) = mutate(
         state,
         &opened.record,
-        &document,
         &format!("set {name} (by {actor})"),
+        move |_, current| {
+            let document = pod::logged(
+                pod::with_parameter(current, &name_owned, &value_owned),
+                &at,
+                &by,
+                &format!("set {name_owned}={value_owned}"),
+            );
+            Ok((document, ()))
+        },
     )
     .await?;
     let mut sent = Vec::new();
@@ -1029,10 +1068,12 @@ async fn down(
     let pod_name = position(call, 0, "pij pod down <pod>")?;
     let opened = open(state, caller, pod_name).await?;
     let at = holders::now();
-    let mut document = pod::with_state(opened.document, "closing");
+    let document = opened.document;
     let mut warnings = Vec::new();
-    let freeze = pod::meta(&document)["work_folder"]
-        .as_str()
+    let mut lines: Vec<String> = Vec::new();
+    let work_folder = pod::work_folder(&document);
+    let freeze = work_folder
+        .as_deref()
         .filter(|folder| Path::new(folder).is_absolute())
         .map(|folder| match pod::freeze(Path::new(folder)) {
             Ok(freeze) => {
@@ -1050,7 +1091,7 @@ async fn down(
             }
         });
     if let Some(line) = &freeze {
-        document = pod::logged(document, &at, actor.as_str(), line);
+        lines.push(line.clone());
     }
     let mut members = Vec::new();
     for member in pod::records(&document, "members").to_vec() {
@@ -1071,36 +1112,31 @@ async fn down(
         };
         members.push(json!({"slot": member["slot"], "seat": seat, "outcome": outcome}));
     }
-    for warning in &warnings {
-        document = pod::logged(
-            document,
-            &at,
-            actor.as_str(),
-            &format!("warning: {warning}"),
-        );
-    }
-    document = pod::logged(
-        document,
-        &at,
-        actor.as_str(),
-        &format!(
-            "down: {}",
-            members
-                .iter()
-                .map(|member| format!(
-                    "{} {}",
-                    text_of(&member["seat"]),
-                    text_of(&member["outcome"])
-                ))
-                .collect::<Vec<_>>()
-                .join("; ")
-        ),
-    );
-    let committed = save(
+    lines.extend(warnings.iter().map(|warning| format!("warning: {warning}")));
+    lines.push(format!(
+        "down: {}",
+        members
+            .iter()
+            .map(|member| format!(
+                "{} {}",
+                text_of(&member["seat"]),
+                text_of(&member["outcome"])
+            ))
+            .collect::<Vec<_>>()
+            .join("; ")
+    ));
+    let by = actor.to_string();
+    let (committed, _, ()) = mutate(
         state,
         &opened.record,
-        &document,
         &format!("down (by {actor})"),
+        move |_, current| {
+            let mut document = pod::with_state(current, "closing");
+            for line in &lines {
+                document = pod::logged(document, &at, &by, line);
+            }
+            Ok((document, ()))
+        },
     )
     .await?;
     Ok(json!({
@@ -1192,21 +1228,18 @@ async fn revive(
         members.push(json!({"slot": member["slot"], "seat": seat, "outcome": outcome}));
     }
     let at = holders::now();
-    let mut document = pod::with_state(opened.document, "up");
-    for warning in &warnings {
-        document = pod::logged(
-            document,
-            &at,
-            actor.as_str(),
-            &format!("warning: {warning}"),
-        );
-    }
-    document = pod::logged(document, &at, actor.as_str(), "up again by name");
-    let committed = save(
+    let (by, logged_warnings) = (actor.to_string(), warnings.clone());
+    let (committed, _, ()) = mutate(
         state,
         &opened.record,
-        &document,
         &format!("up again (by {actor})"),
+        move |_, current| {
+            let mut document = pod::with_state(current, "up");
+            for warning in &logged_warnings {
+                document = pod::logged(document, &at, &by, &format!("warning: {warning}"));
+            }
+            Ok((pod::logged(document, &at, &by, "up again by name"), ()))
+        },
     )
     .await?;
     Ok(
@@ -1226,6 +1259,7 @@ async fn add(
     const USAGE: &str = "pij pod add <pod> role:<id>[/<instance>] | <seat>";
     let pod_name = position(call, 0, USAGE)?;
     let target = position(call, 1, USAGE)?;
+    pod::refuse_secret_parameters(&call.sets)?;
     let opened = open(state, caller, pod_name).await?;
     if let Some(address) = target.strip_prefix("role:") {
         let (role_id, instance) = address.split_once('/').unwrap_or((address, ""));
@@ -1244,10 +1278,9 @@ async fn add(
             .unwrap_or(Harness::Omp);
         let mut request: SpawnRequest = serde_json::from_value(json!({
             "harness": harness,
-            "cwd": pod::meta(&opened.document)["work_folder"]
-                .as_str()
+            "cwd": pod::work_folder(&opened.document)
                 .filter(|folder| Path::new(folder).is_dir())
-                .or(caller.cwd.as_deref())
+                .or_else(|| caller.cwd.clone())
                 .unwrap_or_default(),
             "session": call.session,
             "caller_pane": caller.pane,
@@ -1306,15 +1339,6 @@ async fn add(
                 format!("no live seat {target}; start one into the pod with pij pod add {pod_name} role:<id>"),
             )
         })?;
-    if pod::records(&opened.document, "members")
-        .iter()
-        .any(|member| member["seat"] == target)
-    {
-        return Err(Refusal::new(
-            "E-RS-ARG",
-            format!("{target} is already a member of pod {pod_name}"),
-        ));
-    }
     let holding = state
         .services
         .directory
@@ -1337,20 +1361,31 @@ async fn add(
         seed: None,
     };
     let at = holders::now();
-    let document = pod::logged(
-        pod::with_members(
-            opened.document,
-            vec![pod::member(&slot, seat.id.as_str(), "none asked")],
-        ),
-        &at,
-        actor.as_str(),
-        &format!("added {target}, already running, in role {}", slot.role),
+    let (by, seat_id, pod_owned, row) = (
+        actor.to_string(),
+        seat.id.to_string(),
+        pod_name.to_string(),
+        pod::member(&slot, seat.id.as_str(), "none asked"),
     );
-    let committed = save(
+    let line = format!("added {target}, already running, in role {}", slot.role);
+    let (committed, _, ()) = mutate(
         state,
         &opened.record,
-        &document,
         &format!("add {target} (by {actor})"),
+        move |worktree, current| {
+            if pod::records(&current, "members")
+                .iter()
+                .any(|member| member["seat"] == seat_id.as_str())
+            {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    format!("{seat_id} is already a member of pod {pod_owned}"),
+                ));
+            }
+            pod::refuse_second_pod(worktree, &pod_owned, &seat_id)?;
+            let document = pod::logged(pod::with_members(current, vec![row]), &at, &by, &line);
+            Ok((document, ()))
+        },
     )
     .await?;
     Ok(json!({"pod": pod_name, "added": target, "role": slot.role, "commit": committed}))
@@ -1368,25 +1403,23 @@ async fn release(
     let pod_name = position(call, 0, USAGE)?;
     let target = position(call, 1, USAGE)?;
     let opened = open(state, caller, pod_name).await?;
-    let (document, removed) = pod::without_member(opened.document, target);
-    if removed.is_none() {
-        return Err(Refusal::new(
-            "E-RS-NOT-FOUND",
-            format!("{target} is not a member of pod {pod_name}"),
-        ));
-    }
     let at = holders::now();
-    let document = pod::logged(
-        document,
-        &at,
-        actor.as_str(),
-        &format!("released {target}; it keeps running"),
-    );
-    let committed = save(
+    let (by, seat, pod_owned) = (actor.to_string(), target.to_string(), pod_name.to_string());
+    let (committed, _, ()) = mutate(
         state,
         &opened.record,
-        &document,
         &format!("release {target} (by {actor})"),
+        move |_, current| {
+            let (document, removed) = pod::without_member(current, &seat);
+            if removed.is_none() {
+                return Err(Refusal::new(
+                    "E-RS-NOT-FOUND",
+                    format!("{seat} is not a member of pod {pod_owned}"),
+                ));
+            }
+            let line = format!("released {seat}; it keeps running");
+            Ok((pod::logged(document, &at, &by, &line), ()))
+        },
     )
     .await?;
     Ok(json!({
@@ -1667,8 +1700,29 @@ async fn stage(
             waiting.join(", ")
         ));
     }
+    // B346-R1-07: the write-back is pij's own dispatch, so a role held by a
+    // degraded member of this pod is not sent it (the same one-way brake as
+    // set; removing it only sends more). Direct messages are untouched.
+    let degraded_holder = match deliverable["write_back"].as_str() {
+        None => None,
+        Some(role_id) => {
+            let holders = holders_of(state, &opened.record.project, role_id).await;
+            members
+                .iter()
+                .filter(|member| !pod::may_dispatch(member))
+                .filter_map(|member| member["seat"].as_str())
+                .find(|seat| holders.iter().any(|holder| holder == seat))
+                .map(|seat| (role_id.to_string(), seat.to_string()))
+        }
+    };
+    if let Some((role_id, seat)) = &degraded_holder {
+        warnings.push(format!(
+            "the write-back to role {role_id} was not sent: its holder {seat} is a degraded member of this pod, so pij hands it no pod work; send it yourself once it has its tools: pij send role:{role_id} ..."
+        ));
+    }
     let write_back = match deliverable["write_back"].as_str() {
         None => None,
+        Some(_) if degraded_holder.is_some() => None,
         Some(role_id) => Some(
             write_back(
                 state,
@@ -1702,31 +1756,39 @@ async fn stage(
     if let Some(request) = &request {
         row["write_back"] = json!(request);
     }
-    let mut document = pod::logged(
-        pod::with_stage(opened.document, row),
-        &at,
-        actor.as_str(),
-        &format!(
-            "stage {stage_name} of {deliverable_id} recorded: {output}{}",
-            request
-                .as_ref()
-                .map(|request| format!("; written back as {request}"))
-                .unwrap_or_default()
-        ),
+    let mut lines = vec![format!(
+        "stage {stage_name} of {deliverable_id} recorded: {output}{}",
+        request
+            .as_ref()
+            .map(|request| format!("; written back as {request}"))
+            .unwrap_or_default()
+    )];
+    lines.extend(warnings.iter().map(|warning| format!("warning: {warning}")));
+    let (by, deliverable_owned, stage_owned) = (
+        actor.to_string(),
+        deliverable_id.to_string(),
+        stage_name.to_string(),
     );
-    for warning in &warnings {
-        document = pod::logged(
-            document,
-            &at,
-            actor.as_str(),
-            &format!("warning: {warning}"),
-        );
-    }
-    let committed = save(
+    let (committed, _, ()) = mutate(
         state,
         &opened.record,
-        &document,
         &format!("stage {stage_name} of {deliverable_id} (by {actor})"),
+        move |_, current| {
+            if pod::records(&current, "stages")
+                .iter()
+                .any(|row| row["deliverable"] == deliverable_owned.as_str() && row["stage"] == stage_owned.as_str())
+            {
+                return Err(Refusal::new(
+                    "E-RS-ARG",
+                    format!("stage {stage_owned} of {deliverable_owned} is already recorded; record the next stage"),
+                ));
+            }
+            let mut document = pod::with_stage(current, row);
+            for line in &lines {
+                document = pod::logged(document, &at, &by, line);
+            }
+            Ok((document, ()))
+        },
     )
     .await?;
     Ok(json!({
@@ -1873,7 +1935,7 @@ pub(super) async fn join(
     let worktree = root::find(repo)?.worktree;
     let paths = PodPaths::new(pod_name)?;
     let document = recorded(&worktree, project, pod_name)?;
-    let mut warning = None;
+    let mut warning: Option<String> = None;
     let found = match template_of(repo, &document) {
         Ok(template) => template
             .slots
@@ -1912,49 +1974,42 @@ pub(super) async fn join(
     };
     let asked = !slot.tools.is_empty();
     let at = holders::now();
-    let mut document = pod::with_members(
-        document,
-        vec![pod::member(
-            &slot,
-            seat.as_str(),
-            if asked { "pending" } else { "none asked" },
-        )],
+    let record = Record {
+        pod: pod_name.to_string(),
+        project: project.to_string(),
+        repo: repo.to_path_buf(),
+        worktree,
+        paths,
+    };
+    let row = pod::member(
+        &slot,
+        seat.as_str(),
+        if asked { "pending" } else { "none asked" },
     );
-    document = pod::logged(
-        document,
-        &at,
-        creator.as_str(),
-        &format!("started {seat} as slot {} (pij spawn --as --pod)", slot.id),
-    );
-    if let Some(warning) = &warning {
-        document = pod::logged(
-            document,
-            &at,
-            creator.as_str(),
-            &format!("warning: {warning}"),
-        );
-    }
-    let committed = commit(
+    let mut lines = vec![format!(
+        "started {seat} as slot {} (pij spawn --as --pod)",
+        slot.id
+    )];
+    lines.extend(warning.iter().map(|warning| format!("warning: {warning}")));
+    let (by, seat_owned, pod_owned) = (creator.to_string(), seat.to_string(), pod_name.to_string());
+    let (committed, _, ()) = mutate(
         state,
-        project,
-        repo,
-        pod_file(&document, &paths, Existing::Replace),
-        format!(
-            "pij pod {pod_name}: {seat} joins as slot {} (by {creator})",
-            slot.id
-        ),
+        &record,
+        &format!("{seat} joins as slot {} (by {creator})", slot.id),
+        move |worktree, current| {
+            pod::refuse_second_pod(worktree, &pod_owned, &seat_owned)?;
+            let mut document = pod::with_members(current, vec![row]);
+            for line in &lines {
+                document = pod::logged(document, &at, &by, line);
+            }
+            Ok((document, ()))
+        },
     )
     .await?;
     if asked {
         canary(
             state,
-            Record {
-                pod: pod_name.to_string(),
-                project: project.to_string(),
-                repo: repo.to_path_buf(),
-                worktree,
-                paths,
-            },
+            record,
             creator,
             vec![(slot.clone(), seat.to_string())],
         )
@@ -1971,7 +2026,12 @@ pub(super) async fn join(
 
 /// `pij pod confirm <pod> --tool <tool>...`: one spine event the canary's
 /// wait reads. Open to any seat: an answer from a seat not asked is ignored.
-async fn confirm(state: &AppState, call: &Call, actor: &SeatId) -> Result<Value, Refusal> {
+async fn confirm(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
     let pod = call
         .positions
         .first()
@@ -1991,7 +2051,65 @@ async fn confirm(state: &AppState, call: &Call, actor: &SeatId) -> Result<Value,
         .publish(event)
         .await
         .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?;
-    Ok(json!({"pod": pod, "seat": actor, "confirmed": call.tools}))
+    let recovered = recover(state, caller, pod, actor, &call.tools).await;
+    Ok(json!({"pod": pod, "seat": actor, "confirmed": call.tools, "canary": recovered}))
+}
+
+/// A confirmation after the canary settled (#346 B346-R1-03): a degraded
+/// member's canary is worked out again from the tools it names now and
+/// recorded through the writer, so the slot recovers once its tools are
+/// there. A member still within the first wait is left to it. The brake
+/// stays one-way: only this member's own confirmation lifts it.
+async fn recover(
+    state: &AppState,
+    caller: &CallerContext,
+    pod_name: &str,
+    seat: &SeatId,
+    tools: &[String],
+) -> Option<String> {
+    let opened = open(state, caller, pod_name).await.ok()?;
+    let template = template_of(&opened.record.repo, &opened.document).ok();
+    let member = pod::records(&opened.document, "members")
+        .iter()
+        .find(|member| member["seat"] == seat.as_str())?
+        .clone();
+    if pod::may_dispatch(&member) {
+        return None;
+    }
+    let missing = template
+        .as_ref()
+        .and_then(|template| {
+            template
+                .slots
+                .iter()
+                .find(|slot| member["slot"] == slot.id.as_str())
+        })
+        .map(|slot| pod::missing(slot, tools))
+        .unwrap_or_default();
+    let outcome = if missing.is_empty() {
+        "confirmed".to_string()
+    } else {
+        pod::degraded(pod_name, &missing, seat.as_str())
+    };
+    let (at, seat_owned, written) = (holders::now(), seat.to_string(), outcome.clone());
+    let saved = mutate(
+        state,
+        &opened.record,
+        &format!("canary {seat} again"),
+        move |_, current| {
+            let still_degraded = pod::records(&current, "members")
+                .iter()
+                .any(|member| member["seat"] == seat_owned.as_str() && !pod::may_dispatch(member));
+            if !still_degraded {
+                return Err(Refusal::new(E_POD_NOT_UP, "nothing to recover"));
+            }
+            let document = pod::with_canary(current, &seat_owned, &written);
+            let line = format!("canary {seat_owned} (confirmed again): {written}");
+            Ok((pod::logged(document, &at, &seat_owned, &line), ()))
+        },
+    )
+    .await;
+    saved.ok().map(|_| outcome)
 }
 
 /// `pij pod show <pod>`: the record, with each member's state from the
@@ -2046,7 +2164,12 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
         if let Some(row) = &row {
             shown["harness"] = json!(row.harness);
             shown["model"] = json!(row.model);
+            shown["folder"] = json!(row.folder);
         }
+        shown["type"] = json!(role_type(
+            &worktree,
+            member["role"].as_str().unwrap_or_default()
+        ));
         if member["canary"]
             .as_str()
             .is_some_and(|canary| canary.starts_with("degraded"))
@@ -2098,6 +2221,7 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
         "consulted": consulted,
         "deliverables": deliverables,
         "degraded": degraded,
+        "wiring": template_of(&repo, &document).map(|template| wiring_answer(&template)).unwrap_or_default(),
         "log": pod::records(&document, "log"),
     }))
 }

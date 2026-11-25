@@ -1553,6 +1553,55 @@ impl DirectoryService {
         Ok((written, built.routes.unwrap_or_default()))
     }
 
+    /// [`Self::write`] whose files are built inside the writer's serialized
+    /// build, from the governance worktree as it is then, so a
+    /// read-modify-write never commits a stale snapshot (#346 B346-R1-02).
+    /// `build` also hands back a value of its own.
+    ///
+    /// # Errors
+    /// `build`'s refusal or any writer refusal; nothing is written.
+    pub async fn write_built<T: Send + 'static>(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        message: String,
+        build: impl FnOnce(&GovernanceRoot) -> Result<(Vec<NewFile>, T), Refusal> + Send + 'static,
+    ) -> Result<(Written, T), Refusal> {
+        let pending = self.pending(project).await?;
+        let (project_id, flush) = (project.to_string(), pending);
+        let out: Arc<std::sync::Mutex<Option<T>>> = Arc::new(std::sync::Mutex::new(None));
+        let slot = Arc::clone(&out);
+        let (written, built) = self
+            .commit(repo, message, move |root, built| {
+                let (mut files, value) = build(root)?;
+                for file in files.iter().filter(|file| file.document) {
+                    check_merge_target(root, file)?;
+                }
+                let regenerated = routes::regenerate(&root.worktree, &files);
+                files.extend(regenerated.file.clone());
+                built.routes = Some(regenerated);
+                files.extend(flush_files(
+                    root,
+                    &project_id,
+                    &flush,
+                    &[],
+                    &mut built.landed,
+                )?);
+                *slot
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(value);
+                Ok(files)
+            })
+            .await?;
+        self.flushed(&built.landed, &written).await?;
+        let value = out
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .ok_or_else(|| Refusal::new("E-RS-INTERNAL", "the build handed back no value"))?;
+        Ok((written, value))
+    }
+
     /// Bind a live seat to an existing role: one holders commit, then the store
     /// row and the seat's role in one transaction (C1), then the hook (C6).
     ///

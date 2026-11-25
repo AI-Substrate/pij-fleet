@@ -93,6 +93,8 @@ pub struct Template {
     pub consulted: Vec<Consulted>,
     /// Its deliverables.
     pub deliverables: Vec<Deliverable>,
+    /// How its slots feed each other (req-01, req-02): `(from, to, what)`.
+    pub wiring: Vec<(String, String, String)>,
 }
 
 fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
@@ -291,7 +293,13 @@ pub fn parse(bytes: &[u8], source: &str) -> Result<Template, Refusal> {
             id,
         });
     }
+    let wiring = rows(&document, "wiring")
+        .iter()
+        .map(|row| (text(&row["from"]), text(&row["to"]), text(&row["what"])))
+        .filter(|(from, to, _)| !from.is_empty() && !to.is_empty())
+        .collect();
     Ok(Template {
+        wiring,
         source: source.to_string(),
         name,
         version: text(&meta["version"]),
@@ -396,11 +404,6 @@ impl PodPaths {
             document: dir.join(POD_FILE),
             dir,
         })
-    }
-
-    /// `community/pods/<pod>/first-turns/<seat>.md`.
-    pub fn first_turn(&self, seat: &str) -> PathBuf {
-        self.dir.join("first-turns").join(format!("{seat}.md"))
     }
 }
 
@@ -749,6 +752,10 @@ pub fn with_stage(mut document: Value, row: Value) -> Value {
 }
 
 /// `document` with parameter `name` set to `value` (replaced, or added).
+///
+/// `subject` and `work-folder` also drive the pod (its seats' subject, the
+/// freeze at down), so their meta copies change in the same write and never
+/// diverge from the parameter (#346 B346-R1-06).
 pub fn with_parameter(mut document: Value, name: &str, value: &str) -> Value {
     if let Some(rows) = section_mut(&mut document, "parameters").and_then(Value::as_array_mut) {
         match rows.iter_mut().find(|row| row["name"] == name) {
@@ -756,7 +763,94 @@ pub fn with_parameter(mut document: Value, name: &str, value: &str) -> Value {
             None => rows.push(json!({"name": name, "value": value})),
         }
     }
+    let operational = match name {
+        "subject" => Some("subject"),
+        "work-folder" => Some("work_folder"),
+        _ => None,
+    };
+    if let Some(field) = operational
+        && let Some(meta) = section_mut(&mut document, "meta")
+    {
+        meta[field] = json!(value);
+    }
     document
+}
+
+/// Refuse any `--set` value that looks like a secret before anything is
+/// written or sent: a pod's parameters and log are committed to the
+/// governance branch, which may be public (#346 B346-R1-01). The existing
+/// first-turn brake, applied to every parameter, used or not; it only ever
+/// commits less. The refusal names the parameter, never the value.
+///
+/// # Errors
+/// [`super::first_turn::E_SECRET`] naming the parameter.
+pub fn refuse_secret_parameters(sets: &[(String, String)]) -> Result<(), Refusal> {
+    match sets
+        .iter()
+        .find(|(_, value)| super::first_turn::secret_value(value))
+    {
+        Some((name, _)) => Err(Refusal::new(
+            super::first_turn::E_SECRET,
+            format!(
+                "--set {name} looks like a secret (a KEY, TOKEN, SECRET or PASSWORD assignment, or a long mixed-case run); a pod's parameters are committed to the governance branch, which may be public. Pass a reference to where the secret lives instead"
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
+/// A seat already in another pod (req-01, "refused by a second").
+pub const E_POD_MEMBER: &str = "E-RS-POD-MEMBER";
+
+/// Refuse to add `seat` to `pod` when another pod's record in `worktree`
+/// already holds it, naming that pod and the fix (#346 B346-R1-05). Record
+/// integrity, not a gate on anyone: two pods must never both own one seat's
+/// close. A keep-open member left running by a pod that is not up no longer
+/// belongs to it. Read inside the writer's build, so it is the current state.
+///
+/// # Errors
+/// [`E_POD_MEMBER`].
+pub fn refuse_second_pod(worktree: &Path, pod: &str, seat: &str) -> Result<(), Refusal> {
+    let Ok(entries) = std::fs::read_dir(worktree.join(COMMUNITY).join("pods")) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let other = entry.file_name().to_string_lossy().to_string();
+        if other == pod {
+            continue;
+        }
+        let Some(document) = std::fs::read(entry.path().join(POD_FILE))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        else {
+            continue;
+        };
+        let up = meta(&document)["state"] == "up";
+        if records(&document, "members")
+            .iter()
+            .any(|row| row["seat"] == seat && (up || row["keep_open"] != "yes"))
+        {
+            return Err(Refusal::new(
+                E_POD_MEMBER,
+                format!(
+                    "{seat} is already a member of pod {other}; a seat belongs to one pod. Release it first: pij pod release {other} {seat}"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The pod's current work folder: its `work-folder` parameter, which `set`
+/// may have given after up, else the one recorded at up (#346 B346-R1-06).
+pub fn work_folder(document: &Value) -> Option<String> {
+    records(document, "parameters")
+        .iter()
+        .find(|row| row["name"] == "work-folder")
+        .and_then(|row| row["value"].as_str())
+        .map(str::to_string)
+        .or_else(|| meta(document)["work_folder"].as_str().map(str::to_string))
+        .filter(|folder| !folder.is_empty())
 }
 
 /// `document` with its meta.state set to `state` (`up`, `closing`, `closed`).
@@ -889,6 +983,31 @@ mod tests {
             "references": [],
         }))
         .unwrap()
+    }
+
+    /// #346 B346-R1-01: a secret-shaped value is refused naming the
+    /// parameter; a real path with capitals is not a secret.
+    #[test]
+    fn a_secret_shaped_value_is_refused_and_a_path_is_not() {
+        let refused =
+            refuse_secret_parameters(&[("branch".into(), "API_TOKEN=abcd1234EFGH5678".into())])
+                .unwrap_err();
+        assert_eq!(refused.code, super::super::first_turn::E_SECRET);
+        assert!(refused.message.contains("--set branch"), "{refused}");
+        assert!(!refused.message.contains("abcd1234"), "{refused}");
+        let run = "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA";
+        assert!(refuse_secret_parameters(&[("note".into(), run.into())]).is_err());
+        assert!(
+            refuse_secret_parameters(&[(
+                "work-folder".into(),
+                "/Users/Someone/Work/pij-laneA/T/pij-pod-late-folder-123-456".into()
+            )])
+            .is_ok()
+        );
+        assert!(
+            refuse_secret_parameters(&[("work-folder".into(), format!("/tmp/{run}"))]).is_err(),
+            "a secret as a path segment is still caught"
+        );
     }
 
     #[test]

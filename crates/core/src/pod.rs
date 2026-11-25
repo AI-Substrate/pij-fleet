@@ -38,7 +38,9 @@ Usage:
 
 A template is a folder holding pod-template.dd.json (or that file), at any path
 you name. Every check warns and names its fix; none refuses: pij is a knowledge
-system, not the police. `pij pod <verb> --help` for each verb.";
+system, not the police. Two refusals guard the record itself: a --set value that
+looks like a secret (the record is committed to the governance branch), and a
+seat already in another pod. `pij pod <verb> --help` for each verb.";
 
 const PLAN: &str = "\
 pij pod plan <template> [--set <name>=<value>]... [--name <pod>] [--fresh]
@@ -76,7 +78,10 @@ pij pod set <pod> <name>=<value>
 
 Records a parameter known only after the pod is up, and sends it to each member
 whose slot uses it, and only them. A degraded member is not sent it (pij's own
-dispatch brake) and is named so you can send it yourself.";
+dispatch brake) and is named so you can send it yourself. `subject` and
+`work-folder` set this way drive the pod from then on (the freeze at down
+reads the work folder). A value that looks like a secret is refused, naming
+the parameter: the record is committed to the governance branch.";
 
 const DOWN: &str = "\
 pij pod down <pod>
@@ -98,8 +103,9 @@ pij pod release <pod> <seat>
 
 Reshape a running pod; each change is logged and the template is unchanged.
 `add role:` starts a member as `pij spawn --as role:<id> --pod <pod>` does;
-`add <seat>` adds a seat already running. `release` takes a seat out of the pod
-and leaves it running.";
+`add <seat>` adds a seat already running. A seat belongs to one pod: one already
+in another is refused (E-RS-POD-MEMBER), naming that pod and the release that
+frees it. `release` takes a seat out of the pod and leaves it running.";
 
 const SESSIONS: &str = "\
 pij pod sessions <pod> [--limit <n>]
@@ -143,4 +149,6 @@ const CONFIRM: &str = "\
 pij pod confirm <pod> --tool <tool>...
 
 A slot's seat answering its tool canary: name each tool you can use. A tool
-you leave out is reported missing, with its fix, in `pij pod show`.";
+you leave out is reported missing, with its fix, in `pij pod show`. Run again
+once the tools are there: a degraded slot that now confirms every tool is
+recorded confirmed, and pij hands it pod work again.";

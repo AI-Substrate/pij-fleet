@@ -25,11 +25,14 @@ pub fn render(data: &Value) -> String {
         .filter(|found| !found.is_empty())
     {
         lines.push(format!("{} warning(s), none refuses:", warnings.len()));
-        lines.extend(
-            warnings
-                .iter()
-                .map(|warning| format!("  ! {}", text(&warning["line"]))),
-        );
+        // plan and up answer {about, text, fix, line}; set, down, revive and
+        // stage answer plain strings (#346 B346-R1-08).
+        lines.extend(warnings.iter().map(|warning| {
+            format!(
+                "  ! {}",
+                warning.as_str().unwrap_or_else(|| text(&warning["line"]))
+            )
+        }));
     }
     if let Some(slots) = data["slots"].as_array() {
         lines.push("slots:".to_string());
@@ -50,18 +53,41 @@ pub fn render(data: &Value) -> String {
                     format!(", tools {}", tools.join(", "))
                 }
             ));
+            if let Some(turn) = slot["first_turn"].as_str() {
+                lines.push("    first turn:".to_string());
+                lines.extend(turn.lines().map(|line| format!("      {line}")));
+            } else if let Some(why) = slot["first_turn_error"].as_str() {
+                lines.push(format!("    first turn: does not build: {why}"));
+            }
         }
     }
     if let Some(members) = data["members"].as_array() {
         lines.push("members:".to_string());
         for member in members {
+            // down and revive answer what happened to each member.
+            if let Some(outcome) = member["outcome"].as_str() {
+                lines.push(format!(
+                    "  {}: {}: {outcome}",
+                    text(&member["slot"]),
+                    text(&member["seat"])
+                ));
+                continue;
+            }
             lines.push(format!(
-                "  {}: {} in {} ({}), canary {}",
+                "  {}: {} in {}{} ({}), canary {}{}",
                 text(&member["slot"]),
                 text(&member["seat"]),
                 text(&member["role"]),
+                member["type"]
+                    .as_str()
+                    .map(|kind| format!(" [{kind}]"))
+                    .unwrap_or_default(),
                 member["state"].as_str().unwrap_or("started"),
-                text(&member["canary"])
+                text(&member["canary"]),
+                member["folder"]
+                    .as_str()
+                    .map(|folder| format!(", in {folder}"))
+                    .unwrap_or_default()
             ));
         }
     }
@@ -93,6 +119,21 @@ pub fn render(data: &Value) -> String {
                 }
             ));
         }
+    }
+    if let Some(wiring) = data["wiring"].as_array().filter(|found| !found.is_empty()) {
+        lines.push("wiring:".to_string());
+        lines.extend(wiring.iter().map(|wire| {
+            format!(
+                "  {} -> {}{}",
+                text(&wire["from"]),
+                text(&wire["to"]),
+                wire["what"]
+                    .as_str()
+                    .filter(|what| !what.is_empty())
+                    .map(|what| format!(": {what}"))
+                    .unwrap_or_default()
+            )
+        }));
     }
     if let Some(deliverables) = data["deliverables"]
         .as_array()
@@ -181,4 +222,43 @@ pub fn render(data: &Value) -> String {
         }
     }
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// #346 B346-R1-08: string warnings, member outcomes and plan first turns
+    /// are shown without --json.
+    #[test]
+    fn warnings_outcomes_and_first_turns_reach_the_text() {
+        let down = render(&json!({
+            "pod": "build",
+            "members": [
+                {"slot": "lead", "seat": "pij-a", "outcome": "not closed: E-RS-NOT-STOPPED"},
+                {"slot": "reviewer", "seat": "pij-b", "outcome": "left running (keep-open)"},
+            ],
+            "warnings": ["pij-b is keep-open, so it was left running"],
+        }));
+        assert!(down.contains("  ! pij-b is keep-open"), "{down}");
+        assert!(!down.contains("! -"), "{down}");
+        assert!(
+            down.contains("lead: pij-a: not closed: E-RS-NOT-STOPPED"),
+            "{down}"
+        );
+        assert!(!down.contains("started"), "{down}");
+        let plan = render(&json!({
+            "pod": "build",
+            "template": {"source": "pods/build", "version": "1"},
+            "project": "fleet",
+            "slots": [{"slot": "lead", "role": "notes", "harness": "omp", "first_turn": "You hold notes.\nOne note per call."}],
+            "warnings": [{"line": "slot reviewer: shares a model. Fix: edit"}],
+        }));
+        assert!(plan.contains("      One note per call."), "{plan}");
+        assert!(
+            plan.contains("  ! slot reviewer: shares a model. Fix: edit"),
+            "{plan}"
+        );
+    }
 }
