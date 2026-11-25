@@ -30,7 +30,10 @@ _No entries._
 
 ## Members
 
-_No entries._
+| slot | role | instance | seat | state | keep_open | canary |
+| --- | --- | --- | --- | --- | --- | --- |
+| a | performance | receipt-a | pij-complex-termite | — | — | none asked |
+| b | performance | receipt-b | pij-long-vole | — | — | none asked |
 
 <a id="consulted"></a>
 
@@ -53,3 +56,4 @@ _No entries._
 | at | by | change |
 | --- | --- | --- |
 | 2026-11-25T09:03:31.445Z | pij-multiple-nightingale | up from /tmp/laneA-receipt2 (version 1, sha256 73855273ccac) |
+| 2026-11-25T09:03:32.977Z | pij-multiple-nightingale | started pij-complex-termite, pij-long-vole |
