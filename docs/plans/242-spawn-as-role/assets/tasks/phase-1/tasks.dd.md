@@ -35,12 +35,12 @@ _Empty._
 
 | id | title | domain | phase | state | note | receipt | done | success | notes | satisfies | satisfies_toward |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tk-0001 | CLI flags and request | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0001](#tk-0001) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0002 | pre-launch resolution | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0002](#tk-0002) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0003 | one commit, delivery, rollback | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0003](#tk-0003) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0004 | old-way warning | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0004](#tk-0004) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0005 | seed warning and --shipped | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0005](#tk-0005) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
-| tk-0006 | cost receipt | — | ph-0001 | [ ] unchecked | — | — | [ ] 0/1 [tk-0006](#tk-0006) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0001 | CLI flags and request | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0001](#tk-0001) | — | — | [ac-0001](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0002 | pre-launch resolution | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0002](#tk-0002) | — | — | [ac-0002](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0003 | one commit, delivery, rollback | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0003](#tk-0003) | — | — | [ac-0003](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0004 | old-way warning | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0004](#tk-0004) | — | — | [ac-0004](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0005 | seed warning and --shipped | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0005](#tk-0005) | — | — | [ac-0005](../../../plan.dd.md#acceptance-criteria) | — |
+| tk-0006 | cost receipt | — | ph-0001 | [x] checked | — | — | [x] 1/1 [tk-0006](#tk-0006) | — | — | [ac-0006](../../../plan.dd.md#acceptance-criteria) | — |
 
 <a id="done-when"></a>
 
@@ -50,34 +50,34 @@ _Empty._
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0001 | CLI flags and request | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0001 | CLI flags and request | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0002
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0002 | pre-launch resolution | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0002 | pre-launch resolution | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0003
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0003 | one commit, delivery, rollback | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0003 | one commit, delivery, rollback | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0004
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0004 | old-way warning | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0004 | old-way warning | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0005
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0005 | seed warning and --shipped | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0005 | seed warning and --shipped | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |
 
 ### tk-0006
 
 | id | assertion | state | pressure |
 | --- | --- | --- | --- |
-| dw-0006 | cost receipt | [ ] unchecked | [bp-0001](../../backpressure.dd.md#rows) |
+| dw-0006 | cost receipt | [x] checked | [bp-0001](../../backpressure.dd.md#rows) |

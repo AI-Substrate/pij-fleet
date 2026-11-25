@@ -36,19 +36,19 @@
         {
           "id": "ac-0001",
           "claim": "`pij directory add` and `edit` take `--param <name>` (required) and `--param <name>:optional`, repeatable, written to a new `parameters` section (`{name, need}`), with the existing `--harness`, `--model` and `--effort` in `default_seat`. A parameter name takes the instance-key grammar; a repeated name refuses.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`role::fill_parameters(document, sets)` returns the filled values in declaration order; it refuses `E-RS-PARAM-UNKNOWN` for a `--set` the role does not declare (listing the declared ones) and `E-RS-PARAM-MISSING` naming every required one left out. A value is one line.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "The role schema carries `parameters`; `pij directory add --help` and the API doc describe it.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         }
       ]
@@ -60,7 +60,7 @@
           "id": "ph-0001",
           "title": "Launch settings and parameters on a role (workstream 007 s01)",
           "brief": "One phase on PR #345.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

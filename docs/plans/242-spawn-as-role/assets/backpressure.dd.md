@@ -20,10 +20,10 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2,AC3 | ph-0001 | BUILD | computational | HTTP tests: a spawn as a role holds it with the recorded model, one commit carries first turn and holders, the first message is the first turn; an injected commit refusal leaves no pane, a tombstoned row, nothing delivered and no holders row. | [ ] unchecked | — | — | cargo test -p pij-daemon spawn_as_role |
-| bp-0002 | AC4 | ph-0001 | BUILD | computational | CLI test: the warning and the rewritten command. | [ ] unchecked | — | — | cargo test -p pij-cli spawn |
-| bp-0003 | AC5 | ph-0001 | BUILD | computational | HTTP test: missing seed warns, seed --shipped copies it, next spawn has no warning. | [ ] unchecked | — | — | cargo test -p pij-daemon seed_shipped |
-| bp-0004 | AC6 | ph-0001 | BUILD | computational | The spawn counter's by_op before and after: harness/tmux ops equal to a plain spawn; git and ddocs ops equal to one assign. | [ ] unchecked | — | — | cargo test -p pij-daemon spawn_as_role_cost |
+| bp-0001 | AC1,AC2,AC3 | ph-0001 | BUILD | computational | HTTP tests: a spawn as a role holds it with the recorded model, one commit carries first turn and holders, the first message is the first turn; an injected commit refusal leaves no pane, a tombstoned row, nothing delivered and no holders row. | [x] checked | — | — | cargo test -p pij-daemon spawn_as_role |
+| bp-0002 | AC4 | ph-0001 | BUILD | computational | CLI test: the warning and the rewritten command. | [x] checked | — | — | cargo test -p pij-cli spawn |
+| bp-0003 | AC5 | ph-0001 | BUILD | computational | HTTP test: missing seed warns, seed --shipped copies it, next spawn has no warning. | [x] checked | — | — | cargo test -p pij-daemon seed_shipped |
+| bp-0004 | AC6 | ph-0001 | BUILD | computational | The spawn counter's by_op before and after: harness/tmux ops equal to a plain spawn; git and ddocs ops equal to one assign. | [x] checked | — | — | cargo test -p pij-daemon spawn_as_role_cost |
 
 <a id="sensors"></a>
 

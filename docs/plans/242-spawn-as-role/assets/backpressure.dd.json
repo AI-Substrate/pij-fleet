@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP tests: a spawn as a role holds it with the recorded model, one commit carries first turn and holders, the first message is the first turn; an injected commit refusal leaves no pane, a tombstoned row, nothing delivered and no holders row.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon spawn_as_role"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "CLI test: the warning and the rewritten command.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-cli spawn"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: missing seed warns, seed --shipped copies it, next spawn has no warning.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon seed_shipped"
         },
         {
@@ -51,7 +51,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "The spawn counter's by_op before and after: harness/tmux ops equal to a plain spawn; git and ddocs ops equal to one assign.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon spawn_as_role_cost"
         }
       ]

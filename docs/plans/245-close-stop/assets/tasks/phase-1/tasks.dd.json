@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "--stop, ready, signal",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001",
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
@@ -34,7 +34,7 @@
           "id": "tk-0002",
           "title": "silent and memoryless",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -44,7 +44,7 @@
           "id": "tk-0003",
           "title": "cold",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
@@ -54,7 +54,7 @@
           "id": "tk-0004",
           "title": "no flag unchanged",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
           ],
@@ -69,7 +69,7 @@
           {
             "id": "dw-0001",
             "assertion": "--stop, ready, signal",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -77,7 +77,7 @@
           {
             "id": "dw-0002",
             "assertion": "silent and memoryless",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -85,7 +85,7 @@
           {
             "id": "dw-0003",
             "assertion": "cold",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -93,7 +93,7 @@
           {
             "id": "dw-0004",
             "assertion": "no flag unchanged",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ]

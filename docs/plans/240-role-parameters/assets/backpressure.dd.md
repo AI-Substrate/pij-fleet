@@ -20,8 +20,8 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | role.rs unit tests (parameters written, filled, unknown and missing refused); reshape_http/types.rs adds a role with two parameters. | [ ] unchecked | — | — | cargo test -p pij-daemon parameters |
-| bp-0002 | AC3 | ph-0001 | ABSENT | human-judgement | Reviewer reads the schema and help. | [ ] unchecked | — | — | docs |
+| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | role.rs unit tests (parameters written, filled, unknown and missing refused); reshape_http/types.rs adds a role with two parameters. | [x] checked | — | — | cargo test -p pij-daemon parameters |
+| bp-0002 | AC3 | ph-0001 | ABSENT | human-judgement | Reviewer reads the schema and help. | [x] checked | — | — | docs |
 
 <a id="sensors"></a>
 

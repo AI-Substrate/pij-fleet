@@ -47,11 +47,11 @@
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `--stop` on a warm seat: the memory turn tells it pij will stop it when its note is written. Ready means the turn ended within the bound and the seat wrote a memory note after the turn was delivered (the note event on the spine). Then pij sends SIGTERM to the recorded process only when its pid still has the recorded start time (never by name or pattern, AGENTS rule 6), tombstones the seat and ends its holdings. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | A seat that does not end its turn within the bound, or ends it with no note, is left running and open; the prime gets one message naming the seat and why. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | A cold seat (the cold-wake guard would refuse a normal send) is sent nothing: with a memory note already written since its holding began it is stopped as above without waking; otherwise it is left and the prime is told; the answer prints the wake price. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | `pij close &lt;seat&gt;` without `--stop` behaves exactly as before. Pod down (PRD 008) calls the same path per member. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0005 | The stop is a policy, not a brake: the ready answer decides whether the process is stopped; every missing fact (no recorded process, a changed start time, an unreadable spine) leaves the seat running and says so. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `--stop` on a warm seat: the memory turn tells it pij will stop it when its note is written. Ready means the turn ended within the bound and the seat wrote a memory note after the turn was delivered (the note event on the spine). Then pij sends SIGTERM to the recorded process only when its pid still has the recorded start time (never by name or pattern, AGENTS rule 6), tombstones the seat and ends its holdings. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | A seat that does not end its turn within the bound, or ends it with no note, is left running and open; the prime gets one message naming the seat and why. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | A cold seat (the cold-wake guard would refuse a normal send) is sent nothing: with a memory note already written since its holding began it is stopped as above without waking; otherwise it is left and the prime is told; the answer prints the wake price. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | `pij close &lt;seat&gt;` without `--stop` behaves exactly as before. Pod down (PRD 008) calls the same path per member. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0005 | The stop is a policy, not a brake: the ready answer decides whether the process is stopped; every missing fact (no recorded process, a changed start time, an unreadable spine) leaves the seat running and says so. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -59,7 +59,7 @@
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Close that stops the seat (workstream 007 s06) | One phase on PR #345. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Close that stops the seat (workstream 007 s06) | One phase on PR #345. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

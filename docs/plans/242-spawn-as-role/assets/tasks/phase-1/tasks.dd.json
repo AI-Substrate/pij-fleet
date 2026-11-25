@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "CLI flags and request",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
@@ -33,7 +33,7 @@
           "id": "tk-0002",
           "title": "pre-launch resolution",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -43,7 +43,7 @@
           "id": "tk-0003",
           "title": "one commit, delivery, rollback",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
@@ -53,7 +53,7 @@
           "id": "tk-0004",
           "title": "old-way warning",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0004"
           ],
@@ -63,7 +63,7 @@
           "id": "tk-0005",
           "title": "seed warning and --shipped",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0005"
           ],
@@ -73,7 +73,7 @@
           "id": "tk-0006",
           "title": "cost receipt",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0006"
           ],
@@ -88,7 +88,7 @@
           {
             "id": "dw-0001",
             "assertion": "CLI flags and request",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -96,7 +96,7 @@
           {
             "id": "dw-0002",
             "assertion": "pre-launch resolution",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -104,7 +104,7 @@
           {
             "id": "dw-0003",
             "assertion": "one commit, delivery, rollback",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -112,7 +112,7 @@
           {
             "id": "dw-0004",
             "assertion": "old-way warning",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -120,7 +120,7 @@
           {
             "id": "dw-0005",
             "assertion": "seed warning and --shipped",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -128,7 +128,7 @@
           {
             "id": "dw-0006",
             "assertion": "cost receipt",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ]

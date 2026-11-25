@@ -47,9 +47,9 @@ A role records the harness, model and effort its holder runs on (the existing `d
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij directory add` and `edit` take `--param &lt;name&gt;` (required) and `--param &lt;name&gt;:optional`, repeatable, written to a new `parameters` section (`{name, need}`), with the existing `--harness`, `--model` and `--effort` in `default_seat`. A parameter name takes the instance-key grammar; a repeated name refuses. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `role::fill_parameters(document, sets)` returns the filled values in declaration order; it refuses `E-RS-PARAM-UNKNOWN` for a `--set` the role does not declare (listing the declared ones) and `E-RS-PARAM-MISSING` naming every required one left out. A value is one line. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | The role schema carries `parameters`; `pij directory add --help` and the API doc describe it. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij directory add` and `edit` take `--param &lt;name&gt;` (required) and `--param &lt;name&gt;:optional`, repeatable, written to a new `parameters` section (`{name, need}`), with the existing `--harness`, `--model` and `--effort` in `default_seat`. A parameter name takes the instance-key grammar; a repeated name refuses. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `role::fill_parameters(document, sets)` returns the filled values in declaration order; it refuses `E-RS-PARAM-UNKNOWN` for a `--set` the role does not declare (listing the declared ones) and `E-RS-PARAM-MISSING` naming every required one left out. A value is one line. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | The role schema carries `parameters`; `pij directory add --help` and the API doc describe it. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -57,7 +57,7 @@ A role records the harness, model and effort its holder runs on (the existing `d
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Launch settings and parameters on a role (workstream 007 s01) | One phase on PR #345. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Launch settings and parameters on a role (workstream 007 s01) | One phase on PR #345. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

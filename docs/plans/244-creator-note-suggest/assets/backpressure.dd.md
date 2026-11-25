@@ -20,9 +20,9 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | HTTP test: a worker adds and starts a knowledge role; the prime has one FYI naming role, type, creator and reason; the view names the creator. | [ ] unchecked | — | — | cargo test -p pij-daemon creator |
-| bp-0002 | AC3 | ph-0001 | BUILD | computational | HTTP test: suggest, list, answer. | [ ] unchecked | — | — | cargo test -p pij-daemon suggest |
-| bp-0003 | AC4 | ph-0001 | BUILD | computational | templates test: the latest prime template carries the rule. | [ ] unchecked | — | — | cargo test -p pij-daemon templates |
+| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | HTTP test: a worker adds and starts a knowledge role; the prime has one FYI naming role, type, creator and reason; the view names the creator. | [x] checked | — | — | cargo test -p pij-daemon creator |
+| bp-0002 | AC3 | ph-0001 | BUILD | computational | HTTP test: suggest, list, answer. | [x] checked | — | — | cargo test -p pij-daemon suggest |
+| bp-0003 | AC4 | ph-0001 | BUILD | computational | templates test: the latest prime template carries the rule. | [x] checked | — | — | cargo test -p pij-daemon templates |
 
 <a id="sensors"></a>
 

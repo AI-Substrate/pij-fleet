@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "first_turn.rs unit tests (order, sources, placeholders, creator attribution, untyped role); reshape_http/types.rs: show --first-turn prints the turn and moves no commit.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon first_turn"
         }
       ]

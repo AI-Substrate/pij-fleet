@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP tests with fake liveness and a signal port: warm ready seat stopped and closed; silent and memoryless left running with one prime message; cold seat not woken, price shown; no flag unchanged; changed start time sends nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon close_stop"
         }
       ]

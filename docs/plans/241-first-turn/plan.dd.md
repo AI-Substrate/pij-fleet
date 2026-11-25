@@ -47,9 +47,9 @@ pij builds one first turn for a seat starting in a role: its type's definition a
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `community::first_turn::assemble` (pure) returns the text and its parts. Parts, in order: the type (definition and the seed pij would use, PRD 006), the role (title, summary, rules, out of scope, forbidden paths and its standing packet, inline or the brief's text, with every `&lt;name&gt;` placeholder of a filled parameter replaced), the parameters, the creator's focus (`--focus`) and packet (`--packet &lt;file&gt;`), attributed to the creator, and the role's memory INDEX. Each part starts with a heading and a `source:` line (a governance path, a shipped path with its version, or the creator's seat). | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij directory show &lt;role&gt; --first-turn [--set &lt;name&gt;=&lt;value&gt;]... [--focus &lt;text&gt;] [--packet &lt;file&gt;] [--instance &lt;key&gt;]` prints the turn, or `--json` its parts; it refuses as filling does (plan 240), writes nothing and launches nothing. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | A role with no type still assembles (the type part says it has none and names `pij directory retype`), so old communities can start seats. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `community::first_turn::assemble` (pure) returns the text and its parts. Parts, in order: the type (definition and the seed pij would use, PRD 006), the role (title, summary, rules, out of scope, forbidden paths and its standing packet, inline or the brief's text, with every `&lt;name&gt;` placeholder of a filled parameter replaced), the parameters, the creator's focus (`--focus`) and packet (`--packet &lt;file&gt;`), attributed to the creator, and the role's memory INDEX. Each part starts with a heading and a `source:` line (a governance path, a shipped path with its version, or the creator's seat). | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij directory show &lt;role&gt; --first-turn [--set &lt;name&gt;=&lt;value&gt;]... [--focus &lt;text&gt;] [--packet &lt;file&gt;] [--instance &lt;key&gt;]` prints the turn, or `--json` its parts; it refuses as filling does (plan 240), writes nothing and launches nothing. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | A role with no type still assembles (the type part says it has none and names `pij directory retype`), so old communities can start seats. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -57,7 +57,7 @@ pij builds one first turn for a seat starting in a role: its type's definition a
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | The assembled first turn (workstream 007 s02) | One phase on PR #345. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | The assembled first turn (workstream 007 s02) | One phase on PR #345. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

@@ -47,8 +47,8 @@
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | A live seat whose folder belongs to the project (the same match `pij directory` uses for its caller) and that holds no open holding there is an action `no-role` naming the seat with `pij directory assign &lt;role&gt; &lt;seat&gt;` and `pij close &lt;seat&gt;`. The designated prime is never listed. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | After it is assigned, the action is gone. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | A live seat whose folder belongs to the project (the same match `pij directory` uses for its caller) and that holds no open holding there is an action `no-role` naming the seat with `pij directory assign &lt;role&gt; &lt;seat&gt;` and `pij close &lt;seat&gt;`. The designated prime is never listed. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | After it is assigned, the action is gone. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -56,7 +56,7 @@
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Seats with no role in the view (workstream 007 s04) | One phase on PR #345. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Seats with no role in the view (workstream 007 s04) | One phase on PR #345. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

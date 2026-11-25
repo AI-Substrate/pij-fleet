@@ -22,7 +22,7 @@
 				{
 					"id": "s01",
 					"title": "Launch settings and parameters on a role",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/007-role-start.dd.json#requirements/req-01"],
 					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-launch-settings"],
 					"depends_on": ["006-seat-types.dd.json#steps/s02"],
@@ -33,7 +33,7 @@
 				{
 					"id": "s02",
 					"title": "The assembled first turn",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/007-role-start.dd.json#requirements/req-03",
 						"../prds/007-role-start.dd.json#requirements/req-04"
@@ -47,7 +47,7 @@
 				{
 					"id": "s03",
 					"title": "Spawn with a role named",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/007-role-start.dd.json#requirements/req-02",
 						"../prds/007-role-start.dd.json#requirements/req-05",
@@ -64,7 +64,7 @@
 				{
 					"id": "s04",
 					"title": "Seats with no role in the view",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/007-role-start.dd.json#requirements/req-06"],
 					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-unregistered"],
 					"needs": ["role:coder", "role:reviewer"],
@@ -74,7 +74,7 @@
 				{
 					"id": "s05",
 					"title": "Anyone creates a seat and the prime is told; suggest when unsure",
-					"state": "planned",
+					"state": "complete",
 					"delivers": [
 						"../prds/007-role-start.dd.json#requirements/req-07",
 						"../prds/007-role-start.dd.json#requirements/req-08"
@@ -88,7 +88,7 @@
 				{
 					"id": "s06",
 					"title": "Close that stops the seat",
-					"state": "planned",
+					"state": "complete",
 					"delivers": ["../prds/007-role-start.dd.json#requirements/req-12"],
 					"builds": ["../blueprints/005-seat-types-and-pods.dd.json#components/c-close-stop"],
 					"needs": ["role:coder", "role:reviewer", "role:security"],
@@ -114,6 +114,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Each step names the blueprint 005 component it builds and its plan (240 to 245)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "s01-s06 complete on #345 (plans 240-245)."
 				}
 			]
 		}

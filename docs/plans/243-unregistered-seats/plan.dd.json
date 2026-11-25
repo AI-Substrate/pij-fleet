@@ -36,13 +36,13 @@
         {
           "id": "ac-0001",
           "claim": "A live seat whose folder belongs to the project (the same match `pij directory` uses for its caller) and that holds no open holding there is an action `no-role` naming the seat with `pij directory assign <role> <seat>` and `pij close <seat>`. The designated prime is never listed.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "After it is assigned, the action is gone.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         }
       ]
@@ -54,7 +54,7 @@
           "id": "ph-0001",
           "title": "Seats with no role in the view (workstream 007 s04)",
           "brief": "One phase on PR #345.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

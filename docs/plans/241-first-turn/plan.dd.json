@@ -36,19 +36,19 @@
         {
           "id": "ac-0001",
           "claim": "`community::first_turn::assemble` (pure) returns the text and its parts. Parts, in order: the type (definition and the seed pij would use, PRD 006), the role (title, summary, rules, out of scope, forbidden paths and its standing packet, inline or the brief's text, with every `<name>` placeholder of a filled parameter replaced), the parameters, the creator's focus (`--focus`) and packet (`--packet <file>`), attributed to the creator, and the role's memory INDEX. Each part starts with a heading and a `source:` line (a governance path, a shipped path with its version, or the creator's seat).",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>] [--packet <file>] [--instance <key>]` prints the turn, or `--json` its parts; it refuses as filling does (plan 240), writes nothing and launches nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "A role with no type still assembles (the type part says it has none and names `pij directory retype`), so old communities can start seats.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         }
       ]
@@ -60,7 +60,7 @@
           "id": "ph-0001",
           "title": "The assembled first turn (workstream 007 s02)",
           "brief": "One phase on PR #345.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

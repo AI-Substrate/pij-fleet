@@ -36,25 +36,25 @@
         {
           "id": "ac-0001",
           "claim": "A role added, or a seat spawned with `--as`, by a seat that is not the project's prime sends the prime one FYI (held for its next turn, waking nothing): the role, its type, the creator and the reason. A prime's own adds send nothing.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij directory` role rows carry `created_by` (the first changelog row's seat) and each live holder its `assigned_by`.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0003",
           "claim": "`pij directory suggest <area> --signal <text>` records a suggestion (`community/suggestions.json`, through the writer); it wakes no one. `pij directory suggest --answer <id> yes|no|not-yet --why <text>` records the answer. The view lists open suggestions and each answered one with its answer and reason.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0004",
           "claim": "The shipped prime role template (a new version) states: create the seat the work needs when you are sure, ask the operator when you are not.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         }
       ]
@@ -66,7 +66,7 @@
           "id": "ph-0001",
           "title": "Anyone creates a seat and the prime is told; suggest when unsure (workstream 007 s05)",
           "brief": "One phase on PR #345.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

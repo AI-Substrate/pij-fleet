@@ -20,7 +20,7 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-5 | ph-0001 | BUILD | computational | HTTP tests with fake liveness and a signal port: warm ready seat stopped and closed; silent and memoryless left running with one prime message; cold seat not woken, price shown; no flag unchanged; changed start time sends nothing. | [ ] unchecked | — | — | cargo test -p pij-daemon close_stop |
+| bp-0001 | AC1-5 | ph-0001 | BUILD | computational | HTTP tests with fake liveness and a signal port: warm ready seat stopped and closed; silent and memoryless left running with one prime message; cold seat not woken, price shown; no flag unchanged; changed start time sends nothing. | [x] checked | — | — | cargo test -p pij-daemon close_stop |
 
 <a id="sensors"></a>
 

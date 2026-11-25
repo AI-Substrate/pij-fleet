@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: a worker adds and starts a knowledge role; the prime has one FYI naming role, type, creator and reason; the view names the creator.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon creator"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "HTTP test: suggest, list, answer.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon suggest"
         },
         {
@@ -41,7 +41,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "templates test: the latest prime template carries the rule.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon templates"
         }
       ]

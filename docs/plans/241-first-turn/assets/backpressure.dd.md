@@ -20,7 +20,7 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1-3 | ph-0001 | BUILD | computational | first_turn.rs unit tests (order, sources, placeholders, creator attribution, untyped role); reshape_http/types.rs: show --first-turn prints the turn and moves no commit. | [ ] unchecked | — | — | cargo test -p pij-daemon first_turn |
+| bp-0001 | AC1-3 | ph-0001 | BUILD | computational | first_turn.rs unit tests (order, sources, placeholders, creator attribution, untyped role); reshape_http/types.rs: show --first-turn prints the turn and moves no commit. | [x] checked | — | — | cargo test -p pij-daemon first_turn |
 
 <a id="sensors"></a>
 

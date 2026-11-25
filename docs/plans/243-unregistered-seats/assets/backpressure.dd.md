@@ -20,7 +20,7 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | HTTP test: a hand-spawned seat in the project is an action with its lines; after assign it is gone; the prime is never listed. | [ ] unchecked | — | — | cargo test -p pij-daemon no_role |
+| bp-0001 | AC1,AC2 | ph-0001 | BUILD | computational | HTTP test: a hand-spawned seat in the project is an action with its lines; after assign it is gone; the prime is never listed. | [x] checked | — | — | cargo test -p pij-daemon no_role |
 
 <a id="sensors"></a>
 

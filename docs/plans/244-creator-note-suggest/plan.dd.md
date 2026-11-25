@@ -47,10 +47,10 @@ Any seat may add a role and spawn a seat in it; pij tells the project's prime on
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | A role added, or a seat spawned with `--as`, by a seat that is not the project's prime sends the prime one FYI (held for its next turn, waking nothing): the role, its type, the creator and the reason. A prime's own adds send nothing. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij directory` role rows carry `created_by` (the first changelog row's seat) and each live holder its `assigned_by`. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | `pij directory suggest &lt;area&gt; --signal &lt;text&gt;` records a suggestion (`community/suggestions.json`, through the writer); it wakes no one. `pij directory suggest --answer &lt;id&gt; yes\|no\|not-yet --why &lt;text&gt;` records the answer. The view lists open suggestions and each answered one with its answer and reason. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0004 | The shipped prime role template (a new version) states: create the seat the work needs when you are sure, ask the operator when you are not. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | A role added, or a seat spawned with `--as`, by a seat that is not the project's prime sends the prime one FYI (held for its next turn, waking nothing): the role, its type, the creator and the reason. A prime's own adds send nothing. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij directory` role rows carry `created_by` (the first changelog row's seat) and each live holder its `assigned_by`. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | `pij directory suggest &lt;area&gt; --signal &lt;text&gt;` records a suggestion (`community/suggestions.json`, through the writer); it wakes no one. `pij directory suggest --answer &lt;id&gt; yes\|no\|not-yet --why &lt;text&gt;` records the answer. The view lists open suggestions and each answered one with its answer and reason. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0004 | The shipped prime role template (a new version) states: create the seat the work needs when you are sure, ask the operator when you are not. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -58,7 +58,7 @@ Any seat may add a role and spawn a seat in it; pij tells the project's prime on
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Anyone creates a seat and the prime is told; suggest when unsure (workstream 007 s05) | One phase on PR #345. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Anyone creates a seat and the prime is told; suggest when unsure (workstream 007 s05) | One phase on PR #345. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

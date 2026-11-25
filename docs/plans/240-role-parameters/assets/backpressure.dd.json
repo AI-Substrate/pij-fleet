@@ -21,7 +21,7 @@
           "mode": "BUILD",
           "tier": "computational",
           "proof": "role.rs unit tests (parameters written, filled, unknown and missing refused); reshape_http/types.rs adds a role with two parameters.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "cargo test -p pij-daemon parameters"
         },
         {
@@ -31,7 +31,7 @@
           "mode": "ABSENT",
           "tier": "human-judgement",
           "proof": "Reviewer reads the schema and help.",
-          "state": "unchecked",
+          "state": "checked",
           "probe": "docs"
         }
       ]
