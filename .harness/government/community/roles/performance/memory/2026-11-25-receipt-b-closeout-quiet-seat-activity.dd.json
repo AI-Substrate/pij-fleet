@@ -1,0 +1,26 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"by": "pij-long-vole",
+				"date": "2026-11-25",
+				"hook": "When separating receipt-b pod-up activity from its closeout commands",
+				"tags": [
+					"receipt",
+					"closeout",
+					"proof-limits"
+				],
+				"title": "Receipt-b closeout: quiet seat activity boundary"
+			}
+		},
+		{
+			"name": "body",
+			"value": "Companion to 2026-11-25-prd-008-receipt-only-seat-no-measurement: pij-long-vole held performance/receipt-b for pij-multiple-nightingale's spawn-count receipt. It loaded pij and builder, then waited without shell commands or peer sends. Only the close-time memory request triggered the memory index read, existing-note read and this write. No counters, CPU, RSS or launch rates were collected; no verdict or measurement claim was issued. Attribute these memory commands to closeout, not the quiet pod-up window. No review or AFTER obligation was taken on."
+		}
+	]
+}
