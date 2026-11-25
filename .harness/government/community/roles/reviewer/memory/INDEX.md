@@ -201,5 +201,6 @@
 - [2026-11-25 Mutation-check TS gates in an archive copy with node\_modules symlinked](2026-11-25-mutation-check-ts-gates-in-an-archive.dd.md): review worktrees have no node\_modules; the debug pij-rs in the shared target is unstamped (mutation, review, shared-target)
 - [2026-11-25 PR 344 seat types at e56bcb4](2026-11-25-pr-344-seat-types-at-e56bcb4.dd.md): Read when reviewing seat types, role\_type pointers, /v1/seats cost or batched mutation checks (review, types, mutation, cost)
 - [2026-11-25 PR 351 first-turn authority at fd47101](2026-11-25-pr351-first-turn-authority.dd.md): Read when reviewing first-turn authority, type docs or private guard mutation batches (review, types, first-turn, mutation)
+- [2026-11-25 Open role eligibility and close-stop notices](2026-11-25-pr352-close-stop.dd.md): Use all-project open holdings for stop eligibility, context holdings for notices, and private archives for mutation proof. (lifecycle, close-stop, review-proof)
 - [2026-11-25 Rollback after a landed commit is a half-write](2026-11-25-rollback-after-a-landed-commit-is-a-half.dd.md): When a rollback follows a governance commit, check what the commit already landed (review, rollback, governance)
 <!-- /pij:generated -->

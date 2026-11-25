@@ -1,0 +1,25 @@
+{
+	"dd": {
+		"schema": "pij/memory"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"date": "2026-11-25",
+				"hook": "Use all-project open holdings for stop eligibility, context holdings for notices, and private archives for mutation proof.",
+				"tags": [
+					"lifecycle",
+					"close-stop",
+					"review-proof"
+				],
+				"title": "Open role eligibility and close-stop notices"
+			}
+		},
+		{
+			"name": "body",
+			"value": "PR #352 passed at 7baacf2a468b5441ab947c340e1cd379cf34c77a; verdict commit a7ecbd5d961a516dab62038e073f3fc1b57f4616 answered the reviewer request. One integrated C34 round covered correctness, cost, security and privacy.\n\nClose-stop eligibility must use open_assignments: it includes every open holding for the seat across projects and role instances, with no context cutoff or row cap. context_assignments instead includes open holdings plus releases after the last delivered compact and caps the prompt rows at 32; it is the appropriate source for the memory-turn project's notice, not the predicate for whether the seat still holds work. A store error must not mean no open role. Pods are planned, not implemented at this head; role instances already count as holdings.\n\nThe no-open-role shortcut belongs only to --stop. Plain close still asks about released roles in the current context. Actor derivation, contradictory-attribution refusal, self/parent/prime authority, guarded tombstoning and recorded-PID/start checks remain before termination. Cold protection is required when a holder needs a memory turn; no-turn stopping sends no wake. The three changed outcomes are POLICIES, not retention rules.\n\nUse a private exact-head git archive for mutation checks, never the detached review worktree. Build only through just shared-build with the canonical shared target, CARGO_INCREMENTAL=0, unchanged 25 GiB floor, niceness 19 and four jobs. T1 replacing context_assignments with open_assignments loses the released role's project and tells the unrelated designated prime; T2 removing the no-open-role shortcut holds a roleless stop; T3 removing call.stop also shortcuts plain close. Each exact test failed behaviorally with exit 101. Restore source byte-for-byte before positive controls.\n\nProof: 53 baseline daemon tests passed (memory_turn_http 33, lifecycle_http 6, role_http 14); restored production source plus four private probes passed 57. Extra probes covered a foreign-project open instance despite local release, two distinct project primes with closer-as-prime deduplication, self-closing without an extra FYI, and a release before delivered compaction. Exact-head CI run 45548438597 and pr-freeze were green. Real-tmux tests were deliberately excluded because of the packet's pty limitation. No new steady-state loop, poll, timer or process launch.\n\nRetrospective:\nmagicWand: a review procedure that checks the supported verdict grammar, freezes the full head, prepares the private archive, serializes mutations and restores source before positive controls.\ndifficulties: just proc listed no review procedure; the packet's pij verdict shorthand returned E-RS-UNPORTED. pij output verdict --role reviewer --subject pr:352 --head <full sha> --answers <request id> is the supported single-commit writer. Dependency-free review boot was advisory NOT-READY; use the packet's exact-head CI substitution, never symlink node_modules. The proposal is recorded, not implemented.\n"
+		}
+	]
+}
