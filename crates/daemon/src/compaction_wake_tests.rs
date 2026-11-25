@@ -271,6 +271,77 @@ async fn a_seat_holding_nothing_is_not_woken() {
     assert!(resumes(&services).await.is_empty());
 }
 
+/// Plan 258 (outpost-120 P6): a seat holding no open role or claim settles
+/// `holds-nothing` on the first round after delivery — without waiting out
+/// `COMPACT_SETTLE_MS`, `Idle`, or a queued message — while an undelivered
+/// compact still waits for delivery so refused compacts never advance the
+/// memory-turn cutoff.
+#[tokio::test]
+async fn a_seat_holding_nothing_settles_immediately_after_delivery() {
+    let (services, _store, _config, folder) = services().await;
+    fleet(&services, &folder).await;
+    let watchdog = PaWatchdog::default();
+    let start = crate::http::system_time_ms().unwrap();
+
+    // Recorded but not yet delivered: must NOT settle `holds-nothing`.
+    crate::compaction_wake::record(&services, &SeatId::from(SEAT), "m-undelivered", start)
+        .await
+        .unwrap();
+    let outcomes = watchdog
+        .round(&services, INTERVAL, start + 2_000)
+        .await
+        .unwrap();
+    assert!(wakes(outcomes).is_empty());
+    assert_eq!(
+        settled(&services, "m-undelivered").await,
+        None,
+        "undelivered compact must not settle holds-nothing before delivery"
+    );
+
+    // Delivered while seat is Working and has a message queued, well inside
+    // COMPACT_SETTLE_MS: settles `holds-nothing` on the first round.
+    let mut seat = services
+        .registry
+        .get(&SeatId::from(SEAT))
+        .await
+        .unwrap()
+        .unwrap();
+    seat.state = SystemState::Working;
+    services.registry.put(seat).await.unwrap();
+    services
+        .delivery
+        .accept(Msg {
+            from: SeatId::from(PARENT),
+            to: SeatId::from(SEAT),
+            body: "queued work".into(),
+            msg_id: "m-queued".into(),
+            from_machine: None,
+            in_reply_to: None,
+            command: None,
+        })
+        .await
+        .expect("queued");
+    let delivered_start = start + 10_000;
+    compact(&services, "m-delivered", delivered_start).await;
+
+    let outcomes = watchdog
+        .round(&services, INTERVAL, delivered_start + 2_000)
+        .await
+        .unwrap();
+    assert!(wakes(outcomes).is_empty());
+    assert_eq!(
+        settled(&services, "m-delivered").await.as_deref(),
+        Some("holds-nothing"),
+        "non-holder settles immediately inside COMPACT_SETTLE_MS"
+    );
+    assert_eq!(
+        settled(&services, "m-undelivered").await.as_deref(),
+        Some("superseded"),
+        "older undelivered compact is superseded by the delivered one"
+    );
+    assert!(resumes(&services).await.is_empty());
+}
+
 /// bp-0001: while something is queued for it the seat isn't sent it; once
 /// that drains with nothing started, it is.
 #[tokio::test]
