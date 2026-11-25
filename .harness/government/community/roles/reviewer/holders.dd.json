@@ -3067,7 +3067,10 @@
 					"harness_session": "82804a25-6885-4a9d-a21d-4de38db11f26",
 					"instance_key": "348",
 					"machine": "studio",
+					"release_why": "PR #348 merged (968b79f8102e)",
+					"released_by": "pij-kind-parrotfish",
 					"seat": "pij-geographical-meerkat",
+					"to": "2026-11-25T02:09:06.842Z",
 					"why": "#348 PRD 009 part 1 single review (amended C34; Jordan-approved)"
 				}
 			]
