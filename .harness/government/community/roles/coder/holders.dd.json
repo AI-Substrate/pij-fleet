@@ -1747,6 +1747,16 @@
 					"seat": "pij-cultural-falcon",
 					"to": "2026-11-25T03:19:08.943Z",
 					"why": "Jordan-approved (11-25 13:18): F281 shared-build signal test flake + fixture leak"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T03:19:30.017Z",
+					"harness": "copilot",
+					"harness_session": "068fe522-03ac-44bd-9d8c-12faa4604a54",
+					"instance_key": "f281-fix",
+					"machine": "studio",
+					"seat": "pij-spatial-vole",
+					"why": "Jordan-approved F281 fix; fresh coder (falcon cold)"
 				}
 			]
 		}
