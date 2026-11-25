@@ -1,0 +1,3 @@
+# Original ask
+
+From pm-001 (pij-steady-otter), 2026-11-25, relaying the operator's approval to build PRDs 006, 007, 008 and 010: lane A builds PRD 007 on PR #345 after PRD 006, one plan per workstream step, each with a cost row. The operator's rulings of 2026-11-25 hold: one way to create a seat (spawn, new flags optional, the old way warns with the new form), one way to take a seat down (close, with a stop option), anybody may create any seat and the prime is told, a missing seed template warns and the shipped one is used, and pij injects one first turn. PM rulings for this PR: a spawn with a role costs a plain spawn plus one writer commit (the first-turn record and the holding together); the extension spawn tools get pass-through only if small.

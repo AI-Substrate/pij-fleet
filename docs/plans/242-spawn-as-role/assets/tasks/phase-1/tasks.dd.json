@@ -1,0 +1,138 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Spawn with a role named (workstream 007 s03)",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "CLI flags and request",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "done": "#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "pre-launch resolution",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "one commit, delivery, rollback",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "#done_when/tk-0003"
+        },
+        {
+          "id": "tk-0004",
+          "title": "old-way warning",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0004"
+          ],
+          "done": "#done_when/tk-0004"
+        },
+        {
+          "id": "tk-0005",
+          "title": "seed warning and --shipped",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0005"
+          ],
+          "done": "#done_when/tk-0005"
+        },
+        {
+          "id": "tk-0006",
+          "title": "cost receipt",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0006"
+          ],
+          "done": "#done_when/tk-0006"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "CLI flags and request",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "pre-launch resolution",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "one commit, delivery, rollback",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0004": [
+          {
+            "id": "dw-0004",
+            "assertion": "old-way warning",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0005": [
+          {
+            "id": "dw-0005",
+            "assertion": "seed warning and --shipped",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0006": [
+          {
+            "id": "dw-0006",
+            "assertion": "cost receipt",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ]
+      }
+    }
+  ]
+}

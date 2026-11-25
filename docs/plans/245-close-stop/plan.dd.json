@@ -1,0 +1,112 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Close that stops the seat (workstream 007 s06)",
+        "slug": "close-stop",
+        "ordinal": 245,
+        "status": "ready",
+        "summary": "`pij close <seat> --stop` gives a holder its memory turn, and when the turn ends with a memory note written, stops the exact process pij recorded at launch and closes the seat. A seat that stays silent or writes no note is left running and the prime is told. A cold seat is never woken. Without `--stop`, close is unchanged.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "`pij close <seat> --stop` gives a holder its memory turn, and when the turn ends with a memory note written, stops the exact process pij recorded at launch and closes the seat. A seat that stays silent or writes no note is left running and the prime is told. A cold seat is never woken. Without `--stop`, close is unchanged."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "One way to take a seat down, and it really comes down."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Changing revive rules or close without --stop."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`--stop` on a warm seat: the memory turn tells it pij will stop it when its note is written. Ready means the turn ended within the bound and the seat wrote a memory note after the turn was delivered (the note event on the spine). Then pij sends SIGTERM to the recorded process only when its pid still has the recorded start time (never by name or pattern, AGENTS rule 6), tombstones the seat and ends its holdings.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "A seat that does not end its turn within the bound, or ends it with no note, is left running and open; the prime gets one message naming the seat and why.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "A cold seat (the cold-wake guard would refuse a normal send) is sent nothing: with a memory note already written since its holding began it is stopped as above without waking; otherwise it is left and the prime is told; the answer prints the wake price.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "`pij close <seat>` without `--stop` behaves exactly as before. Pod down (PRD 008) calls the same path per member.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "The stop is a policy, not a brake: the ready answer decides whether the process is stopped; every missing fact (no recorded process, a changed start time, an unreadable spine) leaves the seat running and says so.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Close that stops the seat (workstream 007 s06)",
+          "brief": "One phase on PR #345.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Close: http/lifecycle.rs handle/close_seat; memory turn: http/memory_turn.rs (Then::Close, BOUND). Process identity: pid and proc_start on the descriptor; liveness checks the start time. Cold: cold_wake::check."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A pid reused by another process.",
+          "likelihood": "Low",
+          "impact": "High",
+          "mitigation": "The recorded start time must match before the signal; otherwise nothing is sent."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: per close --stop: the existing memory turn (one delivery, one subscription, one deadline), one process start-time read, one signal. No launch, loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Anyone creates a seat and the prime is told; suggest when unsure (workstream 007 s05)",
+        "slug": "creator-note-suggest",
+        "ordinal": 244,
+        "status": "ready",
+        "summary": "Any seat may add a role and spawn a seat in it; pij tells the project's prime once each time, without waking it. A seat that is unsure records a suggestion instead; the prime's view lists open ones and the prime answers each.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "Any seat may add a role and spawn a seat in it; pij tells the project's prime once each time, without waking it. A seat that is unsure records a suggestion instead; the prime's view lists open ones and the prime answers each."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "The prime knows every seat and role created in its project, and every unowned area a seat spotted."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Refusing anyone on the grounds of who is asking."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "A role added, or a seat spawned with `--as`, by a seat that is not the project's prime sends the prime one FYI (held for its next turn, waking nothing): the role, its type, the creator and the reason. A prime's own adds send nothing.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`pij directory` role rows carry `created_by` (the first changelog row's seat) and each live holder its `assigned_by`.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "`pij directory suggest <area> --signal <text>` records a suggestion (`community/suggestions.json`, through the writer); it wakes no one. `pij directory suggest --answer <id> yes|no|not-yet --why <text>` records the answer. The view lists open suggestions and each answered one with its answer and reason.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "The shipped prime role template (a new version) states: create the seat the work needs when you are sure, ask the operator when you are not.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Anyone creates a seat and the prime is told; suggest when unsure (workstream 007 s05)",
+          "brief": "One phase on PR #345.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "FYIs to a seat: the daemon's FYI path (as plan 234 tells a prior parent). The view: community/directory.rs."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A busy fleet sends the prime many notes.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "FYI: held for its next turn, never waking it."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: on demand: one FYI per non-prime add or spawn; suggest and answer are one writer commit each. No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

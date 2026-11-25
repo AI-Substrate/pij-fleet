@@ -1,0 +1,64 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 242 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1,AC2,AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP tests: a spawn as a role holds it with the recorded model, one commit carries first turn and holders, the first message is the first turn; an injected commit refusal leaves no pane, a tombstoned row, nothing delivered and no holders row.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon spawn_as_role"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "CLI test: the warning and the rewritten command.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-cli spawn"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC5",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: missing seed warns, seed --shipped copies it, next spawn has no warning.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon seed_shipped"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC6",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "The spawn counter's by_op before and after: harness/tmux ops equal to a plain spawn; git and ddocs ops equal to one assign.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon spawn_as_role_cost"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 245 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1-5",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP tests with fake liveness and a signal port: warm ready seat stopped and closed; silent and memoryless left running with one prime message; cold seat not woken, price shown; no flag unchanged; changed start time sends nothing.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon close_stop"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
