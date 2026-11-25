@@ -1732,7 +1732,10 @@
 					"harness_session": "eeff0540-e4fb-446a-84bf-b5fa2de9568e",
 					"instance_key": "lane-b",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-yielding-hamster",
+					"to": "2026-11-25T08:41:47.435Z",
 					"why": "PRD 009 lane B build (Jordan 2026-11-25, spine 4761202)"
 				},
 				{
