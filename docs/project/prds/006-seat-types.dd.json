@@ -90,7 +90,7 @@
 					"statement": "pij ships one short definition per type: what the seat is for, when it is compacted or closed, and what it must keep. A coder builds one step and is compacted after every job. A reviewer judges one piece of work at its exact version, independently of its author, and is compacted after every job unless its role keeps standing context, as security may. A worker does one other piece of work and is closed. A knowledge seat is the expert who owns one area and keeps what it learns written down. A steward is the only writer of one shared thing. A project manager runs a workstream and holds its history. A watcher reacts to events and rebuilds from current state. A human-window is one person's seat into the fleet. Prime and PA keep the duties they have today.",
 					"actor": "role holder",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "For each of the ten types, pij prints its definition on request, and a seat started in a role of that type receives it.",
 					"source": "operator rulings 2026-11-25; interviews with five primes 2026-11-24"
 				},
@@ -150,7 +150,7 @@
 					"statement": "pij ships a seed template for each of the ten types: the text a seat of that type is told at start. The prime and project-manager seeds carry firm guidance on how to govern. The coder, reviewer, security and other seeds are working examples that a repo is encouraged to replace or extend for its own work. A repo edits its own copy of any of them, and a prime may change its own.",
 					"actor": "prime",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "pij prints a seed for each of the ten types; a repo's edited copy of the coder seed is what a new coder there receives; and a prime's edit to the prime seed is accepted and recorded with its reason.",
 					"source": "operator, 2026-11-25: seed templates for all of these; primes are encouraged to change them and can change their own"
 				}
@@ -202,6 +202,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "s04 (plan 238): req-07 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-02 and req-08 shipped: a seat started with `pij spawn --as role:<id>` receives its type's definition and seed in its first turn (PRD 007 s02-s03, #345)."
 				}
 			]
 		}

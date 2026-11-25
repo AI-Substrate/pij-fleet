@@ -132,6 +132,15 @@ impl RolePaths {
         })
     }
 
+    /// `roles/<id>/first-turns/<seat>.md`: the first turn seat `seat` got when
+    /// it started in the role (PRD 007 req-07). `seat` is a seat id, which
+    /// takes the closed seat-id grammar.
+    pub fn first_turn(&self, seat: &str) -> PathBuf {
+        self.holders
+            .with_file_name("first-turns")
+            .join(format!("{seat}.md"))
+    }
+
     /// The generated memory index for a role with no notes yet.
     pub fn empty_memory_index(id: &str) -> String {
         format!("# {id} memory\n\nNo notes yet. pij adds one line per note.\n")

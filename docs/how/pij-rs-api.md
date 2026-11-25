@@ -1829,6 +1829,80 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
   when a role is written, never enforced on a running seat, and authority is
   unchanged: it still comes from the seat role and the prime designation.
 
+### Starting a seat in a role (PRD 007, plans 240-245)
+
+- A role declares the parameters a seat starting in it needs filled:
+  `add`/`edit --param <name>[:optional|:required]` writes a `parameters`
+  section (`[{name, need}]`). Each `<name>` in the role's summary, rules,
+  scope paths, out-of-scope items, forbidden paths and packet is filled at start.
+- `directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>]
+  [--packet <file>] [--instance <key>]` (plan 241) returns `first_turn` (the
+  whole text) and `parts` (`heading`, `source`, `text`), in order: the type
+  (definition and seed), the role (filled), the parameters, the caller's focus
+  and packet as creator, and the role's memory index. A parameter the role does
+  not declare refuses `E-RS-PARAM-UNKNOWN` (naming those it declares); a
+  required one left out refuses `E-RS-PARAM-MISSING` (naming each `--set`). It
+  writes nothing and launches nothing: in-process reads of the governance
+  worktree and the caller's `--packet` file. It also returns the role's
+  `default_seat` and `warnings` (a type with no governance seed).
+- `POST /v1/spawn` takes `as_role` (`{role, instance?, set?, focus?, packet?}`;
+  CLI `pij-rs spawn --as role:<id>[/<instance>] [--set <name>=<value>]...
+  [--focus <text>] [--packet <file>]`, plan 242) and needs the caller's
+  `caller` evidence: the creator must be a seat, as for `directory assign`.
+  Before any launch the daemon resolves the project from the spawn's `cwd`,
+  reads the role (missing, retired or `prime` refuses), fills its parameters
+  and assembles the first turn; a refusal names its `details.step` and launches
+  nothing. The role's `default_seat` model and effort apply when the spawn gives
+  none and runs the role's harness; the CLI reads its harness with `show
+  --first-turn` when `--harness` is omitted. `--as` with `role` refuses.
+- After the seat's row and before the bind wait, ONE writer commit records the
+  first turn at `community/roles/<id>/first-turns/<seat>.md` and the holding
+  (exactly one `directory assign`'s commit). Then the first turn is queued from
+  the creator, so it is the seat's first message at bind; then the role's queue
+  drains and the routing table is held for it. A refused commit rolls the spawn
+  back through the failed-row-write path: the seat's own pane is removed by id
+  and its row tombstoned; the refusal's `details.step` is `the one writer commit
+  (first turn and holding)`. This rollback is a policy: the commit's result
+  decides whether the spawn survives. Only a commit that did not land rolls back:
+  one that landed and then failed to index keeps the seat and warns with `pij
+  directory rebuild --project <slug>` (review of #345, N1). The answer's
+  `details` carries `role` (the commit, the first turn's path and message id)
+  and `warnings`; the CLI prints `first turn committed to governance: <path>`.
+- What the creator adds is committed to the governance branch, which may be
+  public. So `--packet` must resolve (links followed) inside the caller's
+  folder or the project's repo, else `E-RS-PACKET-OUTSIDE`; and a `--set`
+  value, `--focus` or packet line that looks like a secret (a name with KEY,
+  TOKEN, SECRET or PASSWORD then `=` or `:` and eight or more characters, or a
+  32-character run mixing upper case, lower case and digits) refuses
+  `E-RS-FIRST-TURN-SECRET`, naming the source and line, never the text. Both are
+  brakes: they only ever commit less. `show --first-turn` applies them too.
+- A keyed resend of a spawn with a role whose seat holds no such role (its
+  first send's commit never landed) answers with a warning naming the assign.
+- A spawn with no `as_role` launches as before and its `details.warning` says
+  how to start one in a role; the CLI prints it with the same spawn rewritten.
+- `directory seed <type> --shipped --why <text>` writes the shipped seed into
+  governance, so a spawn of that type no longer warns.
+- The view lists every live seat whose folder belongs to the project (the match
+  the caller's own folder takes) and holds no open holding there as an action
+  with `condition: "no-role"` and two commands: `pij directory assign '<role>'
+  <seat> --why '<why>' --project <slug>` and `pij close <seat>` (plan 243). The
+  project's prime and the machine's designated prime are never listed. It costs
+  two store reads and in-process folder matches per view; nothing polls it.
+- Anyone may add a role or start a seat in one, and pij refuses nothing on who
+  asks (plan 244). Each `add` and each `spawn --as` by a seat that is not the
+  project's prime (its own, else the machine's designated prime) holds the
+  prime one FYI: the role, its type, the creator and the reason (`--why`, or
+  the spawn's `--focus`), quoted on one line. A prime's own act sends nothing.
+  The answer carries it as `prime_told`. View role rows carry `created_by`
+  (the first changelog row's `by`) and each live holder its `assigned_by`.
+- `directory suggest <area> --signal <text>` records a seat suggestion in
+  `community/suggestions.json` (one writer commit; `sg-NNNN` ids) and holds or
+  wakes nothing. `suggest --answer <id> yes|no|not-yet --why <text>` records the
+  answer; yes and no are final, not-yet may be answered again. The view lists
+  every suggestion as `seat_suggestions`. Texts are one line, no control
+  characters. The shipped prime template v4 says: create the seat the work needs
+  when sure, ask the operator when not.
+
 Cost: `types` reads compiled-in bytes and at most one governance file; add,
 edit and seed are the writer's usual commit. No loop, poll or timer.
 
@@ -2683,6 +2757,8 @@ Send/probe errors or Held/Refused transport outcomes cannot be presented as succ
 ## Retirement and conservative reaping
 
 `pij close <seat>` is a self-or-recorded-parent tombstone, **not process termination or pane teardown**. A parentless seat whose recorded process is observed dead (or recycled) has no owner left to close it, so a project's designated prime (C24) may close it too (F175); anyone else still gets `E-RS-OWNERSHIP`. A close held for a memory turn rechecks the same rule against the row when the turn ends. The active roster excludes tombstones; history retains the reason/sequence. A parent repeat-close returns existing evidence. Retired self identity still refuses, naming tombstone evidence; it is not an authentication exception. There is no `--force` bypass.
+
+**`pij close <seat> --stop`** (HTTP `"stop": true`; PRD 007 req-12, plan 245) also takes the process down, and only when the seat is ready. First the recorded process must still run with its recorded start; any missing fact (no recorded process, a changed start, an unreadable one) refuses `E-RS-NOT-STOPPED` and changes nothing. A seat with nothing to remember (no holding in this context, or its note already written since its newest holding began) is closed and stopped at once. A holder gets its memory turn with one more line (`memory_turn::STOP_LINE`): pij stops it once its note is written. Ready means the turn ended with a `memory.note` from the seat; then the close runs and pij sends SIGTERM to the recorded pid only while that pid still has the recorded start (the liveness port checks again; never a name or pattern). The `memory.turn` event's `then` is `closed and stopped`, with `closed.stopped`. A turn that ends with no note, runs past the bound or is not delivered leaves the seat open and running, and the prime of each project the seat holds a role in (else the designated prime) gets one FYI naming the seat and why, even when that prime ran the close: its held answer came first. A cold seat (the send guard would refuse it) that would need a turn is sent nothing: `E-RS-NOT-STOPPED`, with the wake price in `details.why`, and the prime is told. The stop is a policy: the ready answer decides whether the process is stopped. Cost per `close --stop`: the existing memory turn, one or two start-time reads and one signal; no launch, loop, poll or timer. Without `--stop`, close is unchanged. `--stop` on a seat whose memory turn is already pending (asked for without `--stop`) refuses `E-RS-NOT-STOPPED`, saying to ask again once that turn ends.
 
 A close doesn't stop the process. Its answer says so in `data.process` (on a held close too), naming the pane when the seat has one: `pij close retires the seat; its process keeps running. To stop it, its parent runs: tmux kill-pane -t %N`. A parent that wants the process gone kills the pane after the close. That command is named only while the pane is still the seat's own (F175): its recorded process is alive with its recorded start, the pane's root process started no later than it (the reaper's rule for a reused pane id), and no other live seat is recorded on that pane (a native successor keeps its predecessor's process and pane). Pane ids come back after tmux restarts, so otherwise the answer says the pane is gone, or what runs there now (`Pane %N now runs <seat>, not this seat: nothing to kill.`), or that it could not be checked, and names no kill command. The check is one pane read, only over an already-live tmux control client (it never starts one or forks; without one, the pane counts as unchecked), plus in-process liveness and the registry. The closed seat can't register under its id again (see [owner-close continuity](#registration-and-tombstone-continuity)), so a process left running is a seat with no address, not a seat that comes back.
 

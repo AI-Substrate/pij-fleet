@@ -266,6 +266,61 @@ async fn try_notify_prime(
     Ok(json!({"sent": "fyi", "prime": prime, "msg_id": msg_id}))
 }
 
+/// PRD 007 req-07 (plan 244): hold one FYI for the project's prime (its own,
+/// else the machine's designated prime) saying what `actor` created. Nothing
+/// when the actor is that prime or it is not live: pij informs, it never
+/// refuses on who is asking. Never fails; the value says what happened.
+pub(crate) async fn tell_prime(
+    services: &Services,
+    project: &str,
+    actor: &SeatId,
+    body: String,
+) -> Value {
+    let found = async {
+        let own = services
+            .directory
+            .store()
+            .list_projects()
+            .await
+            .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
+            .into_iter()
+            .find(|known| known.slug == project)
+            .and_then(|known| known.prime_id);
+        let prime = match own {
+            Some(prime) => Some(prime),
+            None => designated_prime(services).await?,
+        };
+        let Some(prime) = prime else {
+            return Ok(json!({"sent": false, "reason": "the project has no prime"}));
+        };
+        if &prime == actor {
+            return Ok(json!({"sent": false, "reason": "the prime did it"}));
+        }
+        if !seat_live(services, &prime).await? {
+            return Ok(json!({"sent": false, "prime": prime, "reason": "the prime is not live"}));
+        }
+        let msg_id = hold(services, &prime, body, None).await?;
+        Ok::<_, Refusal>(json!({"sent": "fyi", "prime": prime, "msg_id": msg_id}))
+    };
+    match found.await {
+        Ok(outcome) => outcome,
+        Err(refusal) => {
+            eprintln!(
+                "pij-rs could not tell the prime of {project} what {actor} created: {refusal}"
+            );
+            json!({"sent": false, "reason": refusal.to_string()})
+        }
+    }
+}
+
+/// A seat's free text in a note pij sends: one line, bounded, escaped.
+pub(crate) fn quoted(text: &str) -> String {
+    format!(
+        "\"{}\"",
+        text.trim().escape_debug().take(300).collect::<String>()
+    )
+}
+
 /// Plan 229 (c-proxy-watch): hold one FYI with `body` for each live prime on
 /// this machine, once each: every project's own prime and the designated
 /// prime. Never fails; a store error is logged and sends nothing.
@@ -303,7 +358,7 @@ async fn try_notify_primes(services: &Services, body: String) -> Result<Value, R
 }
 
 /// The machine's current designated prime, if any.
-async fn designated_prime(services: &Services) -> Result<Option<SeatId>, Refusal> {
+pub(crate) async fn designated_prime(services: &Services) -> Result<Option<SeatId>, Refusal> {
     Ok(services
         .directory
         .store()

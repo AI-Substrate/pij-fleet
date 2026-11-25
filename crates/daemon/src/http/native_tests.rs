@@ -1101,6 +1101,7 @@ async fn native_spawn_wait_resolves_prebound_child_resuming_saved_session() {
             trust_folder: false,
             spawn_id: None,
             alt: None,
+            as_role: None,
         })
         .send();
     let register_child = async {

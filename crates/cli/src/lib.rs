@@ -26,7 +26,7 @@ pub mod roster;
 pub mod statusline;
 
 pub use client::{
-    CallerContext, DaemonClient, FederatedRoster, IdentityRequest, Phonehome, Registration,
+    AsRole, CallerContext, DaemonClient, FederatedRoster, IdentityRequest, Phonehome, Registration,
     ReviveRequest, SendRequest, SpawnRequest, StreamFrame, TailError, TailStream, setup_refusal,
 };
 

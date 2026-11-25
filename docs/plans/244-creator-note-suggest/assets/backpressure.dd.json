@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 244 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1,AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: a worker adds and starts a knowledge role; the prime has one FYI naming role, type, creator and reason; the view names the creator.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon creator"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: suggest, list, answer.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon suggest"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "templates test: the latest prime template carries the rule.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon templates"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Spawn with a role named (workstream 007 s03)",
+        "slug": "spawn-as-role",
+        "ordinal": 242,
+        "status": "ready",
+        "summary": "`pij spawn --as role:<id>[/<instance>]` launches a seat with the role's launch settings, assigns it the role and delivers its first turn, in one command, costing a plain spawn plus one writer commit. A spawn with no role still works and warns with the new form. A missing governance seed warns with the command that copies it.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "`pij spawn --as role:<id>[/<instance>]` launches a seat with the role's launch settings, assigns it the role and delivers its first turn, in one command, costing a plain spawn plus one writer commit. A spawn with no role still works and warns with the new form. A missing governance seed warns with the command that copies it."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "One step from a role to a briefed seat holding it."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Changing revive rules (unchanged); pods (PRD 008)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "CLI: `pij spawn --as role:<id>[/<instance>] [--set <name>=<value>]... [--focus <text>] [--packet <file>]`; `--harness` is optional with `--as` (the role's `default_seat.harness`, else refused naming it); `--model` and `--effort` default to the role's and a flag wins. `--as` with `--role pm|worker|pa` refuses (the role decides the seat role).",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Daemon, before any launch: the project and governance are resolved from the spawn's folder, the role read (missing or retired refuses), its parameters filled (plan 240) and the first turn assembled (plan 241). Every refusal here launches nothing and names its step.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "After the seat's row is written and before the bind wait, ONE writer commit records the first turn (`community/roles/<id>/first-turns/<seat>.md`) and the holding, then the store row; then the first turn is queued to the seat from its creator, so it is delivered at bind as the seat's first message. The seat receives nothing before that commit. A refused commit rolls the spawn back through the existing failed-row-write path, one code path: the spawn's own pane is removed and its row tombstoned, never by name or pattern; the refusal names the step. This rollback is a POLICY (the commit's result decides whether the spawn survives), not a brake.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "A spawn with no role named launches as before, exits zero, prints one warning with the same spawn rewritten with `--as role:<id>` and the command that records a role, and its JSON carries the warning as `warning`.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0005",
+          "claim": "When governance has no seed for the role's type, the spawn uses the shipped one, starts the seat, and warns naming the missing path and `pij directory seed <type> --shipped --why <text>`, which copies the shipped seed into governance; after it, no warning.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        },
+        {
+          "id": "ac-0006",
+          "claim": "Cost: the harness and tmux launch ops move exactly as for a plain spawn; the only other launches are the one writer commit (the same as one `pij directory assign` today). Nothing per tick; no loop, poll or timer.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0004"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Spawn with a role named (workstream 007 s03)",
+          "brief": "One phase on PR #345.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "spawn_seat and launch_owned in crates/daemon/src/http/mod.rs write the seat's row after tmux's new_window; a failed row write removes the pane. DirectoryService::assign_many commits the holders row; AssignRequest gains the extra file for the first turn."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A commit refused after launch leaves a stray pane.",
+          "likelihood": "Low",
+          "impact": "Medium",
+          "mitigation": "Rolled back through the one failed-row-write path; tested with an injected refusal."
+        },
+        {
+          "risk": "The first turn is long.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "Measured in the PR."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: the spawn's own launch as today plus one writer commit; no loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

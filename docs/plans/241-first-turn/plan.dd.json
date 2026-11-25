@@ -1,0 +1,100 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "The assembled first turn (workstream 007 s02)",
+        "slug": "first-turn",
+        "ordinal": 241,
+        "status": "ready",
+        "summary": "pij builds one first turn for a seat starting in a role: its type's definition and seed, the role's own text with parameters filled, the creator's focus or packet, and the role's memory index, each under its own heading with the line naming where it came from. `pij directory show <role> --first-turn` prints it and changes nothing.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "pij builds one first turn for a seat starting in a role: its type's definition and seed, the role's own text with parameters filled, the creator's focus or packet, and the role's memory index, each under its own heading with the line naming where it came from. `pij directory show <role> --first-turn` prints it and changes nothing."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A seat starts with one message that tells it what kind of seat it is, what its role is and what its role remembers."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Delivering it (plan 242 writes and delivers it at spawn)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`community::first_turn::assemble` (pure) returns the text and its parts. Parts, in order: the type (definition and the seed pij would use, PRD 006), the role (title, summary, rules, out of scope, forbidden paths and its standing packet, inline or the brief's text, with every `<name>` placeholder of a filled parameter replaced), the parameters, the creator's focus (`--focus`) and packet (`--packet <file>`), attributed to the creator, and the role's memory INDEX. Each part starts with a heading and a `source:` line (a governance path, a shipped path with its version, or the creator's seat).",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`pij directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>] [--packet <file>] [--instance <key>]` prints the turn, or `--json` its parts; it refuses as filling does (plan 240), writes nothing and launches nothing.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "A role with no type still assembles (the type part says it has none and names `pij directory retype`), so old communities can start seats.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "The assembled first turn (workstream 007 s02)",
+          "brief": "One phase on PR #345.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Seeds come from community::types::seed (governance first, else shipped). Memory INDEX from community::memory::read_index. Briefs are files in the governance worktree (role::check_brief)."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A large brief or memory index makes the first turn long.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "Parts are included whole; the prime trims the role's text. Measured in the PR."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: `--first-turn` is in-process reads of the governance worktree: 0 launches, nothing written. No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

@@ -1399,6 +1399,21 @@ pub trait LivenessPort: Send + Sync {
     async fn observed(&self, proc: ProcIdentity) -> Result<Option<u64>> {
         self.proc_start(proc.pid).await
     }
+
+    /// PRD 007 req-12: send SIGTERM to `proc` only while its pid still has
+    /// the recorded start time, never by name or pattern (AGENTS rule 6).
+    /// `Ok(false)` sends nothing: the process is gone, or its pid now belongs
+    /// to another. The default sends nothing and says so, so only a port that
+    /// can tell a recycled pid apart ever signals.
+    ///
+    /// # Errors
+    /// This port cannot signal; the start could not be read; the signal failed.
+    async fn terminate(&self, proc: ProcIdentity) -> Result<bool> {
+        Err(crate::error::PijError::Adapter {
+            adapter: "liveness".to_string(),
+            message: format!("this liveness port cannot signal pid {}", proc.pid),
+        })
+    }
 }
 
 /// Session facts (context size, last call, cache state) read from a seat's

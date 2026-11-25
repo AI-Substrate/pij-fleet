@@ -29,8 +29,12 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 34] = [
+const SINGLE: [&str; 38] = [
     "why",
+    "signal",
+    "answer",
+    "focus",
+    "instance",
     "into",
     "from",
     "show",
@@ -65,9 +69,10 @@ const SINGLE: [&str; 34] = [
     "note",
     "slug",
 ];
-const REPEATED: [&str; 21] = [
+const REPEATED: [&str; 22] = [
     "set",
     "type-change",
+    "param",
     "scope-path",
     "rule",
     "out-of-scope",
@@ -127,6 +132,10 @@ struct Arguments {
     seed: bool,
     /// `--apply` on `retype`: write the proposed types (PRD 006).
     apply: bool,
+    /// `--shipped` on `seed`: copy the seed pij ships (PRD 007 req-08).
+    shipped: bool,
+    /// `--first-turn` on `show`: print a role's first turn (PRD 007 req-03).
+    first_turn: bool,
     positions: Vec<String>,
     single: BTreeMap<String, String>,
     repeated: BTreeMap<String, Vec<String>>,
@@ -158,6 +167,8 @@ impl Arguments {
                             | "types"
                             | "seed"
                             | "retype"
+                            | "show"
+                            | "suggest"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -201,6 +212,26 @@ impl Arguments {
                     ));
                 }
                 call.apply = true;
+                continue;
+            }
+            if flag == "shipped" {
+                if call.leaf != "seed" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--shipped belongs to `seed`: pij directory seed <type> --shipped --why <text>",
+                    ));
+                }
+                call.shipped = true;
+                continue;
+            }
+            if flag == "first-turn" {
+                if call.leaf != "show" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--first-turn belongs to `show`: pij directory show <role> --first-turn",
+                    ));
+                }
+                call.first_turn = true;
                 continue;
             }
             if flag == "seed" {
@@ -347,7 +378,7 @@ impl Arguments {
         }
         if call.leaf == "seed"
             && (call.positions.len() != 1
-                || call.get("file").is_none()
+                || call.get("file").is_some() == call.shipped
                 || call
                     .single
                     .keys()
@@ -356,7 +387,66 @@ impl Arguments {
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "usage: pij directory seed <type> --file <path> --why <text> [--project <slug>]",
+                "usage: pij directory seed <type> (--file <path> | --shipped) --why <text> [--project <slug>]",
+            ));
+        }
+        if call.leaf == "show"
+            && (call.positions.len() != 1
+                || !call.first_turn
+                || call.single.keys().any(|flag| {
+                    !matches!(
+                        flag.as_str(),
+                        "project" | "actor" | "focus" | "packet" | "instance"
+                    )
+                })
+                || call.repeated.keys().any(|flag| flag != "set"))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory show <role> --first-turn [--set <name>=<value>]... [--focus <text>] [--packet <file>] [--instance <key>] [--project <slug>]",
+            ));
+        }
+        if call.leaf == "suggest"
+            && (call.positions.len() != 1
+                || call.single.keys().any(|flag| {
+                    !matches!(
+                        flag.as_str(),
+                        "project" | "actor" | "signal" | "answer" | "why"
+                    )
+                })
+                || !call.repeated.is_empty()
+                || (call.get("answer").is_some()
+                    == (call.get("signal").is_some() || call.get("why").is_none())))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory suggest <area> --signal <text> | pij directory suggest --answer <id> yes|no|not-yet --why <text> [--project <slug>]",
+            ));
+        }
+        if call.leaf != "suggest"
+            && ["signal", "answer"]
+                .iter()
+                .any(|flag| call.single.contains_key(*flag))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --signal and --answer belong to `suggest`",
+                    call.leaf
+                ),
+            ));
+        }
+        if call.leaf != "show"
+            && ["focus", "instance"]
+                .iter()
+                .any(|flag| call.single.contains_key(*flag))
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "directory {}: --focus and --instance belong to `show --first-turn`",
+                    call.leaf
+                ),
             ));
         }
         if call.leaf != "templates" && call.single.contains_key("show") {
@@ -407,10 +497,13 @@ impl Arguments {
                 ),
             ));
         }
-        if call.leaf != "edit" && call.repeated.contains_key("set") {
+        if !matches!(call.leaf.as_str(), "edit" | "show") && call.repeated.contains_key("set") {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                format!("directory {}: --set belongs to `edit`", call.leaf),
+                format!(
+                    "directory {}: --set belongs to `edit` and `show --first-turn`",
+                    call.leaf
+                ),
             ));
         }
         if call.leaf == "edit"
@@ -569,6 +662,16 @@ impl Arguments {
                 .map(|change| match change.split_once('=') {
                     Some((rule, why)) => (rule.trim().to_string(), why.trim().to_string()),
                     None => (change.trim().to_string(), String::new()),
+                })
+                .collect(),
+            parameters: self
+                .all("param")
+                .into_iter()
+                .map(|param| match param.split_once(':') {
+                    Some((name, "optional")) => (name.trim().to_string(), false),
+                    Some((name, "required")) => (name.trim().to_string(), true),
+                    // Anything else keeps the colon, so the name check refuses it.
+                    _ => (param.trim().to_string(), true),
                 })
                 .collect(),
             holders: self.get("holders"),
@@ -738,10 +841,12 @@ pub(crate) async fn handle(
         "types" => types(&state, &request.caller, &call).await,
         "seed" => seed(&state, &actor, &request.caller, &call).await,
         "retype" => retype(&state, &actor, &request.caller, &call).await,
+        "show" => show(&state, &actor, &request.caller, &call).await,
+        "suggest" => suggest(&state, &actor, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
-                    Ok((live, cache_proxy)) => {
+                    Ok((live, cache_proxy, folders)) => {
                         let mut view = state
                             .services
                             .directory
@@ -749,6 +854,7 @@ pub(crate) async fn handle(
                             .await;
                         if let Ok(data) = view.as_mut() {
                             how_dead_seats_ended(&state, data).await;
+                            seats_without_a_role(&state, &project, &folders, data).await;
                         }
                         view
                     }
@@ -766,14 +872,15 @@ pub(crate) async fn handle(
     }
 }
 
-/// The registered, untombstoned seats, and each live Copilot seat's
-/// cache-proxy route (plan 229): one registry read per view.
+/// The registered, untombstoned seats, each live Copilot seat's cache-proxy
+/// route (plan 229) and each live seat's folder: one registry read per view.
 async fn live_seats(
     state: &AppState,
 ) -> Result<
     (
         std::collections::HashSet<String>,
         std::collections::HashMap<String, pij_core::model::SeatCacheProxy>,
+        Vec<(String, String)>,
     ),
     Refusal,
 > {
@@ -790,8 +897,58 @@ async fn live_seats(
         .iter()
         .filter_map(|seat| Some((seat.id.to_string(), seat.cache_proxy_view()?)))
         .collect();
+    let folders = seats
+        .iter()
+        .map(|seat| (seat.id.to_string(), seat.folder.clone()))
+        .collect();
     let live = seats.into_iter().map(|seat| seat.id.to_string()).collect();
-    Ok((live, cache_proxy))
+    Ok((live, cache_proxy, folders))
+}
+
+/// PRD 007 req-06 (plan 243): every live seat whose folder belongs to
+/// `project` (the match the caller's own folder takes) and that holds no open
+/// holding there is a `no-role` action. The project's prime and the machine's
+/// designated prime are never listed. One store read for the holdings and one
+/// for the projects; each folder is matched in-process. Asked for, never polled.
+async fn seats_without_a_role(
+    state: &AppState,
+    project: &str,
+    folders: &[(String, String)],
+    view: &mut Value,
+) {
+    let store = state.services.directory.store();
+    let (Ok(projects), Ok(rows)) = (
+        store.list_projects().await,
+        store.assignments(project).await,
+    ) else {
+        return;
+    };
+    let held: std::collections::HashSet<&str> = rows
+        .iter()
+        .filter(|row| row.to.is_none())
+        .map(|row| row.seat.as_str())
+        .collect();
+    let designated = super::routes::designated_prime(&state.services)
+        .await
+        .ok()
+        .flatten()
+        .map(|seat| seat.to_string());
+    let primes = [view["prime"].as_str().map(str::to_string), designated];
+    let mut seats: Vec<String> = folders
+        .iter()
+        .filter(|(seat, _)| !held.contains(seat.as_str()))
+        .filter(|(seat, _)| !primes.iter().flatten().any(|prime| prime == seat))
+        .filter(|(_, folder)| {
+            Path::new(folder).is_absolute()
+                && match_project(projects.clone(), Path::new(folder))
+                    .is_ok_and(|found| found.slug == project)
+        })
+        .map(|(seat, _)| seat.clone())
+        .collect();
+    seats.sort();
+    if let Some(actions) = view["actions"].as_array_mut() {
+        actions.extend(crate::community::picture::no_role(project, &seats));
+    }
 }
 
 /// F227: each open holding on a seat that is not live gets how its seat ended
@@ -961,6 +1118,7 @@ async fn add(
     crate::community::root::find(&repo)?;
     let mut files = Vec::new();
     let mut ids = Vec::new();
+    let mut kinds = Vec::new();
     for (id, document) in documents {
         let paths = RolePaths::new(&id)?;
         if ids.contains(&id) {
@@ -970,6 +1128,11 @@ async fn add(
             ));
         }
         crate::community::types::check_role(&id, &document, true)?;
+        kinds.push(
+            crate::community::types::of_role(&document)
+                .unwrap_or("none")
+                .to_string(),
+        );
         let document = role::stamp(document, &id, actor, &why, &date)?;
         let dir = paths
             .document
@@ -1040,7 +1203,56 @@ async fn add(
         data["id"] = only["id"].clone();
         data["path"] = only["path"].clone();
     }
+    // PRD 007 req-07: anyone may add a role; the prime is told.
+    let added: Vec<String> = ids
+        .iter()
+        .zip(&kinds)
+        .map(|(id, kind)| format!("{id} ({})", pij_core::render::word(kind)))
+        .collect();
+    data["prime_told"] = super::routes::tell_prime(
+        &state.services,
+        &project,
+        &SeatId::from(actor),
+        format!(
+            "pij: {} added role {} in project {project}: {}",
+            pij_core::render::seat(actor),
+            added.join(", "),
+            super::routes::quoted(&why)
+        ),
+    )
+    .await;
     Ok(data)
+}
+
+/// `directory suggest <area> --signal <text>`, or `suggest --answer <id>
+/// <yes|no|not-yet> --why <text>` (PRD 007 req-08, plan 244): one writer
+/// commit to `community/suggestions.json`. It wakes no one; the view lists them.
+async fn suggest(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    use crate::community::suggestions::Change;
+    let change = match call.get("answer") {
+        Some(id) => Change::Answer {
+            id,
+            answer: call.positions[0].clone(),
+            why: call.get("why").unwrap_or_default(),
+        },
+        None => Change::Raise {
+            area: call.positions[0].clone(),
+            signal: call.get("signal").unwrap_or_default(),
+        },
+    };
+    crate::community::suggestions::check(&change)?;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let (written, row) = state
+        .services
+        .directory
+        .suggest(&project, repo, actor, change)
+        .await?;
+    Ok(json!({"project": project, "commit": written.commit, "suggestion": row}))
 }
 
 /// Record the store pointers for the documents a write committed.
@@ -1320,6 +1532,104 @@ async fn types(
     Ok(json!({"seed": types::seed(worktree.as_deref(), type_id)?}))
 }
 
+/// `directory show <role> --first-turn` (PRD 007 req-03, plan 241): the first
+/// turn a seat starting in the role would get, with the caller as its
+/// creator. Reads the governance worktree and `--packet`'s file in-process;
+/// writes nothing and launches nothing.
+async fn show(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    use crate::community::first_turn;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let root = crate::community::root::find(&repo)?;
+    let creator = first_turn::Creator {
+        seat: actor.as_str().to_string(),
+        focus: call.get("focus"),
+        packet: call
+            .get("packet")
+            .map(|file| read_packet(caller, &file, &repo))
+            .transpose()?,
+    };
+    let instance = call.get("instance").unwrap_or_default();
+    let role_id = &call.positions[0];
+    let start = first_turn::start(
+        &root.worktree,
+        role_id,
+        &instance,
+        &parameter_sets(&call.all("set"))?,
+        &creator,
+    )?;
+    let mut data = serde_json::to_value(&start).expect("a first turn serialises");
+    data["project"] = json!(project);
+    data["role"] = json!(role_id);
+    data["instance"] = json!((!instance.is_empty()).then_some(instance));
+    Ok(data)
+}
+
+/// A `--packet` file outside the caller's folder and the project's repo
+/// (review of #345, N5).
+pub const E_PACKET_OUTSIDE: &str = "E-RS-PACKET-OUTSIDE";
+
+/// `--set <name>=<value>` values as pairs, in the order given.
+pub(super) fn parameter_sets(sets: &[String]) -> Result<Vec<(String, String)>, Refusal> {
+    sets.iter()
+        .map(|set| {
+            set.split_once('=')
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .ok_or_else(|| {
+                    Refusal::new(
+                        "E-RS-ARG",
+                        format!("--set {set:?}: give it as <name>=<value>"),
+                    )
+                })
+        })
+        .collect()
+}
+
+/// A `--packet <file>` named by the caller: `(the name as given, its text)`.
+/// Review of #345, N5: its text is committed to the governance branch, which
+/// may be public, so the file must sit inside the caller's folder or the
+/// project's repo once links are followed. A BRAKE: it only ever reads less.
+pub(super) fn read_packet(
+    caller: &CallerContext,
+    file: &str,
+    repo: &Path,
+) -> Result<(String, String), Refusal> {
+    let path = caller_path(caller, file)?;
+    let real = std::fs::canonicalize(&path).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("--packet: cannot read {}: {error}", path.display()),
+        )
+    })?;
+    let inside = |root: Option<&Path>| {
+        root.and_then(|root| std::fs::canonicalize(root).ok())
+            .is_some_and(|root| real.starts_with(root))
+    };
+    let folder = caller.cwd.as_deref().map(Path::new);
+    if !inside(folder) && !inside(Some(repo)) {
+        return Err(Refusal::new(
+            E_PACKET_OUTSIDE,
+            format!(
+                "--packet {}: the file is outside your folder and the project's repo; its text would be committed to the governance branch",
+                real.display()
+            ),
+        )
+        .with_next("Copy what the seat needs into a file in your folder or the repo, then pass that"));
+    }
+    std::fs::read_to_string(&real)
+        .map(|text| (file.to_string(), text))
+        .map_err(|error| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!("--packet: cannot read {}: {error}", path.display()),
+            )
+        })
+}
+
 /// `directory retype [--apply --why <text>]` (PRD 006 req-07, plan 238): the
 /// type each role written before types would get, and those it cannot
 /// decide with the edit that types each. `--apply` writes the decided ones in
@@ -1376,12 +1686,20 @@ async fn seed(
             )
         })?;
     let file = call.get("file").unwrap_or_default();
-    let bytes = std::fs::read(caller_path(caller, &file)?).map_err(|error| {
-        Refusal::new(
-            "E-RS-ARG",
-            format!("--file {file:?} is not readable: {error}"),
-        )
-    })?;
+    let bytes = if call.shipped {
+        types::seed(None, type_id)?["text"]
+            .as_str()
+            .unwrap_or_default()
+            .as_bytes()
+            .to_vec()
+    } else {
+        std::fs::read(caller_path(caller, &file)?).map_err(|error| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!("--file {file:?} is not readable: {error}"),
+            )
+        })?
+    };
     if String::from_utf8_lossy(&bytes).trim().is_empty() {
         return Err(Refusal::new(
             "E-RS-ARG",
@@ -1635,6 +1953,7 @@ async fn hold(
                 actor: actor.clone(),
                 why,
                 machine: state.machine_alias.clone(),
+                first_turn: None,
             })
             .await?
     } else {
@@ -1943,6 +2262,7 @@ async fn assign_batch(
                 actor: actor.clone(),
                 why: why.clone(),
                 machine: state.machine_alias.clone(),
+                first_turn: None,
             }),
         }
     }

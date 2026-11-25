@@ -1808,11 +1808,15 @@ async fn real_ddocs_validates_what_assign_release_and_external_write() {
 mod review;
 
 /// Every FYI held for `recipient`, as `(sender, body)`, oldest first.
+/// The FYIs held for `recipient`, oldest first, leaving out PRD 007's creator
+/// notes (`pij: <seat> added role ...` / `... started <seat> in role ...`),
+/// which every add by a seat other than the prime now holds for the prime;
+/// `reshape::role_start` tests those.
 async fn fyis(rig: &Rig, recipient: &str) -> Vec<(String, String)> {
     let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", rig._fresh.path()))
         .await
         .unwrap();
-    let rows = sqlx::query_as(
+    let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT sender, body FROM fyis WHERE recipient = ?1 ORDER BY held_at_ms, id",
     )
     .bind(recipient)
@@ -1820,7 +1824,12 @@ async fn fyis(rig: &Rig, recipient: &str) -> Vec<(String, String)> {
     .await
     .unwrap();
     pool.close().await;
-    rows
+    rows.into_iter()
+        .filter(|(_, body)| {
+            !(body.starts_with("pij: ")
+                && (body.contains(" added role ") || body.contains(" in role ")))
+        })
+        .collect()
 }
 
 /// Plan 201: a compact to a role holder is held for its memory turn and
@@ -1991,7 +2000,12 @@ async fn role_changes_regenerate_routes_in_their_commit_and_tell_the_prime_once(
     assert_eq!(routes["added"].as_array().unwrap().len(), 2, "{routes}");
     assert_eq!(routes["prime"]["sent"], "fyi", "{routes}");
     assert!(added["data"].get("warnings").is_none(), "{added}");
-    let prime = fyis(&rig, "pij-second").await;
+    // The add also holds its creator note (PRD 007 req-07); this is the routes notice.
+    let prime: Vec<(String, String)> = fyis(&rig, "pij-second")
+        .await
+        .into_iter()
+        .filter(|(_, body)| !body.starts_with("pij: "))
+        .collect();
     assert_eq!(prime.len(), 1, "{prime:?}");
     assert_eq!(prime[0].0, "pij-bg");
     assert!(
@@ -2125,8 +2139,16 @@ async fn routes_on_demand_and_write_only_when_stale() {
         ".harness/government/community/ROUTES.md"
     );
     assert_eq!(written["data"]["stale"], false);
-    // No row changed, so the prime hears only of the one role add.
-    assert_eq!(fyis(&rig, "pij-second").await.len(), 1);
+    // No row changed, so the prime hears only of the one role add (its
+    // routes notice; the add's creator note is PRD 007's).
+    assert_eq!(
+        fyis(&rig, "pij-second")
+            .await
+            .iter()
+            .filter(|(_, body)| !body.starts_with("pij: "))
+            .count(),
+        1
+    );
 
     let refused = call(
         rig.addr,

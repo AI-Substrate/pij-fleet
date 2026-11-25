@@ -8,6 +8,7 @@
 
 pub mod ddocs;
 pub mod directory;
+pub mod first_turn;
 pub mod gh;
 mod git;
 pub mod holders;
@@ -19,6 +20,7 @@ pub mod pointer;
 pub mod role;
 pub mod root;
 pub mod routes;
+pub mod suggestions;
 pub mod templates;
 pub mod types;
 pub mod writer;

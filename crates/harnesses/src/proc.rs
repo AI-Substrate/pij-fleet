@@ -103,6 +103,28 @@ impl LivenessPort for ProcLiveness {
         })?;
         classify(pid, output)
     }
+
+    async fn terminate(&self, proc: pij_core::model::ProcIdentity) -> Result<bool> {
+        if self.proc_start(proc.pid).await? != Some(proc.proc_start) {
+            return Ok(false);
+        }
+        let raw = i32::try_from(proc.pid)
+            .ok()
+            .filter(|raw| *raw > 1)
+            .ok_or_else(|| PijError::Adapter {
+                adapter: ADAPTER.to_string(),
+                message: format!("refusing to signal pid {}", proc.pid),
+            })?;
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(raw),
+            nix::sys::signal::Signal::SIGTERM,
+        )
+        .map(|()| true)
+        .map_err(|error| PijError::Adapter {
+            adapter: ADAPTER.to_string(),
+            message: format!("could not signal pid {}: {error}", proc.pid),
+        })
+    }
 }
 
 /// What the kernel says about a pid, read without launching anything.
@@ -635,6 +657,39 @@ fn parse_error(row: &str) -> PijError {
 
 #[cfg(test)]
 mod tests {
+    /// PRD 007 req-12, review of #345 N2: `terminate` signals a pid only while
+    /// it still has the recorded start. A wrong start (a recycled pid) sends
+    /// nothing; the right one sends SIGTERM.
+    #[test]
+    fn terminate_signals_only_the_process_with_the_recorded_start() {
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("a child to stop");
+        let liveness = ProcLiveness::new();
+        let pid = child.id();
+        let start = block_on(liveness.proc_start(pid))
+            .unwrap()
+            .expect("the child's start");
+        let recycled = pij_core::model::ProcIdentity {
+            pid,
+            proc_start: start + 1,
+        };
+        assert!(!block_on(liveness.terminate(recycled)).unwrap());
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let alive = child.try_wait().unwrap().is_none();
+        if !alive {
+            panic!("a wrong start time must send nothing");
+        }
+        let own = pij_core::model::ProcIdentity {
+            pid,
+            proc_start: start,
+        };
+        assert!(block_on(liveness.terminate(own)).unwrap());
+        let status = child.wait().unwrap();
+        assert_eq!(status.signal(), Some(15), "{status:?}");
+    }
+
     /// Plan 156 ruling 2: a session is derived only from the observed process's
     /// own record; a record whose start disagrees (a recycled pid) derives nothing.
     #[test]

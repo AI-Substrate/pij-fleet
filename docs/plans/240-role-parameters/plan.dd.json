@@ -1,0 +1,100 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Launch settings and parameters on a role (workstream 007 s01)",
+        "slug": "role-parameters",
+        "ordinal": 240,
+        "status": "ready",
+        "summary": "A role records the harness, model and effort its holder runs on (the existing `default_seat`) and the parameters it needs filled at start, each required or optional. Filling them refuses an unknown name and names every missing required one.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "A role records the harness, model and effort its holder runs on (the existing `default_seat`) and the parameters it needs filled at start, each required or optional. Filling them refuses an unknown name and names every missing required one."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A role says how to launch its holder and what it needs to start."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Starting a seat (plan 242) and the first turn (plan 241)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`pij directory add` and `edit` take `--param <name>` (required) and `--param <name>:optional`, repeatable, written to a new `parameters` section (`{name, need}`), with the existing `--harness`, `--model` and `--effort` in `default_seat`. A parameter name takes the instance-key grammar; a repeated name refuses.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`role::fill_parameters(document, sets)` returns the filled values in declaration order; it refuses `E-RS-PARAM-UNKNOWN` for a `--set` the role does not declare (listing the declared ones) and `E-RS-PARAM-MISSING` naming every required one left out. A value is one line.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "The role schema carries `parameters`; `pij directory add --help` and the API doc describe it.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Launch settings and parameters on a role (workstream 007 s01)",
+          "brief": "One phase on PR #345.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Role documents: crates/daemon/src/community/role.rs and the add/edit flag lists in crates/daemon/src/http/directory.rs. `default_seat` already holds harness, model and effort."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A role's parameters drift from its text's placeholders.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "Plan 241 fills `<name>` placeholders and leaves unknown ones as they are."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: on demand only: add and edit are the writer's usual commit; filling is in-process. No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,583 @@
+//! The assembled first turn (PRD 007 req-03 to req-05, blueprint 005
+//! c-first-turn): the one message a seat starting in a role receives. Its
+//! parts, in order: the seat's type (definition and seed, PRD 006), the role's
+//! own text with its parameters filled, the parameters, what the creator added
+//! (focus and packet), and the role's memory index. Each part carries the line
+//! naming where it came from.
+//!
+//! [`assemble`] is pure. [`load`] reads the governance worktree in-process
+//! (no launch). Cost: a handful of file reads per call; no loop, poll or timer.
+
+use std::path::Path;
+
+use serde::Serialize;
+use serde_json::Value;
+
+use super::Refusal;
+use super::layout::RolePaths;
+use super::{memory, role, types};
+
+/// One part of a first turn.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Part {
+    /// The part's heading.
+    pub heading: String,
+    /// Where it came from: a governance path, a shipped path, or a seat.
+    pub source: String,
+    /// The text itself.
+    pub text: String,
+}
+
+/// What the creator added at start (PRD 007 req-04).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Creator {
+    /// The creating seat.
+    pub seat: String,
+    /// `--focus`: a line or two.
+    pub focus: Option<String>,
+    /// `--packet <file>`: the file's name as given, and its text.
+    pub packet: Option<(String, String)>,
+}
+
+/// Everything [`assemble`] reads, gathered by [`load`] (or a test).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sources {
+    /// The role id.
+    pub role: String,
+    /// The role document.
+    pub document: Value,
+    /// The role document's governance path.
+    pub document_path: String,
+    /// The type's seed as [`types::seed`] answers it, when the role is typed.
+    pub seed: Option<Value>,
+    /// The standing packet's brief, `(path, text)`, when it is a brief.
+    pub brief: Option<(String, String)>,
+    /// The role's memory index, `(path, text)`.
+    pub memory: Option<(String, String)>,
+}
+
+/// Read role `id`'s sources from the governance worktree.
+///
+/// # Errors
+/// [`super::directory::E_ROLE_MISSING`] for a role with no readable document;
+/// a brief that is not a readable file in the worktree
+/// ([`super::E_BRIEF_MISSING`]); an unreadable seed.
+pub fn load(worktree: &Path, id: &str) -> Result<Sources, Refusal> {
+    let paths = RolePaths::new(id)?;
+    let bytes = std::fs::read(worktree.join(&paths.document)).map_err(|_| {
+        Refusal::new(
+            super::directory::E_ROLE_MISSING,
+            format!("role {id:?} does not exist in this project's directory"),
+        )
+        .with_next(format!(
+            "Add it first: pij directory add {id} --type <type> --why <text> ..."
+        ))
+    })?;
+    let document: Value = serde_json::from_slice(&bytes).map_err(|error| {
+        Refusal::new(
+            "E-RS-ARG",
+            format!("role {id:?}'s document is not JSON: {error}"),
+        )
+    })?;
+    super::directory::refuse_retired(id, &role::standing(&document))?;
+    let seed = types::of_role(&document)
+        .map(|kind| types::seed(Some(worktree), kind))
+        .transpose()?;
+    role::check_brief(&bytes, worktree)?;
+    let brief = role_section(&document, "standing_packet")
+        .filter(|packet| packet["source"] == "brief")
+        .and_then(|packet| packet["brief"].as_str())
+        .and_then(|path| {
+            std::fs::read_to_string(worktree.join(path))
+                .ok()
+                .map(|text| (path.to_string(), text))
+        });
+    let memory = memory::read_index(worktree, id).ok().and_then(|index| {
+        Some((
+            index["path"].as_str()?.to_string(),
+            index["index"].as_str()?.to_string(),
+        ))
+    });
+    Ok(Sources {
+        role: id.to_string(),
+        document,
+        document_path: paths.document.display().to_string(),
+        seed,
+        brief,
+        memory,
+    })
+}
+
+/// What starting a seat in a role needs, read before any launch.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Start {
+    /// The whole first turn.
+    pub first_turn: String,
+    /// Its parts, in order.
+    pub parts: Vec<Part>,
+    /// The role's launch settings (`default_seat`: harness, model, effort),
+    /// `{}` when it names none (PRD 007 req-06).
+    pub default_seat: Value,
+    /// Things to say that start nothing: a type with no governance seed.
+    pub warnings: Vec<String>,
+    /// The role's type, when it names one.
+    pub role_type: Option<String>,
+}
+
+/// Role `id`'s first turn as a seat starting in it would get it: [`load`],
+/// then the `--set` values checked against the role's parameters
+/// ([`role::fill_parameters`]), then [`assemble`]; with the role's launch
+/// settings and what to warn. Writes nothing.
+///
+/// # Errors
+/// What [`load`] and [`role::fill_parameters`] refuse; `E-RS-ARG` for an
+/// instance key outside the name grammar.
+pub fn start(
+    worktree: &Path,
+    id: &str,
+    instance: &str,
+    sets: &[(String, String)],
+    creator: &Creator,
+) -> Result<Start, Refusal> {
+    if !instance.is_empty() {
+        super::layout::check_instance(instance)?;
+    }
+    refuse_secrets(sets, creator)?;
+    let sources = load(worktree, id)?;
+    let filled = role::fill_parameters(id, &sources.document, sets)?;
+    let (first_turn, parts) = assemble(&sources, instance, &filled, creator);
+    let warnings = sources
+        .seed
+        .iter()
+        .filter(|seed| seed["source"] == "shipped")
+        .map(|seed| {
+            let kind = seed["type"].as_str().unwrap_or_default();
+            format!(
+                "this repo has no seed for {kind} at {}, so pij used the one it ships; to keep that one here: pij directory seed {kind} --shipped --why <text>",
+                types::seed_path(kind).display()
+            )
+        })
+        .collect();
+    Ok(Start {
+        first_turn,
+        parts,
+        default_seat: role_section(&sources.document, "default_seat")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+        warnings,
+        role_type: types::of_role(&sources.document).map(str::to_string),
+    })
+}
+
+fn role_section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
+    document["sections"]
+        .as_array()?
+        .iter()
+        .find(|section| section["name"] == name)
+        .map(|section| &section["value"])
+}
+
+fn strings(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A creator's text that looks like a secret (review of #345, N5).
+pub const E_SECRET: &str = "E-RS-FIRST-TURN-SECRET";
+
+/// The 1-based line of `text` that looks like a secret: a name holding KEY,
+/// TOKEN, SECRET or PASSWORD followed by `=` or `:` and a value of eight or
+/// more characters, or a run of 32 or more key characters mixing upper case,
+/// lower case and digits. A seat id, a commit hash or a UUID has no upper
+/// case, so it never matches.
+pub fn secret_line(text: &str) -> Option<usize> {
+    const NAMES: [&str; 4] = ["KEY", "TOKEN", "SECRET", "PASSWORD"];
+    let assigned = |line: &str| {
+        let upper = line.to_ascii_uppercase();
+        NAMES.iter().any(|name| {
+            upper.match_indices(name).any(|(at, _)| {
+                let rest = upper[at + name.len()..]
+                    .trim_start_matches(|ch: char| ch.is_ascii_alphanumeric() || ch == '_')
+                    .trim_start();
+                let Some(value) = rest.strip_prefix(['=', ':']) else {
+                    return false;
+                };
+                let value: String = value
+                    .trim_start()
+                    .trim_start_matches(['"', '\''])
+                    .chars()
+                    .take_while(|ch| !ch.is_whitespace() && !matches!(ch, '"' | '\''))
+                    .collect();
+                value.chars().count() >= 8 && !value.starts_with('<')
+            })
+        })
+    };
+    let run = |line: &str| {
+        line.split(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '_' | '-')))
+            .any(|word| {
+                word.len() >= 32
+                    && word.chars().any(|ch| ch.is_ascii_uppercase())
+                    && word.chars().any(|ch| ch.is_ascii_lowercase())
+                    && word.chars().any(|ch| ch.is_ascii_digit())
+            })
+    };
+    text.lines()
+        .position(|line| assigned(line) || run(line))
+        .map(|index| index + 1)
+}
+
+/// Refuse a first turn whose creator text looks like a secret: the parts
+/// the creator adds (`--set` values, `--focus`, `--packet`) are committed to
+/// the governance branch, which may be public. A BRAKE: it only ever commits
+/// less. The refusal names where, never the text.
+fn refuse_secrets(sets: &[(String, String)], creator: &Creator) -> Result<(), Refusal> {
+    let mut parts: Vec<(String, &str)> = sets
+        .iter()
+        .map(|(name, value)| (format!("--set {name}"), value.as_str()))
+        .collect();
+    if let Some(focus) = &creator.focus {
+        parts.push(("--focus".to_string(), focus));
+    }
+    if let Some((file, text)) = &creator.packet {
+        parts.push((format!("--packet {file}"), text));
+    }
+    for (source, text) in parts {
+        if let Some(line) = secret_line(text) {
+            return Err(Refusal::new(
+                E_SECRET,
+                format!(
+                    "{source}, line {line}, looks like a secret (a key, token or password); the first turn is committed to the governance branch"
+                ),
+            )
+            .with_next("Take the secret out and point the seat at where it lives instead"));
+        }
+    }
+    Ok(())
+}
+
+/// `text` with each filled parameter's `<name>` placeholder replaced.
+pub fn fill(text: &str, filled: &[(String, String)]) -> String {
+    filled.iter().fold(text.to_string(), |text, (name, value)| {
+        text.replace(&format!("<{name}>"), value)
+    })
+}
+
+fn bullets(title: &str, items: &[String], filled: &[(String, String)]) -> String {
+    if items.is_empty() {
+        return String::new();
+    }
+    let mut out = format!("\n{title}:\n");
+    for item in items {
+        out.push_str(&format!("- {}\n", fill(item, filled)));
+    }
+    out
+}
+
+/// The first turn for a seat starting in `sources.role` (instance
+/// `instance`, empty for none), with `filled` parameters and what `creator`
+/// added: the whole text, and its parts.
+pub fn assemble(
+    sources: &Sources,
+    instance: &str,
+    filled: &[(String, String)],
+    creator: &Creator,
+) -> (String, Vec<Part>) {
+    let document = &sources.document;
+    let meta = role_section(document, "meta")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let mut parts = Vec::new();
+
+    match types::of_role(document).and_then(|kind| types::get(kind).ok()) {
+        Some(def) => {
+            let shown = def.show();
+            let mut text = format!(
+                "You are a {} seat ({}).\n\n{}\n\nLifecycle: {}\nKeeps: {}\n\nRules of your type:\n",
+                def.id,
+                shown["title"].as_str().unwrap_or(&def.id),
+                shown["purpose"].as_str().unwrap_or_default(),
+                shown["lifecycle"].as_str().unwrap_or_default(),
+                shown["keeps"].as_str().unwrap_or_default(),
+            );
+            for rule in &def.rules {
+                text.push_str(&format!(
+                    "- {} ({}){}\n",
+                    rule.text,
+                    if rule.fixed { "fixed" } else { "default" },
+                    changed(document, &rule.id)
+                        .map(|why| format!("; your role changes it: {why}"))
+                        .unwrap_or_default()
+                ));
+            }
+            if let Some(seed) = &sources.seed {
+                text.push('\n');
+                text.push_str(seed["text"].as_str().unwrap_or_default().trim_end());
+                text.push('\n');
+            }
+            let seed_source = sources
+                .seed
+                .as_ref()
+                .map(|seed| {
+                    format!(
+                        "; seed {} ({})",
+                        seed["path"].as_str().unwrap_or("?"),
+                        seed["source"].as_str().unwrap_or("?")
+                    )
+                })
+                .unwrap_or_default();
+            parts.push(Part {
+                heading: format!("Your seat type: {}", def.id),
+                source: format!("{} (shipped v{}){seed_source}", shown["path"].as_str().unwrap_or("?"), def.version),
+                text,
+            });
+        }
+        None => parts.push(Part {
+            heading: "Your seat type: none recorded".to_string(),
+            source: sources.document_path.clone(),
+            text: format!(
+                "Role {} was written before seat types and names none. The prime gives it one with `pij directory retype` or `pij directory edit {} --set type=<type>`.\n",
+                sources.role, sources.role
+            ),
+        }),
+    }
+
+    let address = if instance.is_empty() {
+        sources.role.clone()
+    } else {
+        format!("{}/{instance}", sources.role)
+    };
+    let mut text = format!(
+        "You hold role {address}: {}.\n",
+        meta["title"].as_str().unwrap_or(&sources.role)
+    );
+    if let Some(summary) = meta["summary"].as_str() {
+        text.push_str(&format!("\n{}\n", fill(summary, filled)));
+    }
+    let scope = role_section(document, "scope");
+    text.push_str(&bullets(
+        "Rules",
+        &strings(scope.map(|scope| &scope["rules"])),
+        filled,
+    ));
+    text.push_str(&bullets(
+        "Paths you own",
+        &strings(scope.map(|scope| &scope["paths"])),
+        filled,
+    ));
+    text.push_str(&bullets(
+        "Out of scope",
+        &strings(role_section(document, "out_of_scope")),
+        filled,
+    ));
+    text.push_str(&bullets(
+        "Never touch",
+        &strings(role_section(document, "forbidden_paths")),
+        filled,
+    ));
+    let mut source = sources.document_path.clone();
+    match (&sources.brief, role_section(document, "standing_packet")) {
+        (Some((path, brief)), _) => {
+            text.push_str(&format!("\n{}\n", fill(brief, filled).trim_end()));
+            source.push_str(&format!("; brief {path}"));
+        }
+        (None, Some(packet)) => {
+            if let Some(inline) = packet["text"].as_str() {
+                text.push_str(&format!("\n{}\n", fill(inline, filled).trim_end()));
+            }
+        }
+        (None, None) => {}
+    }
+    parts.push(Part {
+        heading: format!("Your role: {address}"),
+        source,
+        text,
+    });
+
+    if !filled.is_empty() {
+        parts.push(Part {
+            heading: "Parameters".to_string(),
+            source: format!("set at start by {}", creator.seat),
+            text: filled
+                .iter()
+                .map(|(name, value)| format!("- {name} = {value}\n"))
+                .collect(),
+        });
+    }
+    if let Some(focus) = &creator.focus {
+        parts.push(Part {
+            heading: format!("Focus from {}", creator.seat),
+            source: format!("--focus by {}", creator.seat),
+            text: format!("{}\n", focus.trim_end()),
+        });
+    }
+    if let Some((file, packet)) = &creator.packet {
+        parts.push(Part {
+            heading: format!("Packet from {}", creator.seat),
+            source: format!("--packet {file} by {}", creator.seat),
+            text: format!("{}\n", packet.trim_end()),
+        });
+    }
+    if let Some((path, index)) = &sources.memory {
+        parts.push(Part {
+            heading: format!("What role {} remembers", sources.role),
+            source: path.clone(),
+            text: format!(
+                "{}\n\nRead a note with `pij directory memory {} --note <slug>`.\n",
+                index.trim_end(),
+                sources.role
+            ),
+        });
+    }
+
+    let mut whole = format!("# First turn: role {address}\n");
+    for part in &parts {
+        whole.push_str(&format!(
+            "\n## {}\nsource: {}\n\n{}",
+            part.heading, part.source, part.text
+        ));
+    }
+    (whole, parts)
+}
+
+fn changed<'a>(document: &'a Value, rule: &str) -> Option<&'a str> {
+    role_section(document, "type_changes")?
+        .as_array()?
+        .iter()
+        .find(|row| row["rule"] == rule)?["why"]
+        .as_str()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn sources(document: Value) -> Sources {
+        Sources {
+            role: "notes".into(),
+            seed: types::of_role(&document).map(|kind| types::seed(None, kind).unwrap()),
+            document,
+            document_path: ".harness/government/community/roles/notes/role.dd.json".into(),
+            brief: None,
+            memory: Some((
+                ".harness/government/community/roles/notes/memory/INDEX.md".into(),
+                "# notes memory\n- [first call](2026-11-01-first.dd.md)\n".into(),
+            )),
+        }
+    }
+
+    fn document() -> Value {
+        json!({"sections": [
+            {"name": "meta", "value": {"id": "notes", "title": "Note taker", "type": "reviewer",
+                "summary": "Takes notes for <subject>."}},
+            {"name": "scope", "value": {"paths": [], "rules": ["Write one note per <subject> call."]}},
+            {"name": "type_changes", "value": [{"rule": "compact-after-job", "why": "keeps the call's context"}]},
+            {"name": "standing_packet", "value": {"source": "inline", "text": "Publish to <session>."}},
+        ]})
+    }
+
+    #[test]
+    fn the_first_turn_is_type_role_parameters_creator_then_memory_each_with_its_source() {
+        let filled = vec![
+            ("subject".to_string(), "acme".to_string()),
+            ("session".to_string(), "/tmp/s1".to_string()),
+        ];
+        let creator = Creator {
+            seat: "pij-brisk-marten".into(),
+            focus: Some("Start with the agenda.".into()),
+            packet: Some(("packet.md".into(), "Bring last week's actions.".into())),
+        };
+        let (text, parts) = assemble(&sources(document()), "", &filled, &creator);
+        let headings: Vec<&str> = parts.iter().map(|part| part.heading.as_str()).collect();
+        assert_eq!(
+            headings,
+            [
+                "Your seat type: reviewer",
+                "Your role: notes",
+                "Parameters",
+                "Focus from pij-brisk-marten",
+                "Packet from pij-brisk-marten",
+                "What role notes remembers",
+            ]
+        );
+        assert!(
+            parts[0]
+                .source
+                .contains("templates/types/reviewer/v1/type.dd.json")
+        );
+        assert!(
+            parts[0]
+                .source
+                .contains("seed templates/types/reviewer/v1/seed.md (shipped)")
+        );
+        assert!(
+            parts[0]
+                .text
+                .contains("your role changes it: keeps the call's context")
+        );
+        assert!(
+            parts[1].text.contains("Takes notes for acme."),
+            "{}",
+            parts[1].text
+        );
+        assert!(parts[1].text.contains("Write one note per acme call."));
+        assert!(parts[1].text.contains("Publish to /tmp/s1."));
+        assert_eq!(parts[3].source, "--focus by pij-brisk-marten");
+        assert!(text.starts_with("# First turn: role notes\n"));
+        assert_eq!(text.matches("\nsource: ").count(), parts.len());
+    }
+
+    #[test]
+    fn a_secret_looking_line_is_found_and_ordinary_text_is_not() {
+        assert_eq!(secret_line("first\napi_key = sk-live-abcdef123"), Some(2));
+        assert_eq!(secret_line("PASSWORD: hunter2hunter2"), Some(1));
+        assert_eq!(secret_line("token=\"abcdefgh\""), Some(1));
+        assert_eq!(
+            secret_line("x AKIAIOSFODNN7EXAMPLEkeyMaterial1234 y"),
+            Some(1)
+        );
+        for clean in [
+            "Review the key decisions: there are three.",
+            "token: <token>",
+            "commit 49ef44281f92522ffabd4d3ca6e1fa4e75d09ef3, seat pij-multiple-nightingale",
+            "session 7c8a587b-d7e7-4cef-ac26-b7dfd31eb0e0",
+            "Never read credential files or commit secrets.",
+        ] {
+            assert_eq!(secret_line(clean), None, "{clean}");
+        }
+        let creator = Creator {
+            seat: "pij-a".into(),
+            focus: Some("ok\nSECRET=abcdefgh12".into()),
+            packet: None,
+        };
+        let refused = refuse_secrets(&[], &creator).unwrap_err();
+        assert_eq!(refused.code, E_SECRET);
+        assert!(refused.message.starts_with("--focus, line 2"), "{refused}");
+        assert!(!refused.message.contains("abcdefgh12"), "never echoes it");
+    }
+
+    #[test]
+    fn a_role_from_before_types_still_assembles_and_says_how_to_type_it() {
+        let mut untyped = document();
+        untyped["sections"][0]["value"]
+            .as_object_mut()
+            .unwrap()
+            .remove("type");
+        let (_, parts) = assemble(&sources(untyped), "42", &[], &Creator::default());
+        assert_eq!(parts[0].heading, "Your seat type: none recorded");
+        assert!(parts[0].text.contains("pij directory retype"));
+        assert_eq!(parts[1].heading, "Your role: notes/42");
+        assert!(
+            parts[1].text.contains("<subject>"),
+            "an unfilled placeholder stays"
+        );
+    }
+}

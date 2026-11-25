@@ -24,6 +24,9 @@ pub struct RoleFields {
     pub type_suggestion: Option<String>,
     /// `--type-change <rule>=<why>`: `type_changes`, merged by rule.
     pub type_changes: Vec<(String, String)>,
+    /// `--param <name>[:optional]`: `parameters`, `(name, required)` in order
+    /// (PRD 007 req-01). Replaces the whole list when given.
+    pub parameters: Vec<(String, bool)>,
     /// `meta.holders`: one or many.
     pub holders: Option<String>,
     /// `meta.instance_key`.
@@ -192,6 +195,10 @@ pub fn from_fields(id: &str, fields: &RoleFields) -> Result<Value, Refusal> {
             json!({"name": "type_changes", "value": type_changes(&[], &fields.type_changes)}),
         );
     }
+    if !fields.parameters.is_empty() {
+        sections
+            .push(json!({"name": "parameters", "value": parameters_value(&fields.parameters)?}));
+    }
     for (name, values) in [
         ("out_of_scope", &fields.out_of_scope),
         ("forbidden_paths", &fields.forbidden),
@@ -255,6 +262,9 @@ pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, R
             meta[key] = value.clone();
         }
     }
+    if !fields.parameters.is_empty() {
+        *slot(sections, "parameters", json!([])) = parameters_value(&fields.parameters)?;
+    }
     if !fields.type_changes.is_empty() {
         let slot = slot(sections, "type_changes", json!([]));
         let current = slot.as_array().cloned().unwrap_or_default();
@@ -290,6 +300,119 @@ pub fn apply_fields(mut document: Value, fields: &RoleFields) -> Result<Value, R
     }
     apply_list_ops(&mut document, &fields.list_ops)?;
     Ok(document)
+}
+
+/// A role's declared parameters, `(name, required)` in order (PRD 007 req-01).
+pub fn parameters(document: &Value) -> Vec<(String, bool)> {
+    section(document, "parameters")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    Some((
+                        row["name"].as_str()?.to_string(),
+                        row["need"].as_str() != Some("optional"),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `--param` values as the `parameters` section: each name takes the one name
+/// grammar (`[a-z0-9][a-z0-9-]{0,31}`) and appears once.
+fn parameters_value(given: &[(String, bool)]) -> Result<Value, Refusal> {
+    let mut rows = Vec::new();
+    for (index, (name, required)) in given.iter().enumerate() {
+        if !pij_core::render::is_name(name) {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!(
+                    "--param {:?}: a parameter name is 1-32 lowercase letters, digits or '-', not starting with '-'",
+                    name.escape_debug().take(32).collect::<String>()
+                ),
+            ));
+        }
+        if given[..index].iter().any(|(earlier, _)| earlier == name) {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("--param {name} is given twice"),
+            ));
+        }
+        rows.push(json!({"name": name, "need": if *required { "required" } else { "optional" }}));
+    }
+    Ok(json!(rows))
+}
+
+/// A parameter a role does not declare was given (PRD 007 req-01).
+pub const E_PARAM_UNKNOWN: &str = "E-RS-PARAM-UNKNOWN";
+/// A required parameter was not given (PRD 007 req-01).
+pub const E_PARAM_MISSING: &str = "E-RS-PARAM-MISSING";
+
+/// `sets` (`--set <name>=<value>`) checked against role `id`'s declared
+/// parameters: the filled values in declaration order.
+///
+/// # Errors
+/// `E-RS-ARG` for a value that is not one line or a name given twice;
+/// [`E_PARAM_UNKNOWN`] listing the declared names; [`E_PARAM_MISSING`] naming
+/// every required one left out.
+pub fn fill_parameters(
+    id: &str,
+    document: &Value,
+    sets: &[(String, String)],
+) -> Result<Vec<(String, String)>, Refusal> {
+    let declared = parameters(document);
+    for (index, (name, value)) in sets.iter().enumerate() {
+        if sets[..index].iter().any(|(earlier, _)| earlier == name) {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("--set {name} is given twice"),
+            ));
+        }
+        if value.contains(['\n', '\r']) || value.trim().is_empty() {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                format!("--set {name}: the value must be one non-empty line"),
+            ));
+        }
+        if !declared.iter().any(|(known, _)| known == name) {
+            let names: Vec<&str> = declared.iter().map(|(known, _)| known.as_str()).collect();
+            return Err(Refusal::new(
+                E_PARAM_UNKNOWN,
+                format!(
+                    "role {id:?} declares no parameter {:?}; it declares {}",
+                    name.escape_debug().take(32).collect::<String>(),
+                    if names.is_empty() {
+                        "none".to_string()
+                    } else {
+                        names.join(", ")
+                    }
+                ),
+            ));
+        }
+    }
+    let missing: Vec<&str> = declared
+        .iter()
+        .filter(|(name, required)| *required && !sets.iter().any(|(given, _)| given == name))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    if !missing.is_empty() {
+        return Err(Refusal::new(
+            E_PARAM_MISSING,
+            format!(
+                "role {id:?} needs {}: give each with --set <name>=<value>",
+                missing
+                    .iter()
+                    .map(|name| format!("--set {name}=<value>"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ));
+    }
+    Ok(declared
+        .iter()
+        .filter_map(|(name, _)| sets.iter().find(|(given, _)| given == name).cloned())
+        .collect())
 }
 
 /// `current` type changes with each `(rule, why)` replacing the row for its
@@ -884,5 +1007,72 @@ mod tests {
     fn bytes_are_tab_indented_with_a_trailing_newline() {
         let text = String::from_utf8(to_bytes(&json!({"a": [1]}))).unwrap();
         assert_eq!(text, "{\n\t\"a\": [\n\t\t1\n\t]\n}\n");
+    }
+
+    #[test]
+    fn a_role_declares_parameters_and_filling_them_names_what_is_wrong() {
+        let document = from_fields(
+            "notes",
+            &RoleFields {
+                parameters: vec![("subject".into(), true), ("session".into(), false)],
+                ..RoleFields::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            section(&document, "parameters").unwrap(),
+            &json!([{"name": "subject", "need": "required"}, {"name": "session", "need": "optional"}])
+        );
+        let set = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|(name, value)| ((*name).into(), (*value).into()))
+                .collect()
+        };
+        assert_eq!(
+            fill_parameters(
+                "notes",
+                &document,
+                &set(&[("session", "s1"), ("subject", "acme")])
+            )
+            .unwrap(),
+            set(&[("subject", "acme"), ("session", "s1")]),
+            "declaration order"
+        );
+        let missing = fill_parameters("notes", &document, &set(&[("session", "s1")])).unwrap_err();
+        assert_eq!(missing.code, E_PARAM_MISSING);
+        assert!(
+            missing.message.contains("--set subject=<value>"),
+            "{}",
+            missing.message
+        );
+        let unknown = fill_parameters(
+            "notes",
+            &document,
+            &set(&[("subject", "a"), ("colour", "b")]),
+        )
+        .unwrap_err();
+        assert_eq!(unknown.code, E_PARAM_UNKNOWN);
+        assert!(
+            unknown.message.contains("subject, session"),
+            "{}",
+            unknown.message
+        );
+        assert!(fill_parameters("notes", &document, &set(&[("subject", "a\nb")])).is_err());
+        for bad in [
+            vec![("Bad".to_string(), true)],
+            vec![("a".into(), true), ("a".into(), false)],
+        ] {
+            assert!(
+                from_fields(
+                    "x",
+                    &RoleFields {
+                        parameters: bad,
+                        ..RoleFields::default()
+                    }
+                )
+                .is_err()
+            );
+        }
     }
 }

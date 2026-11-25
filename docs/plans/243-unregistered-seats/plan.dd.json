@@ -1,0 +1,94 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Seats with no role in the view (workstream 007 s04)",
+        "slug": "unregistered-seats",
+        "ordinal": 243,
+        "status": "ready",
+        "summary": "`pij directory` lists every live seat in the project that holds no role, each with the command that assigns it one or closes it.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "`pij directory` lists every live seat in the project that holds no role, each with the command that assigns it one or closes it."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Nothing runs unregistered."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Assigning anything automatically."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "A live seat whose folder belongs to the project (the same match `pij directory` uses for its caller) and that holds no open holding there is an action `no-role` naming the seat with `pij directory assign <role> <seat>` and `pij close <seat>`. The designated prime is never listed.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "After it is assigned, the action is gone.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Seats with no role in the view (workstream 007 s04)",
+          "brief": "One phase on PR #345.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "The view in community/directory.rs reads live seats once per view (http/directory.rs live_seats); match_project maps a folder to a project."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A seat in a shared worktree maps to two projects.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "The same longest-repo rule as the caller's own project."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: per view: in-process path checks per live seat (no launch). No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

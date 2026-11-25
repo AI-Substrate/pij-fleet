@@ -96,6 +96,34 @@ pub struct AssignRequest {
     pub why: String,
     /// This machine's alias.
     pub machine: String,
+    /// PRD 007 req-07: the first turn of a seat spawned in the role, written
+    /// in the same commit at `roles/<id>/first-turns/<seat>.md`. With one, the
+    /// after-assign hook is left to the caller ([`DirectoryService::drain`]),
+    /// which queues the first turn before anything the role's queue held.
+    pub first_turn: Option<String>,
+}
+
+/// How an assign failed (review of #345, N1).
+#[derive(Debug)]
+pub enum AssignError {
+    /// Refused before its commit: nothing was written.
+    Refused(Refusal),
+    /// Its commit landed on the branch, then indexing it failed.
+    Landed {
+        /// The commit that holds the holding.
+        commit: String,
+        /// What failed after it.
+        refusal: Refusal,
+    },
+}
+
+impl AssignError {
+    /// The refusal, as `assign_many` has always answered.
+    pub fn into_refusal(self) -> Refusal {
+        match self {
+            Self::Refused(refusal) | Self::Landed { refusal, .. } => refusal,
+        }
+    }
 }
 
 /// What `pij directory edit` changes (plan 206, F20).
@@ -466,6 +494,7 @@ impl DirectoryService {
                 .map(|row| {
                     serde_json::json!({
                         "seat": row.seat, "instance": row.instance, "since": row.from,
+                        "assigned_by": row.assigned_by,
                         "machine": row.machine, "end_pending": row.end_pending,
                         "seat_live": live_seats.contains(&row.seat),
                         "cache_proxy": cache_proxy.get(&row.seat),
@@ -613,6 +642,11 @@ impl DirectoryService {
                 "kind": meta["kind"],
                 "type": meta["type"],
                 "type_suggestion": meta["type_suggestion"],
+                // PRD 007 req-07: who created the role, from its first changelog row.
+                "created_by": document["sections"]
+                    .as_array()
+                    .and_then(|sections| sections.iter().find(|section| section["name"] == "changelog"))
+                    .map_or(Value::Null, |changelog| changelog["value"][0]["by"].clone()),
                 "holders": meta["holders"],
                 "template": self.templates.drift(&meta),
                 "state": standings[index].state,
@@ -699,6 +733,7 @@ impl DirectoryService {
             "project": project, "prime": prime, "prime_document": prime_document,
             "roles": roles, "pending": pending,
             "actions": actions, "notice": picture::notice(),
+            "seat_suggestions": super::suggestions::read(&root.worktree),
             "reviews": reviews.iter().map(picture::Recommendation::json).collect::<Vec<_>>(),
         });
         if !held.is_empty() {
@@ -1528,6 +1563,62 @@ impl DirectoryService {
         Ok(receipts.remove(0))
     }
 
+    /// `pij directory suggest` (PRD 007 req-08, plan 244): one writer commit
+    /// to `community/suggestions.json`, read under the writer's lock. Returns
+    /// the commit and the row written.
+    ///
+    /// # Errors
+    /// What [`super::suggestions::apply`] refuses; a writer refusal.
+    pub async fn suggest(
+        &self,
+        project: &str,
+        repo: PathBuf,
+        actor: &SeatId,
+        change: super::suggestions::Change,
+    ) -> Result<(Written, Value), Refusal> {
+        super::suggestions::check(&change)?;
+        let subject = match &change {
+            super::suggestions::Change::Raise { area, .. } => {
+                format!("community: suggest a seat for {area}")
+            }
+            super::suggestions::Change::Answer { id, answer, .. } => {
+                format!("community: answer suggestion {id}: {answer}")
+            }
+        };
+        let message = format!("{subject}\n\nPij-Seat: {actor}\nPij-Project: {project}");
+        let by = actor.to_string();
+        let at = super::holders::stamp(time::OffsetDateTime::now_utc());
+        let (written, mut built) = self
+            .commit(repo, message, move |root, built| {
+                let path = super::suggestions::path();
+                let current = std::fs::read(root.worktree.join(&path)).ok();
+                let (bytes, row) =
+                    super::suggestions::apply(current.as_deref(), &change, &by, &at)?;
+                built.suggestion = Some(row);
+                Ok(vec![NewFile {
+                    path,
+                    bytes,
+                    document: false,
+                    existing: Existing::Replace,
+                }])
+            })
+            .await?;
+        let row = built.suggestion.take().unwrap_or(Value::Null);
+        Ok((written, row))
+    }
+
+    /// The after-assign hook for one holding, for an assign that carried a
+    /// first turn and so left it to its caller (PRD 007 req-07).
+    pub async fn drain(
+        &self,
+        project: &str,
+        role: &str,
+        instance: &str,
+        seat: &SeatId,
+    ) -> Vec<Value> {
+        self.hook.assigned(project, role, instance, seat).await
+    }
+
     /// Bind several live seats to existing roles in one holders commit, all or
     /// nothing (F16): every request must name this project, repo, actor and
     /// why. A refusal names every bad request. Then each holding gets what a
@@ -1540,6 +1631,33 @@ impl DirectoryService {
         &self,
         requests: Vec<AssignRequest>,
     ) -> Result<Vec<HoldingReceipt>, Refusal> {
+        self.assign_landing(requests)
+            .await
+            .map_err(AssignError::into_refusal)
+    }
+
+    /// [`Self::assign_many`], saying whether its commit landed: a refusal
+    /// before the commit wrote nothing; one after it (indexing the store,
+    /// flushing pending ends) left the holding committed on the branch
+    /// (review of #345, N1).
+    ///
+    /// # Errors
+    /// [`AssignError::Refused`] or [`AssignError::Landed`].
+    pub async fn assign_landing(
+        &self,
+        requests: Vec<AssignRequest>,
+    ) -> Result<Vec<HoldingReceipt>, AssignError> {
+        let (written, built) = self
+            .assign_commit(&requests)
+            .await
+            .map_err(AssignError::Refused)?;
+        let commit = written.commit.clone();
+        self.assign_index(written, built, &requests)
+            .await
+            .map_err(|refusal| AssignError::Landed { commit, refusal })
+    }
+
+    async fn assign_commit(&self, requests: &[AssignRequest]) -> Result<(Written, Built), Refusal> {
         let Some(first) = requests.first().cloned() else {
             return Err(Refusal::new(
                 "E-RS-ARG",
@@ -1569,6 +1687,18 @@ impl DirectoryService {
             ));
         }
         let pending = self.pending(&first.project).await?;
+        let first_turns: Vec<NewFile> = requests
+            .iter()
+            .filter_map(|request| {
+                let text = request.first_turn.as_ref()?;
+                Some(RolePaths::new(&request.role).map(|paths| NewFile {
+                    path: paths.first_turn(request.seat.id.as_str()),
+                    bytes: text.clone().into_bytes(),
+                    document: false,
+                    existing: Existing::Replace,
+                }))
+            })
+            .collect::<Result<_, _>>()?;
         let drafts: Vec<Assignment> = requests
             .iter()
             .map(|request| Assignment {
@@ -1709,6 +1839,7 @@ impl DirectoryService {
                 for (role, rows) in &by_role {
                     files.push(holders_file(role, rows)?);
                 }
+                files.extend(first_turns);
                 let written: Vec<&str> = roles.iter().map(String::as_str).collect();
                 files.extend(flush_files(
                     root,
@@ -1720,9 +1851,18 @@ impl DirectoryService {
                 Ok(files)
             })
             .await?;
+        Ok((written, built))
+    }
+
+    async fn assign_index(
+        &self,
+        written: Written,
+        built: Built,
+        requests: &[AssignRequest],
+    ) -> Result<Vec<HoldingReceipt>, Refusal> {
         self.flushed(&built.landed, &written).await?;
         let mut receipts = Vec::new();
-        for ((row, warning), request) in built.batch.iter().zip(&requests) {
+        for ((row, warning), request) in built.batch.iter().zip(requests) {
             let store = self.store.clone();
             let indexed = row.clone();
             let seat_role = seat_role_for(&row.role).to_string();
@@ -1737,10 +1877,13 @@ impl DirectoryService {
                 })
                 .await
                 .map_err(|error| store_refusal(&written, &error))?;
-            let drained = self
-                .hook
-                .assigned(&row.project, &row.role, &row.instance, &request.seat.id)
-                .await;
+            let drained = if request.first_turn.is_some() {
+                Vec::new()
+            } else {
+                self.hook
+                    .assigned(&row.project, &row.role, &row.instance, &request.seat.id)
+                    .await
+            };
             let window = self.rename(&request.seat, row).await;
             receipts.push(
                 HoldingReceipt {
@@ -2855,7 +2998,7 @@ fn reshape_verb(id: &str, into: Option<&str>) -> String {
 }
 
 /// Refuse a write to a retired role, naming where a merged one went.
-fn refuse_retired(id: &str, standing: &role::Standing) -> Result<(), Refusal> {
+pub(super) fn refuse_retired(id: &str, standing: &role::Standing) -> Result<(), Refusal> {
     if !standing.retired() {
         return Ok(());
     }
@@ -3004,6 +3147,8 @@ struct Built {
     skipped: Vec<String>,
     /// An edit's list changes (F152), from [`role::list_changes`].
     lists: Vec<Value>,
+    /// The suggestion a `suggest` wrote (PRD 007 req-08).
+    suggestion: Option<Value>,
 }
 
 fn store_refusal(written: &Written, error: &pij_core::error::PijError) -> Refusal {
