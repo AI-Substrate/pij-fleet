@@ -36,19 +36,19 @@
         {
           "id": "ac-0001",
           "claim": "`pij pod export <pod> --as-template <path> --why <text>` writes the pod's slots (including seats added while it ran), parameters, consulted roles and deliverables as a template at the path, in one commit when the path is in governance and as files otherwise.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0001"
         },
         {
           "id": "ac-0002",
           "claim": "`pij directory export <role> --as-template <path>` saves a role with its parameters as a role template.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0002"
         },
         {
           "id": "ac-0003",
           "claim": "The view suggests saving a template when a role or a group of roles of the same shape is created a second time, with the export command.",
-          "state": "unchecked",
+          "state": "checked",
           "pressure": "assets/backpressure.dd.json#rows/bp-0003"
         }
       ]
@@ -60,7 +60,7 @@
           "id": "ph-0001",
           "title": "Export a pod and save a role as a template (workstream 010 s03)",
           "brief": "One phase on PR #347.",
-          "state": "unchecked",
+          "state": "checked",
           "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
         }
       ]

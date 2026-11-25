@@ -73,6 +73,7 @@ struct Call {
     why: Option<String>,
     seeds: Option<String>,
     templates: Vec<String>,
+    as_template: Option<String>,
 }
 
 fn parse(argv: &[String]) -> Result<Call, Refusal> {
@@ -118,6 +119,7 @@ fn parse(argv: &[String]) -> Result<Call, Refusal> {
             }
             "--tool" => call.tools.push(value("--tool")?),
             "--into" => call.into = Some(value("--into")?),
+            "--as-template" => call.as_template = Some(value("--as-template")?),
             "--why" => call.why = Some(value("--why")?),
             "--seeds" => call.seeds = Some(value("--seeds")?),
             "--templates" => call.templates.extend(
@@ -202,6 +204,7 @@ pub(crate) async fn handle(
         "templates" => Ok(pod_templates::listing()),
         "adopt" => adopt(&state, &call, &request.caller, &actor).await,
         "template-diff" => template_diff(&call, &request.caller),
+        "export" => export(&state, &call, &request.caller, &actor).await,
         "plan" => plan(&state, &call, &request.caller, &actor)
             .await
             .map(|planned| planned.answer()),
@@ -2654,6 +2657,152 @@ async fn community_init(
         } else {
             "name each template in pod commands by its path"
         },
+    }))
+}
+
+/// Every file under `dir`, relative to it, sorted. A few directory reads.
+fn files_under(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut found = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        for entry in std::fs::read_dir(&next).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if let (Ok(bytes), Ok(inside)) = (std::fs::read(&path), path.strip_prefix(dir)) {
+                found.push((inside.to_path_buf(), bytes));
+            }
+        }
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found
+}
+
+/// `pij pod export <pod> --as-template <path> --why <text>` (req-04): the pod
+/// as it ran, members added at run time included, written as a template at
+/// the caller-relative path: one governance commit when the path is in the
+/// governance worktree, files for the repo to commit otherwise. The
+/// original template's own procedures go with it. No seat id, path or
+/// parameter value is written. Launches no seat.
+async fn export(
+    state: &AppState,
+    call: &Call,
+    caller: &CallerContext,
+    actor: &SeatId,
+) -> Result<Value, Refusal> {
+    const USAGE: &str = "pij pod export <pod> --as-template <path> --why <text>";
+    let pod_name = position(call, 0, USAGE)?;
+    let why = why_of(call, USAGE)?;
+    let given = call
+        .as_template
+        .as_deref()
+        .ok_or_else(|| Refusal::new("E-RS-ARG", format!("{USAGE}: --as-template names where")))?;
+    let opened = open(state, caller, pod_name).await?;
+    let dest = template_path(given, caller)?;
+    if dest.join(pod::TEMPLATE_FILE).exists() {
+        return Err(Refusal::new(
+            pod::E_TEMPLATE,
+            format!("{given} already holds a template; export to a new folder"),
+        ));
+    }
+    let original = template_of(&opened.record.repo, &opened.document).ok();
+    let original_document: Option<Value> = match &original {
+        Some(template) if template.folder.as_os_str().is_empty() => {
+            pod_templates::named(&template.source)
+                .and_then(Result::ok)
+                .and_then(|shipped| serde_json::from_slice(shipped.template_bytes()).ok())
+        }
+        Some(template) => std::fs::read(template.folder.join(pod::TEMPLATE_FILE))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
+        None => None,
+    };
+    let name = dest
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .filter(|name| pij_core::render::is_name(name))
+        .unwrap_or_else(|| pod_name.to_string());
+    let document = pod_templates::exported(
+        &name,
+        pod_name,
+        &opened.document,
+        original_document.as_ref(),
+    );
+    let bytes = role::to_bytes(&document);
+    pod::parse(&bytes, given)?;
+    let mut files = vec![(PathBuf::from(pod::TEMPLATE_FILE), bytes)];
+    if let Some(template) = &original
+        && !template.folder.as_os_str().is_empty()
+    {
+        files.extend(
+            files_under(&template.folder.join("procedures"))
+                .into_iter()
+                .map(|(inside, bytes)| (Path::new("procedures").join(inside), bytes)),
+        );
+    }
+    let canonical =
+        |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let parent = dest.parent().map(canonical).unwrap_or_default();
+    let worktree = canonical(&opened.record.worktree);
+    let inside = parent
+        .strip_prefix(&worktree)
+        .ok()
+        .map(|inside| inside.join(dest.file_name().unwrap_or_default()));
+    let shown = dest.display().to_string();
+    let (commit, place) = match inside {
+        Some(relative) => {
+            let new_files = files
+                .into_iter()
+                .map(|(path, bytes)| NewFile {
+                    path: relative.join(path),
+                    bytes,
+                    document: false,
+                    existing: Existing::Refuse(Refusal::new(
+                        pod::E_TEMPLATE,
+                        format!("{given} already holds files"),
+                    )),
+                })
+                .collect();
+            let commit = commit_copies(
+                state,
+                &opened.record.project,
+                &opened.record.repo,
+                new_files,
+                format!(
+                    "community: pod {pod_name} exported as template {name}\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {}",
+                    opened.record.project
+                ),
+            )
+            .await?;
+            (commit, "governance")
+        }
+        None => {
+            for (path, bytes) in &files {
+                let target = dest.join(path);
+                if let Some(folder) = target.parent() {
+                    std::fs::create_dir_all(folder).map_err(|error| {
+                        Refusal::new(
+                            "E-RS-ARG",
+                            format!("cannot create {}: {error}", folder.display()),
+                        )
+                    })?;
+                }
+                std::fs::write(&target, bytes).map_err(|error| {
+                    Refusal::new(
+                        "E-RS-ARG",
+                        format!("cannot write {}: {error}", target.display()),
+                    )
+                })?;
+            }
+            (None, "repo")
+        }
+    };
+    Ok(json!({
+        "pod": pod_name,
+        "wrote": [{"template": format!("pod {pod_name}"), "path": shown, "where": place}],
+        "slots": pod::records(&opened.document, "members").iter().map(|member| member["slot"].clone()).collect::<Vec<_>>(),
+        "commit": commit,
+        "next": format!("plan it: pij pod plan {given} --set <name>=<value>"),
     }))
 }
 

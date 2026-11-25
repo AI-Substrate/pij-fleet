@@ -16,6 +16,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("activity") => Some(ACTIVITY),
         Some("stage") => Some(STAGE),
         Some("templates" | "adopt" | "template-diff") => Some(SHIPPED),
+        Some("export") => Some(EXPORT),
         _ => None,
     }
 }
@@ -39,6 +40,7 @@ Usage:
   pij pod templates                           the pod templates pij ships
   pij pod adopt <name>[@v<n>] [--into <path>] --why <text>
   pij pod template-diff <path>                what changed upstream since a copy
+  pij pod export <pod> --as-template <path> --why <text>   the pod as it ran, as a template
 
 A template is a folder holding pod-template.dd.json (or that file), at any path
 you name, or a shipped one as shipped:<name>[@v<n>]. Every check warns and names its fix; none refuses: pij is a knowledge
@@ -189,3 +191,14 @@ templates into governance in one commit, or with --into puts the templates at
 <path>/<name>/ as files you commit. Anything already there is kept and listed.
 It prints what it wrote and where. pij copies nothing on its own, and init
 starts no seat.";
+
+const EXPORT: &str = "\
+pij pod export <pod> --as-template <path> --why <text>
+
+Writes the pod as it ran as a template at <path>: every member as a slot (a
+seat added while it ran becomes a slot of its own), with the original
+template's parameters, wiring, consulted roles, deliverables and its own
+procedures. No seat id, folder or parameter value is written. In the
+governance worktree it is one commit; elsewhere it is files you commit. Plan
+it with pij pod plan <path>. The prime's view suggests this when two pods grow
+to the same roles. It starts no seat.";

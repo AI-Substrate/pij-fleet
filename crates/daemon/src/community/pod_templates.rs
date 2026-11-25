@@ -271,6 +271,200 @@ pub fn upstream_diff(bytes: &[u8], shown: &str) -> Result<Value, Refusal> {
     }))
 }
 
+/// A template's slot roles, sorted: from the shipped one it names, or the
+/// file at its path (relative to `repo` unless absolute). `None` when it
+/// cannot be read. A few file reads.
+pub fn template_roles(repo: &Path, record: &Value) -> Option<Vec<String>> {
+    let source = pod::meta(record)["template"].as_str()?.to_string();
+    let template = match named(&source) {
+        Some(shipped) => read(shipped.ok()?).ok()?,
+        None => {
+            let path = Path::new(&source);
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                repo.join(path)
+            };
+            pod::read(&path, &source).ok()?
+        }
+    };
+    let mut roles: Vec<String> = template.slots.into_iter().map(|slot| slot.role).collect();
+    roles.sort();
+    Some(roles)
+}
+
+/// What the prime's view suggests saving as a template (PRD 010 req-04): a
+/// role made by hand (no `meta.template`) whose type and parameters match an
+/// earlier one, and two pods whose members fill the same roles while that set
+/// differs from their template's (a group grown while it ran, made a second
+/// time). `roles` is `(id, document)`; `pods` is `(pod, record, template
+/// slot roles)`. Pure; a suggestion creates nothing.
+pub fn save_suggestions(
+    roles: &[(String, Value)],
+    pods: &[(String, Value, Option<Vec<String>>)],
+) -> Vec<Value> {
+    let mut found = Vec::new();
+    // (type, sorted parameter names) -> the role ids with that shape.
+    type Shape = (String, Vec<String>);
+    let mut shapes: Vec<(Shape, Vec<String>)> = Vec::new();
+    for (id, document) in roles {
+        let meta = pod::meta(document);
+        if meta["template"]
+            .as_str()
+            .is_some_and(|name| !name.is_empty())
+        {
+            continue;
+        }
+        let mut params: Vec<String> = super::role::parameters(document)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        if params.is_empty() {
+            continue;
+        }
+        params.sort();
+        let key = (meta["type"].as_str().unwrap_or("none").to_string(), params);
+        match shapes.iter_mut().find(|(shape, _)| *shape == key) {
+            Some((_, ids)) => ids.push(id.clone()),
+            None => shapes.push((key, vec![id.clone()])),
+        }
+    }
+    for ((kind, params), ids) in shapes.into_iter().filter(|(_, ids)| ids.len() > 1) {
+        found.push(json!({
+            "what": "role",
+            "roles": ids,
+            "why": format!(
+                "{} roles of type {kind} with parameters {} were made by hand; save the shape once",
+                ids.len(),
+                params.join(", ")
+            ),
+            "command": format!("pij directory export {} --as-template <path> --why <text>", ids[0]),
+        }));
+    }
+    let mut groups: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    for (name, record, slot_roles) in pods {
+        let mut members: Vec<String> = pod::records(record, "members")
+            .iter()
+            .filter_map(|member| member["role"].as_str().map(str::to_string))
+            .collect();
+        members.sort();
+        if members.is_empty() || slot_roles.as_ref() == Some(&members) {
+            continue;
+        }
+        match groups.iter_mut().find(|(shape, _)| *shape == members) {
+            Some((_, names)) => names.push(name.clone()),
+            None => groups.push((members, vec![name.clone()])),
+        }
+    }
+    for (members, names) in groups.into_iter().filter(|(_, names)| names.len() > 1) {
+        found.push(json!({
+            "what": "pod",
+            "pods": names,
+            "why": format!(
+                "{} pods grew to the same roles ({}), which their template does not have; save that shape",
+                names.len(),
+                members.join(", ")
+            ),
+            "command": format!(
+                "pij pod export {} --as-template <path> --why <text>",
+                names[names.len() - 1]
+            ),
+        }));
+    }
+    found
+}
+
+/// The pod template `pij pod export` writes from a pod's record and the
+/// template it came from (PRD 010 req-04): every member as a slot (a member
+/// added while it ran becomes a slot of its own), the template's
+/// parameters, wiring, consulted roles, deliverables and procedures. It
+/// carries no seat id, path or parameter value. `template` is `None` when
+/// the original cannot be read; the record's consulted roles and
+/// deliverables are used then.
+pub fn exported(name: &str, pod_name: &str, record: &Value, template: Option<&Value>) -> Value {
+    let section_of = |document: &Value, wanted: &str| -> Value {
+        document["sections"]
+            .as_array()
+            .and_then(|sections| sections.iter().find(|section| section["name"] == wanted))
+            .map_or(Value::Null, |section| section["value"].clone())
+    };
+    let original_slots: Vec<Value> = template
+        .map(|template| section_of(template, "slots"))
+        .and_then(|slots| slots.as_array().cloned())
+        .unwrap_or_default();
+    let mut slots: Vec<Value> = Vec::new();
+    for member in pod::records(record, "members") {
+        let slot = original_slots
+            .iter()
+            .find(|slot| slot["id"] == member["slot"])
+            .cloned()
+            .unwrap_or_else(|| {
+                // A seat added while it ran: its slot is named for its role,
+                // never for the seat.
+                let role = member["role"].as_str().unwrap_or("member");
+                let base = match member["instance"].as_str().filter(|i| !i.is_empty()) {
+                    Some(instance) => format!("{role}-{instance}"),
+                    None => role.to_string(),
+                };
+                let taken = |id: &str| {
+                    original_slots.iter().any(|slot| slot["id"] == id)
+                        || slots.iter().any(|slot| slot["id"] == id)
+                };
+                let mut id = base.clone();
+                let mut n = 2;
+                while taken(&id) {
+                    id = format!("{base}-{n}");
+                    n += 1;
+                }
+                id.truncate(32);
+                let mut slot = json!({"id": id, "role": member["role"]});
+                if let Some(instance) = member["instance"].as_str().filter(|i| !i.is_empty()) {
+                    slot["instance"] = json!(instance);
+                }
+                if let Some(keep) = member["keep_open"].as_str() {
+                    slot["keep_open"] = json!(keep);
+                }
+                slot
+            });
+        slots.push(slot);
+    }
+    let parameters = template.map_or_else(
+        || {
+            Value::Array(
+                pod::records(record, "parameters")
+                    .iter()
+                    .map(|row| json!({"name": row["name"], "need": "optional"}))
+                    .collect(),
+            )
+        },
+        |template| section_of(template, "parameters"),
+    );
+    let pick = |wanted: &str| {
+        template.map_or_else(|| section_of(record, wanted), |t| section_of(t, wanted))
+    };
+    let title = template
+        .map(|template| section_of(template, "meta")["title"].clone())
+        .and_then(|title| title.as_str().map(str::to_string))
+        .unwrap_or_else(|| name.to_string());
+    let mut sections = vec![
+        json!({"name": "meta", "value": {
+            "name": name,
+            "title": title,
+            "version": "1",
+            "summary": format!("Exported from pod {pod_name}, with the seats it ran with."),
+        }}),
+        json!({"name": "parameters", "value": if parameters.is_null() { json!([]) } else { parameters }}),
+        json!({"name": "slots", "value": slots}),
+    ];
+    for wanted in ["wiring", "consulted", "deliverables", "procedures"] {
+        let value = pick(wanted);
+        if value.as_array().is_some_and(|rows| !rows.is_empty()) {
+            sections.push(json!({"name": wanted, "value": value}));
+        }
+    }
+    json!({"dd": {"schema": "pij/pod-template"}, "sections": sections, "references": []})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,5 +513,74 @@ mod tests {
         assert!(own.message.contains("the repo's own template"), "{own}");
         assert!(named("shipped:nope").unwrap().is_err());
         assert!(named("pods/build").is_none());
+    }
+
+    /// Plan 255 ac-0001: an export carries every member as a slot, the
+    /// added one included, and no seat id or parameter value.
+    #[test]
+    fn an_export_has_a_slot_per_member_and_no_seat() {
+        let template: Value =
+            serde_json::from_slice(get("build", None).unwrap().template_bytes()).unwrap();
+        let record = json!({"sections": [
+            {"name": "meta", "value": {"template": "shipped:build@v1"}},
+            {"name": "parameters", "value": [{"name": "subject", "value": "step 2"}]},
+            {"name": "members", "value": [
+                {"slot": "coder", "role": "coder", "seat": "pij-a"},
+                {"slot": "pij-b", "role": "security", "seat": "pij-b", "keep_open": "yes"},
+            ]},
+        ]});
+        let document = exported("grown", "b1", &record, Some(&template));
+        let text = document.to_string();
+        assert!(
+            !text.contains("pij-a") && !text.contains("pij-b") && !text.contains("step 2"),
+            "{text}"
+        );
+        let parsed = pod::parse(&serde_json::to_vec(&document).unwrap(), "grown").unwrap();
+        let ids: Vec<&str> = parsed.slots.iter().map(|slot| slot.id.as_str()).collect();
+        assert_eq!(ids, ["coder", "security"]);
+        assert_eq!(parsed.slots[1].keep_open, Some(true));
+    }
+
+    /// Plan 255 ac-0003: a role shape made twice by hand, and two pods grown
+    /// to the same roles, are suggested for saving; a role from a template
+    /// and a pod that matches its template are not.
+    #[test]
+    fn a_shape_made_twice_is_suggested_for_saving() {
+        let role = |template: Option<&str>| {
+            json!({"sections": [
+                {"name": "meta", "value": {"type": "knowledge", "template": template}},
+                {"name": "parameters", "value": [{"name": "subject", "need": "required"}]},
+            ]})
+        };
+        let pod_of = |roles: &[&str]| json!({"sections": [{"name": "members", "value": roles.iter().map(|role| json!({"role": role})).collect::<Vec<_>>()}]});
+        let roles = vec![
+            ("expert-a".to_string(), role(None)),
+            ("expert-b".to_string(), role(None)),
+            ("expert-c".to_string(), role(Some("topic-expert"))),
+        ];
+        let slots = Some(vec!["coder".to_string(), "pm".to_string()]);
+        let pods = vec![
+            (
+                "one".to_string(),
+                pod_of(&["pm", "coder", "security"]),
+                slots.clone(),
+            ),
+            (
+                "two".to_string(),
+                pod_of(&["security", "coder", "pm"]),
+                slots.clone(),
+            ),
+            ("three".to_string(), pod_of(&["pm", "coder"]), slots),
+        ];
+        let found = save_suggestions(&roles, &pods);
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[0]["roles"], json!(["expert-a", "expert-b"]));
+        assert_eq!(found[1]["pods"], json!(["one", "two"]));
+        assert!(
+            found[1]["command"]
+                .as_str()
+                .unwrap()
+                .starts_with("pij pod export two")
+        );
     }
 }

@@ -4160,6 +4160,18 @@ fn render_directory_at(
             text(&view["suggestions"]["command"])
         );
     }
+    let save = list(&view["save_as_template"]);
+    if !save.is_empty() {
+        out.push_str("\n\nWorth saving as a template (a shape made a second time):");
+        for row in &save {
+            let _ = write!(
+                out,
+                "\n  {}\n    {}",
+                row["why"].as_str().unwrap_or_default(),
+                row["command"].as_str().unwrap_or_default()
+            );
+        }
+    }
     let reviews = list(&view["reviews"]);
     if !reviews.is_empty() {
         out.push_str("\n\nBoundary review (at a wave end, a compact or a PR merge):");

@@ -20,9 +20,9 @@
 
 | id | criterion | phase | mode | tier | proof | state | note | receipt | probe |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: a pod with a seat added after up exports with that slot, and plan on the export lists it. | [ ] unchecked | — | — | cargo test -p pij-daemon pod_export |
-| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: a role saved as a template keeps its parameters. | [ ] unchecked | — | — | cargo test -p pij-daemon role_export |
-| bp-0003 | AC3 | ph-0001 | BUILD | computational | Picture unit test: a second similar role prompts an export. | [ ] unchecked | — | — | cargo test -p pij-daemon export_suggestion |
+| bp-0001 | AC1 | ph-0001 | BUILD | computational | HTTP test: a pod with a seat added after up exports with that slot, and plan on the export lists it. | [x] checked | — | — | cargo test -p pij-daemon pod_export |
+| bp-0002 | AC2 | ph-0001 | BUILD | computational | HTTP test: a role saved as a template keeps its parameters. | [x] checked | — | — | cargo test -p pij-daemon role_export |
+| bp-0003 | AC3 | ph-0001 | BUILD | computational | Picture unit test: a second similar role prompts an export. | [x] checked | — | — | cargo test -p pij-daemon export_suggestion |
 
 <a id="sensors"></a>
 

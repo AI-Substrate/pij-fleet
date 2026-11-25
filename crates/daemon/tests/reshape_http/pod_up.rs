@@ -1416,3 +1416,133 @@ async fn shipped_templates_are_named_adopted_diffed_and_set_up_by_init() {
     );
     rig.server.abort();
 }
+
+/// Plan 255 ac-0001..ac-0003 (PRD 010 req-04): a pod with a seat added while
+/// it ran exports to a template with that extra slot and no seat id, which
+/// `plan` reads; to governance it is one commit. A role saves as the repo's
+/// own role template, and a role is made from it. A role shape made twice
+/// by hand is suggested in the view. Nothing launches.
+#[tokio::test]
+async fn a_pod_and_a_role_export_as_templates_and_a_repeated_shape_is_suggested() {
+    let repo = repo("pij-pod-export");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let (lead, reviewer) = up_started(&rig, &repo).await;
+    let launched = super::role_start::launches(&rig.tmux);
+    assert_eq!(
+        pod(rig.addr, &repo, &["add", "build", SEAT]).await["ok"],
+        true
+    );
+
+    let exported = pod(
+        rig.addr,
+        &repo,
+        &[
+            "export",
+            "build",
+            "--as-template",
+            "pods/grown",
+            "--why",
+            "it worked",
+        ],
+    )
+    .await;
+    assert_eq!(exported["ok"], true, "{exported}");
+    assert_eq!(exported["data"]["commit"], Value::Null, "files in the repo");
+    let text = std::fs::read_to_string(repo.main.join("pods/grown/pod-template.dd.json")).unwrap();
+    for seat in [lead.as_str(), reviewer.as_str(), SEAT] {
+        assert!(!text.contains(seat), "no seat id: {seat}: {text}");
+    }
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &[
+            "plan",
+            "pods/grown",
+            "--set",
+            "subject=again",
+            "--name",
+            "again",
+        ],
+    )
+    .await;
+    assert_eq!(planned["ok"], true, "{planned}");
+    assert_eq!(
+        planned["data"]["slots"].as_array().unwrap().len(),
+        3,
+        "lead, reviewer and the seat added while it ran: {planned}"
+    );
+    let before = head(&repo);
+    let governed = repo
+        .gov
+        .join(".harness/government/community/pod-templates/grown");
+    let into_governance = pod(
+        rig.addr,
+        &repo,
+        &[
+            "export",
+            "build",
+            "--as-template",
+            governed.to_str().unwrap(),
+            "--why",
+            "keep it",
+        ],
+    )
+    .await;
+    assert_eq!(into_governance["ok"], true, "{into_governance}");
+    assert!(
+        into_governance["data"]["commit"].is_string(),
+        "{into_governance}"
+    );
+    assert_ne!(head(&repo), before);
+    assert!(governed.join("pod-template.dd.json").is_file());
+
+    let saved = directory(
+        rig.addr,
+        &repo,
+        &[
+            "export",
+            "notes",
+            "--as-template",
+            "roles/notes",
+            "--why",
+            "reuse it",
+        ],
+    )
+    .await;
+    assert_eq!(saved["ok"], true, "{saved}");
+    assert_eq!(saved["data"]["parameters"][0]["name"], "subject", "{saved}");
+    let made = directory(
+        rig.addr,
+        &repo,
+        &[
+            "add",
+            "notes-two",
+            "--file",
+            "roles/notes/role.dd.json",
+            "--why",
+            "from our template",
+        ],
+    )
+    .await;
+    assert_eq!(made["ok"], true, "{made}");
+
+    let view = directory(rig.addr, &repo, &[]).await;
+    let save = &view["data"]["save_as_template"];
+    assert_eq!(save[0]["roles"], json!(["notes", "notes-two"]), "{view}");
+    assert!(
+        save[0]["command"]
+            .as_str()
+            .unwrap()
+            .starts_with("pij directory export notes --as-template"),
+        "{save}"
+    );
+    assert_eq!(
+        super::role_start::launches(&rig.tmux),
+        launched,
+        "export launches nothing"
+    );
+    rig.server.abort();
+}

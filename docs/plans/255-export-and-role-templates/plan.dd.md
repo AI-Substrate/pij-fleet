@@ -47,9 +47,9 @@
 
 | id | claim | state | note | receipt | pressure | proven_by |
 | --- | --- | --- | --- | --- | --- | --- |
-| ac-0001 | `pij pod export &lt;pod&gt; --as-template &lt;path&gt; --why &lt;text&gt;` writes the pod's slots (including seats added while it ran), parameters, consulted roles and deliverables as a template at the path, in one commit when the path is in governance and as files otherwise. | [ ] unchecked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
-| ac-0002 | `pij directory export &lt;role&gt; --as-template &lt;path&gt;` saves a role with its parameters as a role template. | [ ] unchecked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
-| ac-0003 | The view suggests saving a template when a role or a group of roles of the same shape is created a second time, with the export command. | [ ] unchecked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
+| ac-0001 | `pij pod export &lt;pod&gt; --as-template &lt;path&gt; --why &lt;text&gt;` writes the pod's slots (including seats added while it ran), parameters, consulted roles and deliverables as a template at the path, in one commit when the path is in governance and as files otherwise. | [x] checked | — | — | [bp-0001](assets/backpressure.dd.md#rows) | — |
+| ac-0002 | `pij directory export &lt;role&gt; --as-template &lt;path&gt;` saves a role with its parameters as a role template. | [x] checked | — | — | [bp-0002](assets/backpressure.dd.md#rows) | — |
+| ac-0003 | The view suggests saving a template when a role or a group of roles of the same shape is created a second time, with the export command. | [x] checked | — | — | [bp-0003](assets/backpressure.dd.md#rows) | — |
 
 <a id="phases"></a>
 
@@ -57,7 +57,7 @@
 
 | id | title | brief | state | note | receipt | depends_on | tasks | objective | delivers | key_risks |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ph-0001 | Export a pod and save a role as a template (workstream 010 s03) | One phase on PR #347. | [ ] unchecked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
+| ph-0001 | Export a pod and save a role as a template (workstream 010 s03) | One phase on PR #347. | [x] checked | — | — | — | [tasks](assets/tasks/phase-1/tasks.dd.md#tasks) | — | — | — |
 
 <a id="tasks"></a>
 

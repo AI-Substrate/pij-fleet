@@ -23,7 +23,7 @@
           "id": "tk-0001",
           "title": "pod export",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0001"
           ],
@@ -33,7 +33,7 @@
           "id": "tk-0002",
           "title": "role export",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0002"
           ],
@@ -43,7 +43,7 @@
           "id": "tk-0003",
           "title": "the view's suggestion",
           "phase": "ph-0001",
-          "state": "unchecked",
+          "state": "checked",
           "satisfies": [
             "../../../plan.dd.json#acceptance_criteria/ac-0003"
           ],
@@ -58,7 +58,7 @@
           {
             "id": "dw-0001",
             "assertion": "pod export",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -66,7 +66,7 @@
           {
             "id": "dw-0002",
             "assertion": "role export",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ],
@@ -74,7 +74,7 @@
           {
             "id": "dw-0003",
             "assertion": "the view's suggestion",
-            "state": "unchecked",
+            "state": "checked",
             "pressure": "../../backpressure.dd.json#rows/bp-0001"
           }
         ]

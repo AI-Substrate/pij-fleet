@@ -14,6 +14,7 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("rebuild") => Some(REBUILD),
         Some("routes") => Some(ROUTES),
         Some("templates" | "template-diff") => Some(TEMPLATES),
+        Some("export") => Some(EXPORT),
         Some("memory") => Some(MEMORY),
         Some("types" | "seed" | "retype") => Some(TYPES),
         Some("show") => Some(SHOW),
@@ -70,6 +71,7 @@ Usage:
   pij directory suggest <area> --signal <text>        suggest a seat instead of creating it
   pij directory templates [--show <name>[@vN]]        the role templates, or one's body
   pij directory template-diff <id>                    what changed in its template since
+  pij directory export <role> --as-template <path> --why <text>   save a role as the repo's own template
   pij directory assign <role>[/<instance>] <seat> --why <text>
   pij directory assign --batch <file> --why <text>      many holdings, one commit
   pij directory release <role>[/<instance>] <seat> --why <text>
@@ -305,6 +307,18 @@ template's exact body (the latest version by default) and its path. Templates ar
 adapt, not a checklist. template-diff shows what changed between the template
 version role <id> came from and the latest one. Nothing is ever applied: the
 role keeps its own edits, and you copy any change you want by hand.";
+
+const EXPORT: &str = "\
+pij directory export: save a role as the repo's own role template.
+
+Usage:
+  pij directory export <role> --as-template <path> --why <text> [--project <slug>]
+
+Writes the role, its parameters included, at <path> (a folder gets
+role.dd.json), without its id, changelog or template provenance; a path that
+already holds a template refuses. Make a role from it with
+`pij directory add <id> --file <path> --why <text>`. In the governance
+worktree it is one commit; elsewhere a file you commit. Launches nothing.";
 
 const REBUILD: &str = "\
 pij directory rebuild: replace this project's directory rows in the store with

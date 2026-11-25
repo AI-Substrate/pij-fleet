@@ -29,8 +29,9 @@ use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
 
 const COMMAND: &str = "pij directory";
-const SINGLE: [&str; 39] = [
+const SINGLE: [&str; 40] = [
     "why",
+    "as-template",
     "subject",
     "signal",
     "answer",
@@ -173,6 +174,7 @@ impl Arguments {
                             | "retype"
                             | "show"
                             | "suggest"
+                            | "export"
                     ) => {}
             [family, leaf, ..] if family == "directory" => {
                 return Err(Refusal::new(
@@ -565,6 +567,14 @@ impl Arguments {
                 format!("directory {}: --to belongs to `lineage add`", call.leaf),
             ));
         }
+        if (call.leaf == "export") != call.single.contains_key("as-template")
+            || (call.leaf == "export" && call.positions.len() != 1)
+        {
+            return Err(Refusal::new(
+                "E-RS-ARG",
+                "usage: pij directory export <role> --as-template <path> --why <text> (--as-template belongs to `export`)",
+            ));
+        }
         if !matches!(call.leaf.as_str(), "add" | "lineage") && call.single.contains_key("from") {
             return Err(Refusal::new(
                 "E-RS-ARG",
@@ -866,6 +876,7 @@ pub(crate) async fn handle(
         "retype" => retype(&state, &actor, &request.caller, &call).await,
         "show" => show(&state, &actor, &request.caller, &call).await,
         "suggest" => suggest(&state, &actor, &request.caller, &call).await,
+        "export" => export(&state, &actor, &request.caller, &call).await,
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
@@ -1107,7 +1118,20 @@ async fn add(
             ));
         }
         (None, Some(file), [id]) if !call.describes_a_role() => {
-            vec![(id.clone(), read_document(&caller_path(caller, &file)?)?)]
+            let mut document = read_document(&caller_path(caller, &file)?)?;
+            // A repo's own role template (`directory export`, PRD 010
+            // req-04) names no id: the role takes the one given here.
+            if role::id_of(&document).is_none()
+                && let Some(meta) = document["sections"].as_array_mut().and_then(|sections| {
+                    sections
+                        .iter_mut()
+                        .find(|section| section["name"] == "meta")
+                        .and_then(|section| section["value"].as_object_mut())
+                })
+            {
+                meta.insert("id".into(), json!(id));
+            }
+            vec![(id.clone(), document)]
         }
         (None, Some(_), [_]) => {
             return Err(Refusal::new(
@@ -1757,6 +1781,124 @@ async fn seed(
         "path": path.display().to_string(),
         "commit": written.commit,
         "paths": written.paths,
+    }))
+}
+
+/// `directory export <role> --as-template <path> --why <text>` (PRD 010
+/// req-04): the role's document, its parameters included, saved as a role
+/// template the repo owns: no id (the role made from it takes its own with
+/// `pij directory add <id> --file <path>`), no changelog, no template
+/// provenance. One governance commit when the path is in the governance
+/// worktree; otherwise a file for the repo to commit. Launches no seat.
+async fn export(
+    state: &AppState,
+    actor: &SeatId,
+    caller: &CallerContext,
+    call: &Arguments,
+) -> Result<Value, Refusal> {
+    let id = &call.positions[0];
+    let why = call
+        .get("why")
+        .filter(|why| !why.trim().is_empty())
+        .ok_or_else(|| {
+            Refusal::new(
+                "E-RS-ARG",
+                "--why <text> is required: it goes in the commit",
+            )
+        })?;
+    let paths = RolePaths::new(id)?;
+    let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
+    let worktree = crate::community::root::find(&repo)?.worktree;
+    let mut document = read_document(&worktree.join(&paths.document)).map_err(|_| {
+        Refusal::new(
+            "E-RS-NOT-FOUND",
+            format!("project {project} has no role {id}"),
+        )
+    })?;
+    if let Some(sections) = document["sections"].as_array_mut() {
+        sections.retain(|section| section["name"] != "changelog");
+        if let Some(meta) = sections
+            .iter_mut()
+            .find(|section| section["name"] == "meta")
+            .and_then(|section| section["value"].as_object_mut())
+        {
+            for field in ["id", "template", "template_version", "state", "merged_into"] {
+                meta.remove(field);
+            }
+        }
+    }
+    let given = call.get("as-template").unwrap_or_default();
+    let mut dest = caller_path(caller, &given)?;
+    if dest.is_dir() || dest.extension().is_none() {
+        dest = dest.join("role.dd.json");
+    }
+    if dest.exists() {
+        return Err(Refusal::new(
+            "E-RS-ARG",
+            format!("{} already exists; save to a new path", dest.display()),
+        ));
+    }
+    let bytes = crate::community::role::to_bytes(&document);
+    let canonical =
+        |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let folder = dest.parent().map(Path::to_path_buf).unwrap_or_default();
+    let mut existing = folder.clone();
+    while !existing.exists() {
+        match existing.parent() {
+            Some(parent) => existing = parent.to_path_buf(),
+            None => break,
+        }
+    }
+    let inside = canonical(&existing)
+        .strip_prefix(canonical(&worktree))
+        .ok()
+        .map(|base| base.join(folder.strip_prefix(&existing).unwrap_or(Path::new(""))))
+        .map(|base| base.join(dest.file_name().unwrap_or_default()));
+    let shown = dest.display().to_string();
+    let commit = match inside {
+        Some(relative) => {
+            let (written, _) = state
+                .services
+                .directory
+                .write(
+                    &project,
+                    repo,
+                    vec![NewFile {
+                        path: relative,
+                        bytes,
+                        document: false,
+                        existing: Existing::Refuse(Refusal::new(
+                            "E-RS-ARG",
+                            format!("{shown} already exists"),
+                        )),
+                    }],
+                    format!(
+                        "community: role {id} saved as a role template\n\n{why}\n\nPij-Seat: {actor}\nPij-Project: {project}"
+                    ),
+                )
+                .await?;
+            Some(written.commit)
+        }
+        None => {
+            std::fs::create_dir_all(&folder).map_err(|error| {
+                Refusal::new(
+                    "E-RS-ARG",
+                    format!("cannot create {}: {error}", folder.display()),
+                )
+            })?;
+            std::fs::write(&dest, bytes).map_err(|error| {
+                Refusal::new("E-RS-ARG", format!("cannot write {shown}: {error}"))
+            })?;
+            None
+        }
+    };
+    Ok(json!({
+        "project": project,
+        "role": id,
+        "parameters": role::parameters(&document).into_iter().map(|(name, required)| json!({"name": name, "required": required})).collect::<Vec<_>>(),
+        "wrote": shown,
+        "commit": commit,
+        "next": format!("make a role from it: pij directory add <id> --file {shown} --why <text>"),
     }))
 }
 

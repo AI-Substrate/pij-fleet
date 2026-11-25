@@ -105,7 +105,7 @@
 					"statement": "`pij pod export <pod> --as-template <path>` writes a pod, including seats added while it ran, into the repo as a template. A role can be saved as a role template with named parameters. The prime's view suggests saving one when a similar role or group is created a second time.",
 					"actor": "prime",
 					"priority": "should",
-					"state": "planned",
+					"state": "shipped",
 					"done_when": "A pod with one seat added after `up` exports to a template with that extra slot, and `plan` on the new template lists it.",
 					"source": "design conversation 2026-11-25: templates grow from dynamic roles that proved useful"
 				},
@@ -204,6 +204,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "Built on #347 (s02): req-02 and req-03 shipped; req-06 in progress (export arrives with s03; its live spawn-counter receipt after deploy)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #347 (s03): req-04 shipped (pod and role export, the view's save-as-template suggestion); req-06 stays in progress until its live spawn-counter receipt after deploy."
 				}
 			]
 		}
