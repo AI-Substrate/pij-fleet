@@ -91,4 +91,5 @@
 - [2026-11-22 F278: clear pre-send release preserves cost bounds](2026-11-22-f278-clear-pre-send-release-preserves.dd.md): Before pricing tap-detach retries, reviewing clear-pane attribution or collecting the carried shutdown AFTER (F278, detach, cost, after)
 - [2026-11-22 F279: lapsed-control cost bounds](2026-11-22-f279-lapsed-control-costs.dd.md): Before pricing Copilot control retries or citing PR334 recovery cost (cost, F279, copilot, sqlite)
 - [2026-11-22 \#318 and \#321 AFTER: cohorts and proof ceilings](2026-11-22-pr318-pr321-after-cohorts.dd.md): Before comparing observer invalidation and pool-cut live CPU receipts, or repeating matched-cost windows (after-deploy, cost, cohort, measurement, proof-limits)
+- [2026-11-25 PRD 008 receipt-only seat: no measurement claim](2026-11-25-prd-008-receipt-only-seat-no-measurement.dd.md): Before using performance/receipt activity as PRD 008 req-09 cost evidence (prd008, receipt, scope, proof-limits)
 <!-- /pij:generated -->
