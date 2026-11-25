@@ -3054,7 +3054,10 @@
 					"harness_session": "5f00a336-53e9-4a2a-920f-cef0542f5fab",
 					"instance_key": "344",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-stormy-eagle",
+					"to": "2026-11-25T00:57:31.649Z",
 					"why": "#344 PRD 006 single review (amended C34; Jordan-approved)"
 				}
 			]
