@@ -869,7 +869,10 @@
 					"harness": "copilot",
 					"instance_key": "receipt",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-multiple-nightingale",
 					"seat": "pij-developed-parakeet",
+					"to": "2026-11-25T07:24:25.841Z",
 					"why": "started in the role by pij-multiple-nightingale (pij spawn --as)"
 				}
 			]
