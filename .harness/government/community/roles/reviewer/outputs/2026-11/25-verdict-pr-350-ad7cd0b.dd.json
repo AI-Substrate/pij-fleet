@@ -1,0 +1,64 @@
+{
+	"dd": {
+		"schema": "pij/output"
+	},
+	"references": [],
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"answers": "01a210d5-09d5-7980-aee0-3c27b3e1110b",
+				"date": "2026-11-25",
+				"head": "ad7cd0b4159c6650bb36173af07f8d8dac62ec2c",
+				"kind": "verdict",
+				"link": "https://github.com/AI-Substrate/pij-fleet/pull/350",
+				"requester": "pij-steady-otter",
+				"result": "block",
+				"role": "reviewer",
+				"subject": "pr:350",
+				"writer": "pij-strict-reindeer",
+				"writer_holds_role": true
+			}
+		},
+		{
+			"name": "notes_owed",
+			"value": [
+				"B350-R1-01: retire observed-dead process-group IDs; preserve live-descendant cleanup and add the gone-then-reused witness."
+			]
+		},
+		{
+			"name": "evidence",
+			"value": [
+				{
+					"command": "just test harness/scripts/shared-build.test.ts --maxWorkers=1",
+					"exit_code": 0,
+					"log": "Three sequential nice-19 runs: 34/34 each; 64.62s, 67.95s, 66.25s."
+				},
+				{
+					"command": "just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t review-ownership (synthetic lifecycle witness)",
+					"exit_code": 1,
+					"log": "Unchanged helper signaled recycled synthetic group -12001 after previously observing ESRCH. Control retiring observed-dead IDs passed. All signals mocked."
+				},
+				{
+					"command": "just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t re-sends-TERM (one-TERM drain mutant)",
+					"exit_code": 1,
+					"log": "Expected mutant failure: drained only by KILL, 11418ms >= 10000ms."
+				},
+				{
+					"command": "just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t teardown (no-teardown-kill mutant)",
+					"exit_code": 1,
+					"log": "Expected mutant failure: five groups/seven processes survived; exact recorded fixture PID stopped after ancestry verification, all seven absent afterwards."
+				},
+				{
+					"command": "just lint; just typecheck; just test harness/scripts/recipe-cost.test.ts --maxWorkers=1",
+					"exit_code": 0,
+					"log": "Private unchanged archive: lint zero errors/three existing warnings; typecheck passed; recipe-cost 12/12 passed."
+				}
+			]
+		},
+		{
+			"name": "body",
+			"value": "BLOCK at ad7cd0b4159c6650bb36173af07f8d8dac62ec2c. One reviewer, one round under amended C34; the author fixes and the prime verifies the fix commits.\n\nB350-R1-01 (rule 6): stopFixtures retains dead process-group IDs and can signal a recycled, unrelated group.\nLocation: harness/scripts/shared-build.test.ts:104-114.\n\nThe persistent groups Set only grows. Line 109 excludes a group from this tick's alive array when kill(-pgid, 0) returns ESRCH, but does not remove that ID from groups. If another fixture keeps teardown running and that number becomes a different process group, a later tick treats it as alive and sends TERM or KILL without establishing that its new owner is a fixture. This is more than the usual instantaneous check/signal race: the code has observed the original group gone, then deliberately continues checking its stale identity.\n\nDeterministic witness against the unchanged helper: two synthetic fixture groups; the first exits and reports ESRCH while the second keeps draining; the next census contains only the second fixture, while the synthetic OS reports the first numeric group ID reused. Teardown signals the reused ID. Actual: [-12001]; expected: []. Every signal in this witness was mocked; no unrelated live process was signaled. Retiring IDs at the first observed absence makes the same witness PASS. Required repair: forget an observed-dead group, and never reintroduce it without fresh, live fixture ancestry; add the gone-then-reused regression to the suite. Preserve the ability to stop already-recorded descendant groups after their fixture leader exits.\n\nOther requested checks:\n- drain and stop_watchdog take this script's recorded jobs, not names or patterns. While a group exists its ID cannot belong to a replacement group. Their local polling loops stop at the first absent-group result; stop_watchdog clears its recorded ID. The ordinary non-atomic kill(0)/signal window remains, but the new teardown has the additional demonstrated stale-ID resurrection above.\n- Re-sending TERM is a BRAKE on leaked owned jobs; removing it stops the same groups later. The 0.1-second drain tick and 10-second KILL escalation are POLICY, unchanged. DRAIN_MS reads DRAIN_TICKS; the output-close wait and teardown budget use scaled(). The less-than-DRAIN_MS assertion is deliberately unscaled to reject a stop that required the script's unscaled KILL escalation.\n- Detached fixtures have their own sessions/groups. The descendant census includes cargo, monitor and relay groups, and signals cover their ordinary same-group children. shared-build.sh does not use setsid to escape them. Teardown only discovers descendants while a tracked fixture leader is live, so its completeness is scoped to the fixtures used here, not arbitrary already-orphaned processes. A SIGKILLed vitest cannot run afterEach: acceptable stated limit, not a new blocker.\n- Cost: no added steady-state work or daemon launch site. drain retries use builtin kill(2) at 10 ticks/second per group being stopped; stop_watchdog at 20 ticks/second. Existing /bin/sleep launches are unchanged and normally reduced by faster shutdown. Teardown launches absolute /bin/ps at initialization and at most approximately 10 times/second while a fixture leader is running, independent of seat count within one test worker. Its nominal deadline is scaled(17 seconds), with KILL at scaled(15 seconds). The synchronous ps call itself has no timeout, so this is not a hard bound on a stalled ps; that is a nonblocking C34 follow-up, not another blocker.\n- Privacy/security: no added account names, email addresses, machine-specific paths, secrets, dependency sources or external-input launch surface in the three-file change. The demonstrated risk is accidental cross-group signaling, not a hostile same-user scenario.\n- Bookkeeping: Fixes: F281 belongs, and the current PR body already includes it. Delivers: none is appropriate.\n\nVerification on macOS /bin/bash 3.2.57:\n- just pr-freeze 350: FINAL at this full head; latest check(22), check(24), rust-lint, rust-test and delivers checks passed.\n- just test harness/scripts/shared-build.test.ts --maxWorkers=1: PASS three sequential nice-19 runs, 34/34 each (64.62, 67.95 and 66.25 seconds).\n- One-TERM drain mutant, just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t 're-sends TERM to a group': expected FAIL, 11418 ms versus less than 10000 ms.\n- No-teardown-kill mutant, just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t 'stops every fixture still running at teardown': expected FAIL, five groups alive. Captured fixture ancestry identified all seven owned processes before worker exit. After checking the exact PIDs and ancestry, TERM to the recorded fixture PID 23510 stopped it and its descendants; the subsequent exact-PID census found none alive. No pattern kills.\n- Synthetic ownership witness, just test harness/scripts/shared-build.test.ts --maxWorkers=1 -t 'review ownership': FAIL on the head's helper; PASS with observed-dead IDs retired.\n- just typecheck: PASS in the private archive.\n- just lint: PASS in the clean private archive, zero errors, three existing warnings and five infos. The initial attempt encountered nested configurations from the review's own mutant archives; those exact directories were removed and the clean rerun passed.\n- node_modules/.bin/biome check harness/scripts/shared-build.test.ts docs/difficulties.md: PASS.\n- just test harness/scripts/recipe-cost.test.ts --maxWorkers=1: PASS, 12/12.\n- /bin/bash -n harness/scripts/shared-build.sh: PASS.\n- harness boot: advisory NOT-READY in the dependency-free review checkout. harness checks --quick: FAIL there on missing dependencies and incompatible ambient Biome; four sensors passed, three heavy sensors skipped. This is not a claim that the local full gate is green. Exact-head CI supplies the broader proof; no cargo or bounce was run locally.\n\nAll test mutations and dependencies were confined to a private git archive, with real locked dependencies and no node_modules symlink. The read-only review checkout remains clean. The synthetic witness patch and logs are retained as session evidence; temporary archive directories were cleaned by their exact recorded paths.\n\nLive cost receipts: daemon spawn counter 528 at 03:53:51 UTC and 528 at 03:58:43 UTC (292 seconds; every per-site value unchanged). just spawn-rate --seconds 20 measured 108.9 launches/second before and 432.6 after; both attributed zero sampled daemon children. The second sample included unrelated directory_http test and git activity. These shared-machine samples do not isolate a PR effect; no production deployment occurred.\n\nHarness gift: the missing sensor is process-group lifetime, not just eventual disappearance. Carry the gone-then-reused witness into the repair. The newer reviewer-memory instruction recommending symlinked node_modules conflicts with C25; this review used independent archive dependencies instead. No review procedure is currently listed by just proc; route any procedure improvement through its owner rather than editing this review checkout.\n"
+		}
+	]
+}
