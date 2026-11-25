@@ -1158,7 +1158,27 @@ async fn down(
     let mut lines: Vec<String> = Vec::new();
     // PRD 010 req-01: the pij CLI runs the template's close procedure in the
     // caller's process before it asks for down; this records what it did.
-    if let Ok(template) = template_of(&opened.record.repo, &document)
+    // B347-R1-01: a template pij cannot read may name a close procedure, so
+    // down refuses rather than assume none, unless the caller skips it (a
+    // brake: removing it only closes more). The skip is logged either way.
+    let template = match template_of(&opened.record.repo, &document) {
+        Ok(template) => Some(template),
+        Err(refusal) if call.skip_close_procedure => {
+            lines.push(format!(
+                "close procedure unknown, skipped (--skip-close-procedure): the template cannot be read ({refusal})"
+            ));
+            None
+        }
+        Err(refusal) => {
+            return Err(Refusal::new(
+                pod::E_TEMPLATE,
+                format!(
+                    "pod {pod_name}: its template cannot be read ({refusal}), so its close procedure is unknown; nothing was closed. Restore the template, or go on without it: pij pod down {pod_name} --skip-close-procedure"
+                ),
+            ));
+        }
+    };
+    if let Some(template) = &template
         && let Some(procedure) = template.close_procedure()
     {
         let key = format!("pod-{pod_name}");
@@ -2344,8 +2364,12 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
 /// names, with what the pij CLI needs to run it (PRD 010 req-01); null when
 /// the template names none or cannot be read.
 fn close_procedure(repo: &Path, document: &Value, pod_name: &str) -> Value {
-    let Ok(template) = template_of(repo, document) else {
-        return Value::Null;
+    let template = match template_of(repo, document) {
+        Ok(template) => template,
+        // B347-R1-01: unreadable is not "none"; the pij CLI refuses down on it.
+        Err(refusal) => {
+            return json!({"error": refusal.to_string(), "key": format!("pod-{pod_name}")});
+        }
     };
     template.close_procedure().map_or(Value::Null, |procedure| {
         json!({
@@ -2662,22 +2686,56 @@ async fn community_init(
     }))
 }
 
-/// Every file under `dir`, relative to it, sorted. A few directory reads.
-fn files_under(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+/// The regular files under `dir`, each read only after its canonical path is
+/// found inside `bound` (B347-R1-04). A link that leads out of `bound`, or
+/// cannot be resolved, refuses naming its path and never its content; one
+/// that stays inside is not followed (what it points to is copied as itself).
+/// A brake: removing it only ever copies more.
+fn files_under(dir: &Path, bound: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>, Refusal> {
+    let escapes = |path: &Path| {
+        Refusal::new(
+            pod::E_TEMPLATE,
+            format!(
+                "{} leads outside the template's folder; pij copies nothing from outside a template. Replace the link with the file it means, or remove it",
+                path.display()
+            ),
+        )
+    };
+    let Ok(root) = std::fs::canonicalize(bound) else {
+        return Ok(Vec::new());
+    };
+    let inside =
+        |path: &Path| std::fs::canonicalize(path).is_ok_and(|real| real.starts_with(&root));
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    if !inside(dir) {
+        return Err(escapes(dir));
+    }
     let mut found = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(next) = stack.pop() {
         for entry in std::fs::read_dir(&next).into_iter().flatten().flatten() {
             let path = entry.path();
-            if path.is_dir() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_symlink() {
+                if !inside(&path) {
+                    return Err(escapes(&path));
+                }
+            } else if kind.is_dir() {
                 stack.push(path);
-            } else if let (Ok(bytes), Ok(inside)) = (std::fs::read(&path), path.strip_prefix(dir)) {
-                found.push((inside.to_path_buf(), bytes));
+            } else if kind.is_file()
+                && inside(&path)
+                && let (Ok(bytes), Ok(relative)) = (std::fs::read(&path), path.strip_prefix(dir))
+            {
+                found.push((relative.to_path_buf(), bytes));
             }
         }
     }
     found.sort_by(|a, b| a.0.cmp(&b.0));
-    found
+    Ok(found)
 }
 
 /// `pij pod export <pod> --as-template <path> --why <text>` (req-04): the pod
@@ -2737,7 +2795,7 @@ async fn export(
         && !template.folder.as_os_str().is_empty()
     {
         files.extend(
-            files_under(&template.folder.join("procedures"))
+            files_under(&template.folder.join("procedures"), &template.folder)?
                 .into_iter()
                 .map(|(inside, bytes)| (Path::new("procedures").join(inside), bytes)),
         );

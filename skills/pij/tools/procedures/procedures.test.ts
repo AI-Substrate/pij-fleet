@@ -54,6 +54,8 @@ let err: string[];
 let claimNumber: number;
 /** What the fake `pij-rs pod show` answers with. */
 let podShown: Record<string, unknown>;
+/** When set, what the fake `pij-rs pod show` answers instead (a failed or unreadable show). */
+let showAnswer: ExecResult | undefined;
 
 function write(path: string, text: string): void {
 	mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -91,6 +93,7 @@ function fakeExec(
 			stderr: "",
 		};
 	if (tool === "ddocs") return { status: 0, stdout: "{}", stderr: "" };
+	if (tool === "pij-rs" && args.includes("show") && showAnswer) return showAnswer;
 	if (tool === "pij-rs" && args.includes("show"))
 		return { status: 0, stdout: JSON.stringify({ ok: true, data: podShown }), stderr: "" };
 	if (tool === "pij-rs") return { status: 0, stdout: "", stderr: "" };
@@ -209,6 +212,7 @@ beforeEach(() => {
 	err = [];
 	claimNumber = 1;
 	podShown = {};
+	showAnswer = undefined;
 });
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -996,6 +1000,100 @@ describe("a pod template's procedures (PRD 010 req-01)", () => {
 		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
 		expect(calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"))).toEqual([]);
 		expect(err.join("\n")).toContain("resume: just proc PROC-fleet-0003 s0001 --key pod-b1");
+	});
+
+	// B347-R1-01: a failed show, or a template pij cannot read, never reads as "no close procedure".
+	it("pod down closes nothing when the show fails or the template cannot be read, unless told to skip", () => {
+		const downs = () => calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"));
+		const args = ["--socket", "/tmp/s", "pod", "down", "b1"];
+		const options = { skillHome: join(root, "no-skill-home") };
+		for (const answer of [
+			{ status: 1, stdout: "", stderr: "daemon not running" },
+			{ status: 0, stdout: "not json", stderr: "" },
+			{ status: 0, stdout: JSON.stringify({ ok: false, meta: "E-RS-STORE down" }), stderr: "" },
+		]) {
+			showAnswer = answer;
+			err = [];
+			expect(podDown(args, args.slice(3), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+			expect(err.join("\n")).toContain("nothing was closed");
+		}
+		expect(calls.filter((c) => c.args.includes("show")).map((c) => c.args)).toContainEqual([
+			"--socket",
+			"/tmp/s",
+			"--json",
+			"pod",
+			"show",
+			"b1",
+		]);
+		showAnswer = undefined;
+		podShown = {
+			close_procedure: { error: "E-RS-POD-TEMPLATE pods/gone: no such file", key: "pod-b1" },
+		};
+		err = [];
+		expect(podDown(args, args.slice(3), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+		expect(err.join("\n")).toContain("its template cannot be read (E-RS-POD-TEMPLATE pods/gone");
+		expect(downs()).toEqual([]);
+		const skip = [...args, "--skip-close-procedure"];
+		expect(podDown(skip, skip.slice(3), io(), "/bin/pij-rs", options)).toBe(EXIT_OK);
+		expect(downs().map((c) => c.args)).toEqual([skip]);
+	});
+
+	// B347-R1-02, the reviewer's reproduction: a recorded step whose check fails now stops down again.
+	it("pod down rechecks a recorded step, stops when it fails now, and starts afresh after a down", () => {
+		procedure(
+			"fleet",
+			"0004",
+			"close-a-step",
+			{
+				steps: [
+					{
+						id: "s0001",
+						title: "nothing uncommitted",
+						kind: "run",
+						run: "clean",
+						done: "clean",
+						done_when: "clean",
+					},
+					{
+						id: "s0002",
+						title: "pr settled",
+						kind: "run",
+						run: "settled",
+						done: "settled",
+						done_when: "settled",
+					},
+				],
+			},
+			"clean:\n    true\nsettled:\n    true\n",
+		);
+		podShown = { close_procedure: { id: "PROC-fleet-0004", template: null, key: "pod-b1" } };
+		const downs = () => calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"));
+		const args = ["pod", "down", "b1"];
+		const options = { skillHome: join(root, "no-skill-home") };
+		let dirty = false;
+		let prOpen = true;
+		recipes = { clean: () => (dirty ? 1 : 0), settled: () => (prOpen ? 1 : 0) };
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).not.toBe(EXIT_OK);
+		expect(err.join("\n")).toContain("stopped at step s0002");
+		dirty = true;
+		prOpen = false;
+		err = [];
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+		expect(err.join("\n")).toContain(
+			"step s0001 (nothing uncommitted) was done, and its check fails now",
+		);
+		expect(err.join("\n")).toContain(
+			"redo it: just proc PROC-fleet-0004 s0001 --again --key pod-b1",
+		);
+		expect(downs()).toEqual([]);
+
+		dirty = false;
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_OK);
+		expect(downs()).toHaveLength(1);
+		expect(readProgress(root).runs["PROC-fleet-0004"]?.["pod-b1"]).toBeUndefined();
+		prOpen = true;
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).not.toBe(EXIT_OK);
+		expect(downs()).toHaveLength(1);
 	});
 
 	it("pod down goes straight to pij-rs when the template names no close procedure", () => {

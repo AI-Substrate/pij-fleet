@@ -453,6 +453,20 @@ pub fn exported(name: &str, pod_name: &str, record: &Value, template: Option<&Va
         .map(|template| section_of(template, "meta")["title"].clone())
         .and_then(|title| title.as_str().map(str::to_string))
         .unwrap_or_else(|| name.to_string());
+    // Wiring and stage needs name slots: keep only the slots exported, so a
+    // slot that had no member leaves no dangling name.
+    let kept: Vec<Value> = slots.iter().map(|slot| slot["id"].clone()).collect();
+    // A slot that must not share a dropped slot's model has nothing left to
+    // differ from (B347-R1-03).
+    for slot in &mut slots {
+        if slot
+            .get("not_model_of")
+            .is_some_and(|other| !kept.contains(other))
+            && let Some(fields) = slot.as_object_mut()
+        {
+            fields.remove("not_model_of");
+        }
+    }
     let mut sections = vec![
         json!({"name": "meta", "value": {
             "name": name,
@@ -463,9 +477,6 @@ pub fn exported(name: &str, pod_name: &str, record: &Value, template: Option<&Va
         json!({"name": "parameters", "value": if parameters.is_null() { json!([]) } else { parameters }}),
         json!({"name": "slots", "value": slots}),
     ];
-    // Wiring and stage needs name slots: keep only the slots exported, so a
-    // slot that had no member leaves no dangling name.
-    let kept: Vec<Value> = slots.iter().map(|slot| slot["id"].clone()).collect();
     let fit = |wanted: &str, mut value: Value| -> Value {
         if let Some(rows) = value.as_array_mut() {
             match wanted {
@@ -587,6 +598,27 @@ mod tests {
             !text.contains("\"reviewer\"") && !text.contains("\"project-manager\""),
             "no wiring or stage need names a slot it dropped: {text}"
         );
+    }
+
+    /// B347-R1-03: the build pod with its coder released exports its project
+    /// manager and reviewer as a template that parses: the reviewer's
+    /// not_model_of names a slot that is gone, so it goes too.
+    #[test]
+    fn a_pod_reshaped_without_the_author_still_exports() {
+        let template: Value =
+            serde_json::from_slice(get("build", None).unwrap().template_bytes()).unwrap();
+        let record = json!({"sections": [
+            {"name": "meta", "value": {"template": "shipped:build@v1"}},
+            {"name": "members", "value": [
+                {"slot": "project-manager", "role": "pm", "seat": "pij-a"},
+                {"slot": "reviewer", "role": "reviewer", "seat": "pij-b"},
+            ]},
+        ]});
+        let document = exported("reshaped", "b1", &record, Some(&template));
+        let parsed = pod::parse(&serde_json::to_vec(&document).unwrap(), "reshaped").unwrap();
+        let ids: Vec<&str> = parsed.slots.iter().map(|slot| slot.id.as_str()).collect();
+        assert_eq!(ids, ["project-manager", "reviewer"]);
+        assert_eq!(parsed.slots[1].not_model_of, None);
     }
 
     /// Plan 255 ac-0003: a role shape made twice by hand, and two pods grown

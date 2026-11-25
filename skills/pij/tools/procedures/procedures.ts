@@ -2256,13 +2256,37 @@ export function podDown(
 		return forward([]);
 	const pod = words.find((w) => !w.startsWith("-"));
 	if (pod === undefined) return forward([]);
-	const shown = io.exec(pijRs, ["--json", "pod", "show", pod], io.cwd, io.env, false);
-	let close: unknown;
+	const skip = `pij pod down ${pod} --skip-close-procedure`;
+	// The show goes where the down goes: the same flags before `pod` (B347-R1-01).
+	const before = args
+		.slice(0, Math.max(0, args.length - rest.length - 1))
+		.filter((w) => w !== "--json");
+	const shown = io.exec(pijRs, [...before, "--json", "pod", "show", pod], io.cwd, io.env, false);
+	let answer: unknown;
 	try {
-		const answer: unknown = JSON.parse(shown.stdout);
-		close = isObj(answer) && isObj(answer.data) ? answer.data.close_procedure : undefined;
+		answer = JSON.parse(shown.stdout);
 	} catch {
-		close = undefined;
+		answer = undefined;
+	}
+	// A show that fails or answers nothing readable could hide a close procedure: refuse, never assume none (a brake).
+	if (shown.status !== 0 || !isObj(answer) || answer.ok !== true || !isObj(answer.data)) {
+		const why =
+			isObj(answer) && typeof answer.meta === "string"
+				? answer.meta
+				: tail(shown.stderr || shown.stdout || `exit ${shown.status}`, 1);
+		io.err(
+			`refused: pod down ${pod}: pij could not read the pod to find its close procedure (${why}); nothing was closed.`,
+		);
+		io.err(`  go on without it: ${skip}`);
+		return EXIT_REFUSED;
+	}
+	const close = answer.data.close_procedure;
+	if (isObj(close) && typeof close.error === "string") {
+		io.err(
+			`refused: pod down ${pod}: its template cannot be read (${close.error}), so its close procedure is unknown; nothing was closed.`,
+		);
+		io.err(`  restore the template, or go on without it: ${skip}`);
+		return EXIT_REFUSED;
 	}
 	if (!isObj(close) || typeof close.id !== "string") return forward([]);
 	const id = close.id;
@@ -2273,7 +2297,6 @@ export function podDown(
 	const templateFlag = folder === undefined ? "" : ` --template ${folder}`;
 	const key = str(close.key) ?? `pod-${pod}`;
 	const runIo: Io = args.includes("--json") ? { ...io, out: io.err } : io;
-	const skip = `pij pod down ${pod} --skip-close-procedure`;
 	const ctx = context(runIo, folder === undefined ? options : { ...options, template: folder });
 	if (typeof ctx === "string") {
 		io.err(
@@ -2292,6 +2315,16 @@ export function podDown(
 		return EXIT_REFUSED;
 	}
 	io.err(`pod down ${pod}: running the template's close procedure ${id} first (key ${key})`);
+	// A step recorded done is accepted only while its done check still passes (B347-R1-02); nothing is replayed.
+	const stale = staleStep(ctx, procedure, key);
+	if (stale !== undefined) {
+		io.err(
+			`refused: pod down ${pod}: close procedure ${id} step ${stale.id} (${stale.title}) was done, and its check fails now; nothing was closed.`,
+		);
+		io.err(`  redo it: ${ctx.entry} ${id} ${stale.id} --again${templateFlag} --key ${key}`);
+		io.err(`  then: pij pod down ${pod}   (or go on without it: ${skip})`);
+		return EXIT_REFUSED;
+	}
 	const run = runThrough(ctx, procedure, key);
 	if (!run.done) {
 		io.err(
@@ -2303,7 +2336,31 @@ export function podDown(
 		io.err(`  then: pij pod down ${pod}   (or go on without it: ${skip})`);
 		return run.code === EXIT_OK ? EXIT_REFUSED : run.code;
 	}
-	return forward(["--close-procedure-ran"]);
+	const status = forward(["--close-procedure-ran"]);
+	// Taken down: the next down of a pod by this name runs its close procedure afresh.
+	if (status === EXIT_OK) clearRun(ctx.root, procedure.id, key);
+	return status;
+}
+
+/** The first run step `key` records done whose live done check fails now; decisions and marks are kept as recorded. */
+function staleStep(ctx: Ctx, procedure: Procedure, key: string): Step | undefined {
+	const progress = readProgress(ctx.root);
+	const parsed = parseFlags([]);
+	const inputs = parsed.ok ? gatherInputs(ctx, procedure, parsed.flags) : "no flags";
+	if (typeof inputs === "string") return undefined;
+	for (const step of procedure.steps) {
+		const record = recordOf(progress, procedure.id, key, step.id);
+		if (!record || step.kind !== "run" || !step.done) continue;
+		const check = runRecipe(
+			ctx,
+			procedure,
+			step.done,
+			stepEnv(ctx, procedure, step.id, key, inputs),
+			false,
+		);
+		if (check.status !== 0) return step;
+	}
+	return undefined;
 }
 
 export function realIo(): Io {

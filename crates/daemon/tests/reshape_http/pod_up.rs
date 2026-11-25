@@ -1247,6 +1247,87 @@ async fn a_template_names_its_procedures_and_down_records_its_close_procedure() 
     ] {
         assert!(log.contains(line), "{line}: {log}");
     }
+
+    // B347-R1-01: a template moved away is not "no close procedure".
+    std::fs::rename(repo.main.join("pods/build"), repo.main.join("pods/moved")).unwrap();
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    assert!(
+        shown["data"]["close_procedure"]["error"].is_string(),
+        "{shown}"
+    );
+    let refused = pod(rig.addr, &repo, &["down", "build"]).await;
+    assert_eq!(refused["details"]["code"], "E-RS-POD-TEMPLATE", "{refused}");
+    assert!(
+        refused["meta"]
+            .as_str()
+            .unwrap()
+            .contains("--skip-close-procedure"),
+        "{refused}"
+    );
+    let skipped = pod(
+        rig.addr,
+        &repo,
+        &["down", "build", "--skip-close-procedure"],
+    )
+    .await;
+    assert_eq!(skipped["ok"], true, "{skipped}");
+    let log = pod(rig.addr, &repo, &["show", "build"]).await["data"]["log"].to_string();
+    assert!(
+        log.contains("close procedure unknown, skipped (--skip-close-procedure)"),
+        "{log}"
+    );
+    rig.server.abort();
+}
+
+/// B347-R1-04: a template's procedures holding a link out of its folder
+/// refuse export by the link's path, never its content, and nothing is
+/// written or committed; a brake on what pij copies.
+#[tokio::test]
+async fn an_export_refuses_a_procedure_link_out_of_the_template() {
+    let repo = repo("pij-pod-export-link");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let own = repo
+        .main
+        .join("pods/build/procedures/pod/PROC-pod-0001-close");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("procedure.dd.json"), "{}").unwrap();
+    let outside = repo.main.join("outside-marker.txt");
+    std::fs::write(&outside, "MARKER-NOT-TO-BE-COPIED").unwrap();
+    std::os::unix::fs::symlink(&outside, own.join("config.txt")).unwrap();
+    up_started(&rig, &repo).await;
+    let before = head(&repo);
+    for target in [
+        "pods/out",
+        ".harness/government/community/pod-templates/out",
+    ] {
+        let cwd_target = if target.starts_with(".harness") {
+            repo.gov.join(target).display().to_string()
+        } else {
+            target.to_string()
+        };
+        let refused = pod(
+            rig.addr,
+            &repo,
+            &[
+                "export",
+                "build",
+                "--as-template",
+                &cwd_target,
+                "--why",
+                "w",
+            ],
+        )
+        .await;
+        assert_eq!(refused["details"]["code"], "E-RS-POD-TEMPLATE", "{refused}");
+        let text = refused.to_string();
+        assert!(text.contains("config.txt"), "names the link: {text}");
+        assert!(!text.contains("MARKER-NOT-TO-BE-COPIED"), "{text}");
+    }
+    assert!(!repo.main.join("pods/out").exists());
+    assert_eq!(head(&repo), before, "nothing committed");
     rig.server.abort();
 }
 
