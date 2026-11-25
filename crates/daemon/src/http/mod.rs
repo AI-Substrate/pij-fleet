@@ -30,6 +30,7 @@ pub(crate) mod route_counts;
 mod routes;
 pub(crate) use routes::notify_primes;
 mod shim;
+mod spawn_role;
 pub mod steer;
 mod turn_end;
 mod types;
@@ -82,9 +83,9 @@ pub use exposure::{BindRefusal, Exposure, RemoteListener, boot_banner, check_bin
 pub use identity::{CallerContext, IdentityQuery, IdentityRequest, Phonehome};
 pub use turn_end::{TURN_END, TurnEndRequest};
 pub use types::{
-    CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest, NativePrecedence,
-    PeerStreamState, Registration, ReviveRequest, SendRequest, SpawnRequest, SpawnResponse,
-    StateCard, StateRequest, StreamFrame, UnavailablePeer, UnsupportedField,
+    AsRole, CursorResetDetail, FederatedRoster, InboxAckRequest, InboxHeartbeatRequest,
+    NativePrecedence, PeerStreamState, Registration, ReviveRequest, SendRequest, SpawnRequest,
+    SpawnResponse, StateCard, StateRequest, StreamFrame, UnavailablePeer, UnsupportedField,
 };
 
 #[derive(Clone)]
@@ -1540,6 +1541,19 @@ async fn launch_owned(
         );
     }
     let mut request = request;
+    // PRD 007 req-07: a spawn with a role reads it, fills its parameters and
+    // builds its first turn before any launch; every refusal here launches
+    // nothing.
+    let starting = match request.as_role.take() {
+        None => None,
+        Some(as_role) => {
+            match spawn_role::prepare(state, &mut request, as_role, command_name).await {
+                Ok(prepared) => Some(prepared),
+                Err(response) => return *response,
+            }
+        }
+    };
+    let placement = request.role.is_some();
     // Plan 166: a role is stamped from above. Refuse before any launch; the
     // daemon-resolved caller becomes the parent and the role's author.
     let governor = match request.role.as_deref() {
@@ -1862,15 +1876,13 @@ async fn launch_owned(
         Ok(written) => written,
         Err(write_error) => {
             // No row was written, so nothing can bind: the pane goes.
-            let rollback = state.services.tmux.kill(&pane.id).await;
-            watch.withdrawn();
-            let message = match rollback {
+            let message = match roll_back(state, &pane.id, watch, None).await {
                 Ok(()) => format!(
                     "observed launch in pane {} but registry write failed ({write_error}); the pane was removed",
                     pane.id
                 ),
-                Err(kill_error) => format!(
-                    "observed launch in pane {} but registry write failed ({write_error}); rollback also failed ({kill_error})",
+                Err(rollback_error) => format!(
+                    "observed launch in pane {} but registry write failed ({write_error}); rollback also failed ({rollback_error})",
                     pane.id
                 ),
             };
@@ -1883,6 +1895,42 @@ async fn launch_owned(
             );
         }
     };
+    // PRD 007 req-07: one writer commit records the first turn and the
+    // holding before the seat receives anything. A refused commit rolls the
+    // spawn back through the failed-row-write path. That is a POLICY, not a
+    // brake: the commit's result decides whether the spawn survives.
+    let details = match starting {
+        Some(prepared) => match spawn_role::commit(state, prepared, &descriptor).await {
+            Ok(receipt) => Some(receipt),
+            Err(refusal) => {
+                let mut refusal = refusal;
+                refusal.message = match roll_back(state, &pane.id, watch, Some(&descriptor.id))
+                    .await
+                {
+                    Ok(()) => format!(
+                        "{}; the seat {} was rolled back (its pane {} removed, its row tombstoned)",
+                        refusal.message, descriptor.id, pane.id
+                    ),
+                    Err(rollback_error) => format!(
+                        "{}; rolling the seat {} back also failed ({rollback_error})",
+                        refusal.message, descriptor.id
+                    ),
+                };
+                return spawn_role::step_refused(
+                    command_name,
+                    "the one writer commit (first turn and holding)",
+                    &refusal,
+                );
+            }
+        },
+        None => match revive_receipt {
+            Some(receipt) => Some(serde_json::json!(receipt)),
+            None if existing_policy.allow_absent || placement => {
+                Some(serde_json::json!({"warning": spawn_role::NO_ROLE}))
+            }
+            None => None,
+        },
+    };
     drop(spawn_guard);
     answer_launch(
         state,
@@ -1894,7 +1942,7 @@ async fn launch_owned(
             trust_folder,
             no_wait,
             wait_seconds,
-            revive_receipt,
+            details,
             watch,
             status_path,
             log_path,
@@ -1910,6 +1958,42 @@ async fn launch_owned(
 /// with `no_wait`. Nothing is launched. BRAKES, each of which only refuses:
 /// no live row, or a row for a different request (harness, folder, parent or
 /// explicit id), since a key repeats one request.
+/// Roll a launch back: remove its own pane (by id, never by name or pattern),
+/// withdraw its watch and, when its row was written, tombstone that row. The
+/// one path for a failed row write and a refused role commit (PRD 007 req-07),
+/// so the two cannot drift.
+///
+/// # Errors
+/// What failed, after trying every step.
+async fn roll_back(
+    state: &AppState,
+    pane: &str,
+    watch: crate::spawn_waits::WaitGuard,
+    written: Option<&SeatId>,
+) -> std::result::Result<(), String> {
+    let killed = state.services.tmux.kill(pane).await;
+    watch.withdrawn();
+    let tombstoned = match written {
+        Some(seat) => state
+            .services
+            .registry
+            .tombstone(seat, "spawn rolled back: its role commit was refused")
+            .await
+            .map(|_| ()),
+        None => Ok(()),
+    };
+    let failed: Vec<String> = [killed.err(), tombstoned.err()]
+        .into_iter()
+        .flatten()
+        .map(|error| error.to_string())
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("; "))
+    }
+}
+
 async fn answer_again(
     state: &AppState,
     command_name: &'static str,
@@ -1974,7 +2058,7 @@ async fn answer_again(
             trust_folder: request.trust_folder,
             no_wait: request.no_wait,
             wait_seconds: request.wait_seconds.unwrap_or(DEFAULT_SPAWN_WAIT_SECONDS),
-            revive_receipt: None,
+            details: None,
             watch,
             status_path,
             log_path,
@@ -1992,7 +2076,7 @@ struct Waiting {
     trust_folder: bool,
     no_wait: bool,
     wait_seconds: u64,
-    revive_receipt: Option<revive::Receipt>,
+    details: Option<serde_json::Value>,
     watch: crate::spawn_waits::WaitGuard,
     status_path: PathBuf,
     log_path: PathBuf,
@@ -2011,7 +2095,7 @@ async fn answer_launch(state: &AppState, command_name: &'static str, waiting: Wa
         trust_folder,
         no_wait,
         wait_seconds,
-        revive_receipt,
+        details,
         watch,
         status_path,
         log_path,
@@ -2019,7 +2103,7 @@ async fn answer_launch(state: &AppState, command_name: &'static str, waiting: Wa
     } = waiting;
     let answer = async move {
         if no_wait {
-            let answer = spawn_success(command_name, descriptor, revive_receipt);
+            let answer = spawn_success(command_name, descriptor, details);
             watch.answered("dispatched");
             return answer;
         }
@@ -2031,7 +2115,7 @@ async fn answer_launch(state: &AppState, command_name: &'static str, waiting: Wa
             requested_model,
             trust_folder,
             wait_seconds,
-            revive_receipt,
+            details,
             watch,
             status_path,
             log_path,
@@ -2057,7 +2141,7 @@ async fn wait_for_bind(
     requested_model: Option<String>,
     trust_folder: bool,
     wait_seconds: u64,
-    revive_receipt: Option<revive::Receipt>,
+    details: Option<serde_json::Value>,
     watch: crate::spawn_waits::WaitGuard,
     status_path: PathBuf,
     log_path: PathBuf,
@@ -2151,7 +2235,7 @@ async fn wait_for_bind(
                 {
                     let _ = tokio::fs::remove_file(&status_path).await;
                     // A revive that waits (`--cheap`) keeps its receipt too.
-                    let answer = spawn_success(command_name, bound, revive_receipt);
+                    let answer = spawn_success(command_name, bound, details);
                     watch.answered("bound");
                     return answer;
                 }
@@ -2420,7 +2504,7 @@ pub(crate) async fn read_spawn_exit(path: &Path) -> Result<Option<i32>> {
 fn spawn_success(
     command_name: &'static str,
     seat: SeatDescriptor,
-    receipt: Option<revive::Receipt>,
+    details: Option<serde_json::Value>,
 ) -> Response {
     let pid = seat.proc.map(|identity| identity.pid);
     let bound = pid.is_some();
@@ -2433,7 +2517,7 @@ fn spawn_success(
             pid,
         },
     );
-    answer.details = receipt.map(|receipt| serde_json::json!(receipt));
+    answer.details = details;
     envelope(StatusCode::OK, &answer)
 }
 

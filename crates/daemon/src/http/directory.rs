@@ -130,6 +130,8 @@ struct Arguments {
     seed: bool,
     /// `--apply` on `retype`: write the proposed types (PRD 006).
     apply: bool,
+    /// `--shipped` on `seed`: copy the seed pij ships (PRD 007 req-08).
+    shipped: bool,
     /// `--first-turn` on `show`: print a role's first turn (PRD 007 req-03).
     first_turn: bool,
     positions: Vec<String>,
@@ -207,6 +209,16 @@ impl Arguments {
                     ));
                 }
                 call.apply = true;
+                continue;
+            }
+            if flag == "shipped" {
+                if call.leaf != "seed" {
+                    return Err(Refusal::new(
+                        "E-RS-ARG",
+                        "--shipped belongs to `seed`: pij directory seed <type> --shipped --why <text>",
+                    ));
+                }
+                call.shipped = true;
                 continue;
             }
             if flag == "first-turn" {
@@ -363,7 +375,7 @@ impl Arguments {
         }
         if call.leaf == "seed"
             && (call.positions.len() != 1
-                || call.get("file").is_none()
+                || call.get("file").is_some() == call.shipped
                 || call
                     .single
                     .keys()
@@ -372,7 +384,7 @@ impl Arguments {
         {
             return Err(Refusal::new(
                 "E-RS-ARG",
-                "usage: pij directory seed <type> --file <path> --why <text> [--project <slug>]",
+                "usage: pij directory seed <type> (--file <path> | --shipped) --why <text> [--project <slug>]",
             ));
         }
         if call.leaf == "show"
@@ -1402,20 +1414,18 @@ async fn show(
     };
     let instance = call.get("instance").unwrap_or_default();
     let role_id = &call.positions[0];
-    let (text, parts) = first_turn::build(
+    let start = first_turn::start(
         &root.worktree,
         role_id,
         &instance,
         &parameter_sets(&call.all("set"))?,
         &creator,
     )?;
-    Ok(json!({
-        "project": project,
-        "role": role_id,
-        "instance": (!instance.is_empty()).then_some(instance),
-        "first_turn": text,
-        "parts": parts,
-    }))
+    let mut data = serde_json::to_value(&start).expect("a first turn serialises");
+    data["project"] = json!(project);
+    data["role"] = json!(role_id);
+    data["instance"] = json!((!instance.is_empty()).then_some(instance));
+    Ok(data)
 }
 
 /// `--set <name>=<value>` values as pairs, in the order given.
@@ -1503,12 +1513,20 @@ async fn seed(
             )
         })?;
     let file = call.get("file").unwrap_or_default();
-    let bytes = std::fs::read(caller_path(caller, &file)?).map_err(|error| {
-        Refusal::new(
-            "E-RS-ARG",
-            format!("--file {file:?} is not readable: {error}"),
-        )
-    })?;
+    let bytes = if call.shipped {
+        types::seed(None, type_id)?["text"]
+            .as_str()
+            .unwrap_or_default()
+            .as_bytes()
+            .to_vec()
+    } else {
+        std::fs::read(caller_path(caller, &file)?).map_err(|error| {
+            Refusal::new(
+                "E-RS-ARG",
+                format!("--file {file:?} is not readable: {error}"),
+            )
+        })?
+    };
     if String::from_utf8_lossy(&bytes).trim().is_empty() {
         return Err(Refusal::new(
             "E-RS-ARG",
@@ -1762,6 +1780,7 @@ async fn hold(
                 actor: actor.clone(),
                 why,
                 machine: state.machine_alias.clone(),
+                first_turn: None,
             })
             .await?
     } else {
@@ -2070,6 +2089,7 @@ async fn assign_batch(
                 actor: actor.clone(),
                 why: why.clone(),
                 machine: state.machine_alias.clone(),
+                first_turn: None,
             }),
         }
     }

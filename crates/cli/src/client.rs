@@ -13,8 +13,8 @@ use pij_core::model::{
 use pij_daemon::delivery::InboxClaim;
 use pij_daemon::http::InboxAckRequest;
 pub use pij_daemon::http::{
-    CallerContext, FederatedRoster, IdentityRequest, Phonehome, ReviveRequest, SpawnRequest,
-    StateCard, StreamFrame, TurnEndRequest,
+    AsRole, CallerContext, FederatedRoster, IdentityRequest, Phonehome, ReviveRequest,
+    SpawnRequest, StateCard, StreamFrame, TurnEndRequest,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};

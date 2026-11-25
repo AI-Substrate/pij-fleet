@@ -200,6 +200,32 @@ pub struct SpawnRequest {
     /// `harness-alts.toml`, read at this launch. Revive passes the seat's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alt: Option<String>,
+    /// PRD 007 req-07: start the seat in a role (`pij spawn --as
+    /// role:<id>[/<instance>]`). The daemon reads the role, fills its
+    /// parameters and assembles the first turn before any launch; after the
+    /// row, one writer commit records the first turn and the holding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub as_role: Option<AsRole>,
+}
+
+/// `pij spawn --as role:<id>[/<instance>]` (PRD 007 req-07).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsRole {
+    /// The role id.
+    pub role: String,
+    /// The instance key; empty for none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub instance: String,
+    /// `--set <name>=<value>`, in the order given.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub set: Vec<String>,
+    /// `--focus <text>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<String>,
+    /// `--packet <file>`, read by the daemon relative to the caller's folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packet: Option<String>,
 }
 
 /// Additive spawn result: launch dispatch and process binding are separate facts.

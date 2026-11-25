@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use pij_cli::{
-    CallerContext, DaemonClient, IdentityRequest, Registration, ReviveRequest, SendRequest,
+    AsRole, CallerContext, DaemonClient, IdentityRequest, Registration, ReviveRequest, SendRequest,
     SpawnRequest, bounce, daemon_config, default_state_dir, exit_code, render, render_frame,
     setup_refusal,
 };
@@ -309,9 +309,29 @@ enum Command {
         /// (`pij-<adjective>-<noun>`).
         #[arg(long)]
         id: Option<String>,
-        /// Harness to launch.
-        #[arg(long, value_parser = parse_harness)]
-        harness: Harness,
+        /// Harness to launch. With --as, the role's own harness when omitted.
+        #[arg(long, value_parser = parse_harness, required_unless_present = "as_role")]
+        harness: Option<Harness>,
+        /// Start the seat in a role (PRD 007): `role:<id>[/<instance>]`. The
+        /// daemon reads the role, fills its parameters and sends the seat its
+        /// first turn; the role's harness, model and effort apply unless a
+        /// flag gives them. Preview the first turn with
+        /// `pij directory show <id> --first-turn`.
+        #[arg(
+            long = "as",
+            value_name = "role:<id>[/<instance>]",
+            conflicts_with = "role"
+        )]
+        as_role: Option<String>,
+        /// With --as: fill one of the role's parameters (repeatable).
+        #[arg(long = "set", value_name = "NAME=VALUE", requires = "as_role")]
+        set: Vec<String>,
+        /// With --as: a line or two for the seat's first turn.
+        #[arg(long, requires = "as_role")]
+        focus: Option<String>,
+        /// With --as: a file whose text joins the seat's first turn.
+        #[arg(long, requires = "as_role")]
+        packet: Option<String>,
         /// Explicitly allow a harness retired by this machine's daemon policy.
         #[arg(long)]
         allow_retired: bool,
@@ -1652,12 +1672,15 @@ async fn run(cli: Cli) -> ExitCode {
             cli.json,
         ),
         Command::Spawn { .. } => {
-            let response = spawn_cli_response(
-                client
-                    .spawn(prepared_spawn.as_ref().expect("spawn request was prepared"))
-                    .await,
-            );
+            let mut request = prepared_spawn.expect("spawn request was prepared");
+            if let Err(refusal) = fill_role_harness(&client, &cli.command, &mut request).await {
+                return emit(&*refusal, cli.json);
+            }
+            let response = spawn_cli_response(client.spawn(&request).await);
             let seat = response.data.as_ref().map(|data| &data.seat);
+            if !cli.json && response.ok {
+                print_spawn_warnings(response.details.as_ref());
+            }
             emit_seat_receipt(&response, seat, cli.json)
         }
         Command::Revive { cheap, .. } => {
@@ -4653,6 +4676,10 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
     let Command::Spawn {
         id,
         harness,
+        as_role,
+        set,
+        focus,
+        packet,
         allow_retired,
         bin,
         model,
@@ -4673,6 +4700,13 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
     else {
         return Ok(None);
     };
+    let as_role = as_role
+        .as_deref()
+        .map(|target| parse_as_role(target, set, focus, packet))
+        .transpose()?;
+    // With --as and no --harness, `main` asks the role for its harness and
+    // calls `fill_role_harness`; until then the request carries OMP.
+    let harness = &harness.unwrap_or(Harness::Omp);
     validate_executable_override(*harness, bin.as_deref())?;
     let cwd = match cwd {
         Some(cwd) => cwd.clone(),
@@ -4743,12 +4777,132 @@ fn prepare_spawn_request(command: &Command) -> Result<Option<SpawnRequest>, PijE
         no_wait: *no_wait,
         resume: None,
         role: role.clone(),
-        caller: role.is_some().then(caller_context),
+        caller: (role.is_some() || as_role.is_some()).then(caller_context),
         no_cache_proxy: *no_cache_proxy,
         trust_folder: *trust_folder,
         spawn_id: None,
         alt: alt.clone(),
+        as_role,
     }))
+}
+
+/// `--as role:<id>[/<instance>]` and its flags as the wire's [`AsRole`].
+fn parse_as_role(
+    target: &str,
+    set: &[String],
+    focus: &Option<String>,
+    packet: &Option<String>,
+) -> Result<AsRole, PijError> {
+    let refuse = |message: String| PijError::Adapter {
+        adapter: "spawn".to_string(),
+        message,
+    };
+    let Some(address) = target.strip_prefix("role:") else {
+        return Err(refuse(format!(
+            "--as {target:?}: give it as role:<id> or role:<id>/<instance>"
+        )));
+    };
+    let (role, instance) = address.split_once('/').unwrap_or((address, ""));
+    if role.is_empty() {
+        return Err(refuse("--as role:<id>: the role id is empty".to_string()));
+    }
+    Ok(AsRole {
+        role: role.to_string(),
+        instance: instance.to_string(),
+        set: set.to_vec(),
+        focus: focus.clone(),
+        packet: packet.clone(),
+    })
+}
+
+/// With `--as` and no `--harness` (PRD 007 req-06): the role's harness, read
+/// with `pij directory show <role> --first-turn`, which writes nothing and
+/// launches nothing, and refuses as the spawn would. Claude's inbound default
+/// follows the harness, as it does for `--harness claude`.
+async fn fill_role_harness(
+    client: &DaemonClient,
+    command: &Command,
+    request: &mut SpawnRequest,
+) -> Result<(), Box<Envelope<Value>>> {
+    let Command::Spawn {
+        harness: None,
+        no_accept_inbound,
+        ..
+    } = command
+    else {
+        return Ok(());
+    };
+    let Some(as_role) = request.as_role.as_ref() else {
+        return Ok(());
+    };
+    let mut args = vec![
+        "show".to_string(),
+        as_role.role.clone(),
+        "--first-turn".to_string(),
+    ];
+    for set in &as_role.set {
+        args.extend(["--set".to_string(), set.clone()]);
+    }
+    let mut caller = caller_context();
+    caller.cwd = Some(request.cwd.clone());
+    let shown = pij_cli::governance::governance(client, "directory", &args, &caller).await;
+    if !shown.ok {
+        return Err(Box::new(shown));
+    }
+    let harness = shown
+        .data
+        .as_ref()
+        .and_then(|data| data["default_seat"]["harness"].as_str())
+        .map(str::to_string);
+    let Some(harness) = harness else {
+        return Err(Box::new(setup_refusal(
+            "pij spawn",
+            PijError::Adapter {
+                adapter: "spawn".to_string(),
+                message: format!(
+                    "role {} names no harness: pass --harness, or record one with pij directory edit {} --set harness=<harness> --why <text>",
+                    as_role.role, as_role.role
+                ),
+            },
+        )));
+    };
+    let harness = parse_harness(&harness).map_err(|reason| {
+        Box::new(setup_refusal(
+            "pij spawn",
+            PijError::Adapter {
+                adapter: "spawn".to_string(),
+                message: format!("role {}'s harness: {reason}", as_role.role),
+            },
+        ))
+    })?;
+    request.harness = harness;
+    if harness == Harness::Claude {
+        request.accept_inbound = !*no_accept_inbound;
+    }
+    Ok(())
+}
+
+/// The spawn's warnings, to stderr: a spawn with no role says how to start
+/// one in a role, with this same spawn rewritten (PRD 007 req-07).
+fn print_spawn_warnings(details: Option<&Value>) {
+    let Some(details) = details else {
+        return;
+    };
+    if let Some(warning) = details["warning"].as_str() {
+        let argv: Vec<String> = std::env::args()
+            .skip(1)
+            .map(|arg| pij_core::directory::shell_word(&arg))
+            .collect();
+        eprintln!(
+            "warning: {warning}\n  this spawn in a role: pij {} --as role:<id>",
+            argv.join(" ")
+        );
+    }
+    for warning in details["warnings"].as_array().into_iter().flatten() {
+        if let Some(warning) = warning.as_str() {
+            eprintln!("warning: {warning}");
+        }
+    }
 }
 
 /// Write the child's exit status whole (F148): a staged file renamed into

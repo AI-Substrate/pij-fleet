@@ -79,6 +79,7 @@ pub fn load(worktree: &Path, id: &str) -> Result<Sources, Refusal> {
             format!("role {id:?}'s document is not JSON: {error}"),
         )
     })?;
+    super::directory::refuse_retired(id, &role::standing(&document))?;
     let seed = types::of_role(&document)
         .map(|kind| types::seed(Some(worktree), kind))
         .transpose()?;
@@ -107,29 +108,61 @@ pub fn load(worktree: &Path, id: &str) -> Result<Sources, Refusal> {
     })
 }
 
+/// What starting a seat in a role needs, read before any launch.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Start {
+    /// The whole first turn.
+    pub first_turn: String,
+    /// Its parts, in order.
+    pub parts: Vec<Part>,
+    /// The role's launch settings (`default_seat`: harness, model, effort),
+    /// `{}` when it names none (PRD 007 req-06).
+    pub default_seat: Value,
+    /// Things to say that start nothing: a type with no governance seed.
+    pub warnings: Vec<String>,
+}
+
 /// Role `id`'s first turn as a seat starting in it would get it: [`load`],
 /// then the `--set` values checked against the role's parameters
-/// ([`role::fill_parameters`]), then [`assemble`]. Writes nothing.
+/// ([`role::fill_parameters`]), then [`assemble`]; with the role's launch
+/// settings and what to warn. Writes nothing.
 ///
 /// # Errors
 /// What [`load`] and [`role::fill_parameters`] refuse; `E-RS-ARG` for an
 /// instance key outside the name grammar.
-pub fn build(
+pub fn start(
     worktree: &Path,
     id: &str,
     instance: &str,
     sets: &[(String, String)],
     creator: &Creator,
-) -> Result<(String, Vec<Part>), Refusal> {
-    if !instance.is_empty() && !pij_core::render::is_name(instance) {
-        return Err(Refusal::new(
-            "E-RS-ARG",
-            "an instance key is 1-32 lowercase letters, digits or '-', not starting with '-'",
-        ));
+) -> Result<Start, Refusal> {
+    if !instance.is_empty() {
+        super::layout::check_instance(instance)?;
     }
     let sources = load(worktree, id)?;
     let filled = role::fill_parameters(id, &sources.document, sets)?;
-    Ok(assemble(&sources, instance, &filled, creator))
+    let (first_turn, parts) = assemble(&sources, instance, &filled, creator);
+    let warnings = sources
+        .seed
+        .iter()
+        .filter(|seed| seed["source"] == "shipped")
+        .map(|seed| {
+            let kind = seed["type"].as_str().unwrap_or_default();
+            format!(
+                "this repo has no seed for {kind} at {}, so pij used the one it ships; to keep that one here: pij directory seed {kind} --shipped --why <text>",
+                types::seed_path(kind).display()
+            )
+        })
+        .collect();
+    Ok(Start {
+        first_turn,
+        parts,
+        default_seat: role_section(&sources.document, "default_seat")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+        warnings,
+    })
 }
 
 fn role_section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {

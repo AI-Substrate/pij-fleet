@@ -96,6 +96,11 @@ pub struct AssignRequest {
     pub why: String,
     /// This machine's alias.
     pub machine: String,
+    /// PRD 007 req-07: the first turn of a seat spawned in the role, written
+    /// in the same commit at `roles/<id>/first-turns/<seat>.md`. With one, the
+    /// after-assign hook is left to the caller ([`DirectoryService::drain`]),
+    /// which queues the first turn before anything the role's queue held.
+    pub first_turn: Option<String>,
 }
 
 /// What `pij directory edit` changes (plan 206, F20).
@@ -1528,6 +1533,18 @@ impl DirectoryService {
         Ok(receipts.remove(0))
     }
 
+    /// The after-assign hook for one holding, for an assign that carried a
+    /// first turn and so left it to its caller (PRD 007 req-07).
+    pub async fn drain(
+        &self,
+        project: &str,
+        role: &str,
+        instance: &str,
+        seat: &SeatId,
+    ) -> Vec<Value> {
+        self.hook.assigned(project, role, instance, seat).await
+    }
+
     /// Bind several live seats to existing roles in one holders commit, all or
     /// nothing (F16): every request must name this project, repo, actor and
     /// why. A refusal names every bad request. Then each holding gets what a
@@ -1569,6 +1586,18 @@ impl DirectoryService {
             ));
         }
         let pending = self.pending(&first.project).await?;
+        let first_turns: Vec<NewFile> = requests
+            .iter()
+            .filter_map(|request| {
+                let text = request.first_turn.as_ref()?;
+                Some(RolePaths::new(&request.role).map(|paths| NewFile {
+                    path: paths.first_turn(request.seat.id.as_str()),
+                    bytes: text.clone().into_bytes(),
+                    document: false,
+                    existing: Existing::Replace,
+                }))
+            })
+            .collect::<Result<_, _>>()?;
         let drafts: Vec<Assignment> = requests
             .iter()
             .map(|request| Assignment {
@@ -1709,6 +1738,7 @@ impl DirectoryService {
                 for (role, rows) in &by_role {
                     files.push(holders_file(role, rows)?);
                 }
+                files.extend(first_turns);
                 let written: Vec<&str> = roles.iter().map(String::as_str).collect();
                 files.extend(flush_files(
                     root,
@@ -1737,10 +1767,13 @@ impl DirectoryService {
                 })
                 .await
                 .map_err(|error| store_refusal(&written, &error))?;
-            let drained = self
-                .hook
-                .assigned(&row.project, &row.role, &row.instance, &request.seat.id)
-                .await;
+            let drained = if request.first_turn.is_some() {
+                Vec::new()
+            } else {
+                self.hook
+                    .assigned(&row.project, &row.role, &row.instance, &request.seat.id)
+                    .await
+            };
             let window = self.rename(&request.seat, row).await;
             receipts.push(
                 HoldingReceipt {
@@ -2855,7 +2888,7 @@ fn reshape_verb(id: &str, into: Option<&str>) -> String {
 }
 
 /// Refuse a write to a retired role, naming where a merged one went.
-fn refuse_retired(id: &str, standing: &role::Standing) -> Result<(), Refusal> {
+pub(super) fn refuse_retired(id: &str, standing: &role::Standing) -> Result<(), Refusal> {
     if !standing.retired() {
         return Ok(());
     }

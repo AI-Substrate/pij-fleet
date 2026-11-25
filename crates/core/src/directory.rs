@@ -63,7 +63,7 @@ Usage:
   pij directory retire <role> --why <text>             a role no longer in use
   pij directory merge <from> --into <to> --why <text>  fold one role into another
   pij directory types [<type> [--seed]]                the ten seat types, one's definition, or its seed
-  pij directory seed <type> --file <path> --why <text> this repo's own seed for a type
+  pij directory seed <type> (--file <path> | --shipped) --why <text>   this repo's own seed for a type
   pij directory retype [--apply --why <text>]         a type for every role written before types
   pij directory show <role> --first-turn [--set <name>=<value>]...   what a seat starting in it is told
   pij directory templates [--show <name>[@vN]]        the role templates, or one's body
@@ -182,6 +182,7 @@ Usage:
   pij directory types <type> --seed            the seed a seat of that type is told,
                                                and where it came from
   pij directory seed <type> --file <path> --why <text>   write this repo's own seed
+  pij directory seed <type> --shipped --why <text>       keep the shipped seed here
   pij directory retype                         the type each untyped role would get, and
                                                those it cannot decide, with the edit for each
   pij directory retype --apply --why <text>    write the decided types in one commit

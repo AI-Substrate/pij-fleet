@@ -1843,7 +1843,32 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
   not declare refuses `E-RS-PARAM-UNKNOWN` (naming those it declares); a
   required one left out refuses `E-RS-PARAM-MISSING` (naming each `--set`). It
   writes nothing and launches nothing: in-process reads of the governance
-  worktree and the caller's `--packet` file.
+  worktree and the caller's `--packet` file. It also returns the role's
+  `default_seat` and `warnings` (a type with no governance seed).
+- `POST /v1/spawn` takes `as_role` (`{role, instance?, set?, focus?, packet?}`;
+  CLI `pij-rs spawn --as role:<id>[/<instance>] [--set <name>=<value>]...
+  [--focus <text>] [--packet <file>]`, plan 242) and needs the caller's
+  `caller` evidence: the creator must be a seat, as for `directory assign`.
+  Before any launch the daemon resolves the project from the spawn's `cwd`,
+  reads the role (missing, retired or `prime` refuses), fills its parameters
+  and assembles the first turn; a refusal names its `details.step` and launches
+  nothing. The role's `default_seat` model and effort apply when the spawn gives
+  none and runs the role's harness; the CLI reads its harness with `show
+  --first-turn` when `--harness` is omitted. `--as` with `role` refuses.
+- After the seat's row and before the bind wait, ONE writer commit records the
+  first turn at `community/roles/<id>/first-turns/<seat>.md` and the holding
+  (exactly one `directory assign`'s commit). Then the first turn is queued from
+  the creator, so it is the seat's first message at bind; then the role's queue
+  drains and the routing table is held for it. A refused commit rolls the spawn
+  back through the failed-row-write path: the seat's own pane is removed by id
+  and its row tombstoned; the refusal's `details.step` is `the one writer commit
+  (first turn and holding)`. This rollback is a policy: the commit's result
+  decides whether the spawn survives. The answer's `details` carries `role` (the
+  commit, the first turn's path and message id) and `warnings`.
+- A spawn with no `as_role` launches as before and its `details.warning` says
+  how to start one in a role; the CLI prints it with the same spawn rewritten.
+- `directory seed <type> --shipped --why <text>` writes the shipped seed into
+  governance, so a spawn of that type no longer warns.
 
 Cost: `types` reads compiled-in bytes and at most one governance file; add,
 edit and seed are the writer's usual commit. No loop, poll or timer.

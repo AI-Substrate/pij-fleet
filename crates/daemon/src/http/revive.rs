@@ -774,6 +774,7 @@ pub(super) async fn revive_seat(
         trust_folder: false,
         spawn_id: None,
         alt: prior.alt.map(|alt| alt.name),
+        as_role: None,
     };
     let seat = spawn_request.id.clone();
     let response = launch_seat_locked(
