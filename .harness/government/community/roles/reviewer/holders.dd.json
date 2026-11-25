@@ -3124,6 +3124,16 @@
 					"seat": "pij-potential-coral",
 					"to": "2026-11-25T05:08:38.813Z",
 					"why": "one C34 review of #352 (close --stop fix) at 7baacf2"
+				},
+				{
+					"assigned_by": "pij-steady-otter",
+					"from": "2026-11-25T06:31:43.858Z",
+					"harness": "copilot",
+					"harness_session": "4c3e827a-bae0-4645-ad03-f7bc0774800c",
+					"instance_key": "346",
+					"machine": "studio",
+					"seat": "pij-varying-ptarmigan",
+					"why": "one C34 review of #346 (PRD 008 pods) at 7b2cc29"
 				}
 			]
 		}
