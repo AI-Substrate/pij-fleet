@@ -812,7 +812,7 @@ pub(crate) async fn handle(
         "view" | "rebuild" => {
             match project_and_repo(&state, &request.caller, call.get("project")).await {
                 Ok((project, repo)) if call.leaf == "view" => match live_seats(&state).await {
-                    Ok((live, cache_proxy)) => {
+                    Ok((live, cache_proxy, folders)) => {
                         let mut view = state
                             .services
                             .directory
@@ -820,6 +820,7 @@ pub(crate) async fn handle(
                             .await;
                         if let Ok(data) = view.as_mut() {
                             how_dead_seats_ended(&state, data).await;
+                            seats_without_a_role(&state, &project, &folders, data).await;
                         }
                         view
                     }
@@ -837,14 +838,15 @@ pub(crate) async fn handle(
     }
 }
 
-/// The registered, untombstoned seats, and each live Copilot seat's
-/// cache-proxy route (plan 229): one registry read per view.
+/// The registered, untombstoned seats, each live Copilot seat's cache-proxy
+/// route (plan 229) and each live seat's folder: one registry read per view.
 async fn live_seats(
     state: &AppState,
 ) -> Result<
     (
         std::collections::HashSet<String>,
         std::collections::HashMap<String, pij_core::model::SeatCacheProxy>,
+        Vec<(String, String)>,
     ),
     Refusal,
 > {
@@ -861,8 +863,58 @@ async fn live_seats(
         .iter()
         .filter_map(|seat| Some((seat.id.to_string(), seat.cache_proxy_view()?)))
         .collect();
+    let folders = seats
+        .iter()
+        .map(|seat| (seat.id.to_string(), seat.folder.clone()))
+        .collect();
     let live = seats.into_iter().map(|seat| seat.id.to_string()).collect();
-    Ok((live, cache_proxy))
+    Ok((live, cache_proxy, folders))
+}
+
+/// PRD 007 req-06 (plan 243): every live seat whose folder belongs to
+/// `project` (the match the caller's own folder takes) and that holds no open
+/// holding there is a `no-role` action. The project's prime and the machine's
+/// designated prime are never listed. One store read for the holdings and one
+/// for the projects; each folder is matched in-process. Asked for, never polled.
+async fn seats_without_a_role(
+    state: &AppState,
+    project: &str,
+    folders: &[(String, String)],
+    view: &mut Value,
+) {
+    let store = state.services.directory.store();
+    let (Ok(projects), Ok(rows)) = (
+        store.list_projects().await,
+        store.assignments(project).await,
+    ) else {
+        return;
+    };
+    let held: std::collections::HashSet<&str> = rows
+        .iter()
+        .filter(|row| row.to.is_none())
+        .map(|row| row.seat.as_str())
+        .collect();
+    let designated = super::routes::designated_prime(&state.services)
+        .await
+        .ok()
+        .flatten()
+        .map(|seat| seat.to_string());
+    let primes = [view["prime"].as_str().map(str::to_string), designated];
+    let mut seats: Vec<String> = folders
+        .iter()
+        .filter(|(seat, _)| !held.contains(seat.as_str()))
+        .filter(|(seat, _)| !primes.iter().flatten().any(|prime| prime == seat))
+        .filter(|(_, folder)| {
+            Path::new(folder).is_absolute()
+                && match_project(projects.clone(), Path::new(folder))
+                    .is_ok_and(|found| found.slug == project)
+        })
+        .map(|(seat, _)| seat.clone())
+        .collect();
+    seats.sort();
+    if let Some(actions) = view["actions"].as_array_mut() {
+        actions.extend(crate::community::picture::no_role(project, &seats));
+    }
 }
 
 /// F227: each open holding on a seat that is not live gets how its seat ended

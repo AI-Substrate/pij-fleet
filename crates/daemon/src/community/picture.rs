@@ -629,6 +629,45 @@ pub fn two_types(project: &str, holdings: &[TypedHolding]) -> Vec<Value> {
     out
 }
 
+/// PRD 007 req-06 (plan 243): each live seat working in the project that
+/// holds no role there is one action, with the assign that gives it one and
+/// the close that ends it. The caller leaves out the designated prime. Seats
+/// whose id does not print (F132) are named, with no command.
+pub fn no_role(project: &str, seats: &[String]) -> Vec<Value> {
+    seats
+        .iter()
+        .map(|seat| {
+            let commands: Vec<String> = if pij_core::model::is_canonical_seat_id(seat) {
+                vec![
+                    command(&[
+                        "pij",
+                        "directory",
+                        "assign",
+                        "<role>",
+                        seat,
+                        "--why",
+                        "<why>",
+                        "--project",
+                        project,
+                    ]),
+                    command(&["pij", "close", seat]),
+                ]
+            } else {
+                Vec::new()
+            };
+            json!({
+                "seat": seat,
+                "condition": "no-role",
+                "says": format!(
+                    "{} works in this project and holds no role here: give it one, or close it",
+                    pij_core::render::seat(seat)
+                ),
+                "commands": commands,
+            })
+        })
+        .collect()
+}
+
 /// F193: `waiting` requests for `holder`'s role (or its instance) queued while
 /// `holder` is live and can take them. A release and re-assign delivers them
 /// (the assign drains the queue), printed only for keys that print (F132).
@@ -2095,6 +2134,20 @@ mod tests {
             step_needs(&read_step_docs(&dir)),
             vec![("docs".to_string(), vec!["001-new s02".to_string()])],
             "workstreams win once they hold a document"
+        );
+    }
+
+    #[test]
+    fn a_seat_with_no_role_is_one_action_with_the_assign_and_the_close() {
+        let actions = no_role("fleet", &["pij-brisk-marten".to_string()]);
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0]["condition"], "no-role");
+        assert_eq!(
+            actions[0]["commands"],
+            json!([
+                "pij directory assign '<role>' pij-brisk-marten --why '<why>' --project fleet",
+                "pij close pij-brisk-marten"
+            ])
         );
     }
 

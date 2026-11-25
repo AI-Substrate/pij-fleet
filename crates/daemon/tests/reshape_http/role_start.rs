@@ -378,3 +378,43 @@ async fn a_refused_role_commit_rolls_the_spawn_back() {
     );
     rig.server.abort();
 }
+
+/// Plan 243: a live seat working in the project with no role there is a
+/// `no-role` action with the assign and the close; after the assign it is gone.
+#[tokio::test]
+async fn a_seat_working_here_with_no_role_is_an_action_until_assigned() {
+    let repo = repo("pij-no-role");
+    let rig = rig(Arc::new(NoHook)).await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    add_notes(addr, &repo).await;
+    let plain = spawn(addr, &repo, None).await;
+    let seat = plain["data"]["id"].as_str().unwrap().to_string();
+    let no_role = |view: &Value| -> Vec<Value> {
+        view["data"]["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|action| action["condition"] == "no-role")
+            .cloned()
+            .collect()
+    };
+
+    let view = directory(addr, &repo, &[]).await;
+    let actions = no_role(&view);
+    assert_eq!(actions.len(), 1, "only the seat in this repo: {view}");
+    assert_eq!(actions[0]["seat"], seat.as_str());
+    let commands = actions[0]["commands"].as_array().unwrap();
+    assert!(
+        commands[0]
+            .as_str()
+            .unwrap()
+            .starts_with("pij directory assign '<role>' ")
+    );
+    assert_eq!(commands[1], format!("pij close {seat}"));
+
+    let assigned = directory(addr, &repo, &["assign", "notes/s9", &seat, "--why", "w"]).await;
+    assert_eq!(assigned["ok"], true, "{assigned}");
+    assert!(no_role(&directory(addr, &repo, &[]).await).is_empty());
+    rig.server.abort();
+}

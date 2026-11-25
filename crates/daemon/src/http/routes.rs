@@ -303,7 +303,7 @@ async fn try_notify_primes(services: &Services, body: String) -> Result<Value, R
 }
 
 /// The machine's current designated prime, if any.
-async fn designated_prime(services: &Services) -> Result<Option<SeatId>, Refusal> {
+pub(crate) async fn designated_prime(services: &Services) -> Result<Option<SeatId>, Refusal> {
     Ok(services
         .directory
         .store()

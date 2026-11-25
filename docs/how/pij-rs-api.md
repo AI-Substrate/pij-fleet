@@ -1869,6 +1869,12 @@ Every role names one of pij's ten seat types in `meta.type`: `prime`, `pa`,
   how to start one in a role; the CLI prints it with the same spawn rewritten.
 - `directory seed <type> --shipped --why <text>` writes the shipped seed into
   governance, so a spawn of that type no longer warns.
+- The view lists every live seat whose folder belongs to the project (the match
+  the caller's own folder takes) and holds no open holding there as an action
+  with `condition: "no-role"` and two commands: `pij directory assign '<role>'
+  <seat> --why '<why>' --project <slug>` and `pij close <seat>` (plan 243). The
+  project's prime and the machine's designated prime are never listed. It costs
+  two store reads and in-process folder matches per view; nothing polls it.
 
 Cost: `types` reads compiled-in bytes and at most one governance file; add,
 edit and seed are the writer's usual commit. No loop, poll or timer.
