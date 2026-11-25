@@ -12,7 +12,7 @@
 | title | PRD 008: pods |
 | status | draft |
 | updated | 2026-11-25 |
-| owner | pij-autonomous-parrot |
+| owner | pm-001 |
 | summary | A pod is a group of role instances stood up together with shared parameters. A prime plans, starts, takes down and brings back a recurring group of seats with a few commands instead of handling each one by hand. |
 
 <a id="why"></a>
@@ -86,3 +86,4 @@ Some groups of seats recur. A project manager, a coder and a reviewer build a st
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-autonomous-parrot | First draft. |
+| 2026-11-25 | pij-multiple-nightingale | Owner moves from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010 (operator's approval, 2026-11-25). |

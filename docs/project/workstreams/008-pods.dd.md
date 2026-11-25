@@ -12,7 +12,7 @@
 | title | Workstream 008: pods |
 | status | draft |
 | updated | 2026-11-25 |
-| owner | pij-autonomous-parrot |
+| owner | pm-001 |
 | summary | — |
 
 <a id="goal"></a>
@@ -38,3 +38,4 @@ A prime plans, starts, takes down and brings back a group of seats as one pod.
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-autonomous-parrot | First draft. |
+| 2026-11-25 | pij-multiple-nightingale | Owner moves from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010 (operator's approval, 2026-11-25). |
