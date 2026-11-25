@@ -1,0 +1,3 @@
+# Original ask
+
+From pm-001 (pij-steady-otter), 2026-11-25, relaying the operator's approval to build PRDs 006, 007, 008 and 010: lane A builds PRD 010 on PR #347 after PRD 008, one plan per workstream step, each with a cost row. Folded in: Jordan's second round of pod rulings (2026-11-25: templates by path, with pij not enforcing where they live; a run's branch and worktree are a procedure the template carries; honesty instead of walls, in a template's seed text) and the pod dogfood inputs (the reviewing slot is load-bearing and on a different model; an owner role per deliverable; slot tools; consulted roles ready before up; write-back to a seat that outlives the pod).

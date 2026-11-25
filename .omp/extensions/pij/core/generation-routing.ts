@@ -32,6 +32,7 @@ export interface RsNativeRoute extends RouteIdentity {
 		| "directory"
 		| "claim"
 		| "claims"
+		| "community"
 		| "delivered"
 		| "docs"
 		| "output"
@@ -346,6 +347,7 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 			"directory",
 			"claim",
 			"claims",
+			"community",
 			"delivered",
 			"output",
 			"outputs",

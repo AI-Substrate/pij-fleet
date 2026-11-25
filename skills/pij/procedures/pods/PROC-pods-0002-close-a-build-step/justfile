@@ -1,0 +1,23 @@
+# PROC-pods-0002's own recipes, run from the repo's root by `pij pod down` (key pod-<pod>). Each reads the pod's
+# work-folder from `pij pod show`; a pod that records none has nothing to check.
+
+a-pod-key:
+    @case "$PROC_KEY" in pod-?*) ;; *) echo "key $PROC_KEY is not pod-<pod>" >&2; exit 1 ;; esac
+
+nothing-uncommitted:
+    #!/bin/sh
+    set -eu
+    f=$(pij --json pod show "${PROC_KEY#pod-}" | jq -r '[.data.parameters[] | select(.name == "work-folder") | .value][0] // empty')
+    [ -n "$f" ] || { echo "the pod records no work-folder: nothing to check"; exit 0; }
+    left=$(git -C "$f" status --porcelain)
+    [ -z "$left" ] || { printf '%s has uncommitted work:\n%s\ncommit or drop it, then run pij pod down again\n' "$f" "$left" >&2; exit 1; }
+
+pr-settled:
+    #!/bin/sh
+    set -eu
+    f=$(pij --json pod show "${PROC_KEY#pod-}" | jq -r '[.data.parameters[] | select(.name == "work-folder") | .value][0] // empty')
+    [ -n "$f" ] || { echo "the pod records no work-folder: nothing to check"; exit 0; }
+    b=$(git -C "$f" symbolic-ref --short -q HEAD) || { echo "$f is on no branch: nothing to check"; exit 0; }
+    command -v gh >/dev/null || { echo "gh is not on PATH: install and log in to gh, or go on with pij pod down --skip-close-procedure" >&2; exit 1; }
+    open=$(cd "$f" && gh pr list --head "$b" --state open --json number --jq '[.[].number] | map("#" + tostring) | join(" ")')
+    [ -z "$open" ] || { echo "$b still has open PR $open: merge or close it, then run pij pod down again" >&2; exit 1; }

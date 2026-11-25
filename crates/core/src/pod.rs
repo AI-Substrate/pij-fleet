@@ -15,6 +15,8 @@ pub fn help(verb: Option<&str>) -> Option<&'static str> {
         Some("sessions") => Some(SESSIONS),
         Some("activity") => Some(ACTIVITY),
         Some("stage") => Some(STAGE),
+        Some("templates" | "adopt" | "template-diff") => Some(SHIPPED),
+        Some("export") => Some(EXPORT),
         _ => None,
     }
 }
@@ -28,16 +30,20 @@ Usage:
   pij pod up <pod> [--session <tmux>]         bring a pod taken down back, member by member
   pij pod show <pod>
   pij pod set <pod> <name>=<value>
-  pij pod down <pod>
+  pij pod down <pod> [--skip-close-procedure]
   pij pod add <pod> role:<id>[/<instance>] [--set <name>=<value>]... | <seat>
   pij pod release <pod> <seat>
   pij pod sessions <pod> [--limit <n>]       every member's harness sessions
   pij pod activity <pod> [--since <time>]    what the pod did, in order; open to any seat
   pij pod stage <pod> <deliverable> <stage> --output <path> [--from <slot>]...
   pij pod confirm <pod> --tool <tool>...      a slot's seat answering its tool canary
+  pij pod templates                           the pod templates pij ships
+  pij pod adopt <name>[@v<n>] [--into <path>] --why <text>
+  pij pod template-diff <path>                what changed upstream since a copy
+  pij pod export <pod> --as-template <path> --why <text>   the pod as it ran, as a template
 
 A template is a folder holding pod-template.dd.json (or that file), at any path
-you name. Every check warns and names its fix; none refuses: pij is a knowledge
+you name, or a shipped one as shipped:<name>[@v<n>]. Every check warns and names its fix; none refuses: pij is a knowledge
 system, not the police. Two refusals guard the record itself: a --set value that
 looks like a secret (the record is committed to the governance branch), and a
 seat already in another pod. `pij pod <verb> --help` for each verb.";
@@ -52,7 +58,9 @@ fixes it:
   - a consulted role needed before up with no live holder,
   - a reviewing slot that shares (or may share) its author's model,
   - a deliverable whose owner (or write-back) role is missing,
-  - a slot whose role cannot start (its first turn does not build).
+  - a slot whose role cannot start (its first turn does not build),
+  - a procedure the template names that is not where it says (its own folder's
+    procedures/, or the repo's for a linked one).
 Run it before `pij pod up`; up prints and logs the same warnings and starts.";
 
 const UP: &str = "\
@@ -84,9 +92,16 @@ reads the work folder). A value that looks like a secret is refused, naming
 the parameter: the record is committed to the governance branch.";
 
 const DOWN: &str = "\
-pij pod down <pod>
+pij pod down <pod> [--skip-close-procedure]
 
-Records where the pod's work folder stands (its branch and head, from one git
+When the template names a close procedure, the pij CLI first runs it to its
+end in your process (`pij proc <id> --template <folder> --key pod-<pod>`). If
+it stops early (a decision to record, a guide step to mark, a failed check),
+down closes nothing and prints where it stopped and the command to resume; run
+down again once it is done. --skip-close-procedure goes on without it and says
+so in the pod's log. That stop is a brake: removing it only closes more.
+
+Then records where the pod's work folder stands (its branch and head, from one git
 read) and warns that the run is unfrozen when it has uncommitted work. Then
 takes each member down exactly as `pij close <seat> --stop` does, once per
 member: memory first, the recorded process stopped, the prime told about any
@@ -152,3 +167,38 @@ A slot's seat answering its tool canary: name each tool you can use. A tool
 you leave out is reported missing, with its fix, in `pij pod show`. Run again
 once the tools are there: a degraded slot that now confirms every tool is
 recorded confirmed, and pij hands it pod work again.";
+
+const SHIPPED: &str = "\
+pij pod templates
+pij pod adopt <name>[@v<n>] [--into <path>] --why <text>
+pij pod template-diff <path>
+
+pij ships pod templates as versioned originals that never change once shipped.
+Name one in any pod command as shipped:<name>[@v<n>], or take a copy the repo
+owns: adopt writes the version (latest unless @v<n>) to governance
+(community/pod-templates/<name>/, one commit) or to the folder --into names (as
+files you commit), recording where it came from in meta.from. Edit the copy
+freely and name it by its path. template-diff shows what changed upstream since
+the copy's version and applies nothing. None of them starts a seat.";
+
+/// `pij community --help` (PRD 010 req-03).
+pub const COMMUNITY_HELP: &str = "\
+pij community init [--seeds all|<type>,...] [--templates <name>,...] [--into <path>] --why <text>
+
+A prime's setup job, run once for a new project: copies each type's seed (what
+seats of that type are told; the repo's copy wins) and the named shipped pod
+templates into governance in one commit, or with --into puts the templates at
+<path>/<name>/ as files you commit. Anything already there is kept and listed.
+It prints what it wrote and where. pij copies nothing on its own, and init
+starts no seat.";
+
+const EXPORT: &str = "\
+pij pod export <pod> --as-template <path> --why <text>
+
+Writes the pod as it ran as a template at <path>: every member as a slot (a
+seat added while it ran becomes a slot of its own), with the original
+template's parameters, wiring, consulted roles, deliverables and its own
+procedures. No seat id, folder or parameter value is written. In the
+governance worktree it is one commit; elsewhere it is files you commit. Plan
+it with pij pod plan <path>. The prime's view suggests this when two pods grow
+to the same roles. It starts no seat.";

@@ -1,0 +1,227 @@
+{
+	"dd": {
+		"schema": "pij/prd"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"title": "PRD 010: pod templates",
+				"status": "draft",
+				"updated": "2026-11-25",
+				"owner": "pm-001",
+				"summary": "pij ships a set of pod templates and seed templates, a repo takes copies it owns and changes, and a prime sets them up once. A repo can turn a pod that worked into a template of its own."
+			}
+		},
+		{
+			"name": "why",
+			"value": "PRD 008 lets a prime stand a pod up from a definition folder. That definition has to come from somewhere, and today every fleet would write its own from scratch: one fleet already keeps a prose description of its recurring call team, and another keeps a folder per seat, neither of which another repo can pick up. pij ships role templates one role at a time, versioned and copied into a project on request, with drift shown and never applied. Pod templates and seed templates need the same treatment so that an improvement made in one fleet can reach the others, and so a repo can change its own copy without waiting for pij."
+		},
+		{
+			"name": "actors",
+			"value": [
+				{
+					"id": "a-prime",
+					"name": "prime",
+					"need": "Get a working set of templates into a new project in one step, and add more later."
+				},
+				{
+					"id": "a-author",
+					"name": "template author",
+					"need": "Write a pod's shape once, improve it between runs and share it with other repos."
+				}
+			]
+		},
+		{
+			"name": "goals",
+			"value": [
+				{
+					"id": "g-1",
+					"goal": "A new project has working pod and seed templates after one setup command."
+				},
+				{
+					"id": "g-2",
+					"goal": "A repo owns and changes its templates, and pij keeps a shared set that improves for everyone."
+				}
+			]
+		},
+		{
+			"name": "non_goals",
+			"value": [
+				{
+					"id": "n-1",
+					"text": "Pulling a template's upstream changes into a repo automatically. Drift is shown; the repo copies across what it wants."
+				},
+				{
+					"id": "n-2",
+					"text": "How a pod is planned, started and taken down. That is PRD 008."
+				},
+				{
+					"id": "n-3",
+					"text": "A registry or marketplace of templates. Sharing is through pij's shipped set."
+				},
+				{
+					"id": "n-4",
+					"text": "Enforcing isolation between runs. A template that wants its seats not to read earlier runs says so in its seed text; pij walls nothing off (Jordan's ruling 2026-11-25, round 2, ruling 5)."
+				}
+			]
+		},
+		{
+			"name": "requirements",
+			"value": [
+				{
+					"id": "req-01",
+					"title": "A template carries its own procedures and links the repo's",
+					"statement": "A pod template may include procedures about the pod itself (how to stand it up, run it and close it), which travel with the template, and may link procedures that live in the main repo. A procedure about the work, true whoever runs it, stays in the repo. A template's own procedures and seed text carry what is particular to its runs and that pij does not do itself: for example the procedure that creates a run's branch and worktree (`pod up` creates neither), or a seed line asking the seats, while in training, not to read earlier runs (pij walls nothing off).",
+					"actor": "template author",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A template with one procedure of its own and one linked from the repo runs both by id, and adopting the template into another repo brings its own procedure and reports the linked one as missing. `pij pod down` runs the template's close procedure, then the freeze.",
+					"source": "operator rulings 2026-11-25 on procedures and seats"
+				},
+				{
+					"id": "req-02",
+					"title": "Templates are shared centrally and owned per repo",
+					"statement": "pij ships pod templates and type definitions as versioned, unchangeable originals. A pod command names its template by path, or a shipped one as `shipped:<name>[@v<n>]`, and pij reads exactly that: a template can sit in the main repo (a fleet shared as files) or in governance, and pij does not enforce where. `pij pod adopt <name> [--into <path>] --why <text>` copies a shipped one to governance by default or to the path given, recording the version it came from; the repo then edits its copy. Every pod command says which template it read (path, or shipped name and version). `template-diff <path>` shows what changed upstream and applies nothing. A running pod keeps the version it started from.",
+					"actor": "template author",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "A shipped template adopted into the main repo with `--into` and edited is the one `plan` reads when given that path, and `plan` names it; `template-diff` lists an upstream change without altering the copy; a pod started before an edit shows its original version.",
+					"source": "operator, 2026-11-25: centrally managed in pij, customised by repos; PRD 001 role templates work this way"
+				},
+				{
+					"id": "req-03",
+					"title": "Setting up templates is a prime's setup job",
+					"statement": "At project setup the prime runs `pij community init --seeds all --templates <names> [--into <path>] --why <text>`, which copies each type's seed (what its seats are told; a repo's copy wins, while the type's rules stay pij's) into governance and the chosen pod templates into governance (or the path given) in one commit each place, and prints what it wrote and where. pij copies nothing on its own.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "shipped",
+					"done_when": "On a project with an empty community, `init` writes the ten types' seeds and the named templates, and with `--into` the templates land at that path; with no `init`, nothing is written until a command asks.",
+					"source": "operator ruling 2026-11-25: getting templates going is a prime setup job; PRD 001 ruling that nothing is created for you"
+				},
+				{
+					"id": "req-04",
+					"title": "A repo makes its own templates",
+					"statement": "`pij pod export <pod> --as-template <path>` writes a pod, including seats added while it ran, into the repo as a template. A role can be saved as a role template with named parameters. The prime's view suggests saving one when a similar role or group is created a second time.",
+					"actor": "prime",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "A pod with one seat added after `up` exports to a template with that extra slot, and `plan` on the new template lists it.",
+					"source": "design conversation 2026-11-25: templates grow from dynamic roles that proved useful"
+				},
+				{
+					"id": "req-05",
+					"title": "Two templates ship first",
+					"statement": "pij ships a build pod (a project manager, a coder and a reviewer for one workstream step) and a live-call pod (a note taker, a researcher and a validator for one meeting, consulting the subject's lead). In both, the reviewing slot (the reviewer, the validator) is required and must not share its author's model; each deliverable names its owner role (the step's PR: the project manager; the meeting record: the note taker); each slot names the tools it needs; and the live-call pod marks the subject's lead as needed before `up` and writes its record back to the subject's knowledge role.",
+					"actor": "prime",
+					"priority": "should",
+					"state": "shipped",
+					"done_when": "`pij pod templates` lists both, `plan` on each with its required parameters prints a complete plan with no warning, and `plan` with the reviewer on its author's model warns.",
+					"source": "operator, 2026-11-25: PM, coder and reviewer can be a pod; a working live-call fleet"
+				},
+				{
+					"id": "req-06",
+					"title": "Managing templates launches nothing",
+					"statement": "`pij pod adopt`, `pij pod export`, `template-diff` and `pij community init` start no seat and add no loop, poll or timer.",
+					"actor": "prime",
+					"priority": "must",
+					"state": "in-progress",
+					"done_when": "Across one `init`, one `adopt`, one `template-diff` and one `export`, `pij-rs --json ping | jq .data.spawns` shows no seat launch beyond the named writer commits (git and ddocs), measured after deploy.",
+					"source": "AGENTS.md: resource cost is a correctness property"
+				}
+			]
+		},
+		{
+			"name": "open_questions",
+			"value": [
+				{
+					"id": "q-01",
+					"question": "How does a repo propose its template back to pij's shipped set?",
+					"default": "By a pull request to pij that adds it as a new version.",
+					"status": "open"
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-25",
+					"by": "pij-autonomous-parrot",
+					"change": "First draft."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Owner moves from pij-autonomous-parrot to pm-001, which runs the build of PRDs 006, 007, 008 and 010 (operator's approval, 2026-11-25)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-01: a template's procedures and seed text carry what pij does not do: creating a run's branch and worktree, and any honesty instruction such as training mode (Jordan's ruling 2026-11-25, round 2, rulings 5 and 9)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-02: templates are named by path (or `shipped:<name>`), adopt takes `--into <path>`, and pij does not enforce where a template lives (Jordan's ruling 2026-11-25, round 2, ruling 1)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-03: init can put the templates at a path of the repo's choosing (Jordan's ruling 2026-11-25, round 2, ruling 1)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-04: export writes the template to a path (Jordan's ruling 2026-11-25, round 2, ruling 1)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-05: the shipped pods carry a required reviewing slot on a different model, an owner role per deliverable, slot tools, a consulted role needed before up and a write-back (pod dogfood input 2026-11-25: the reviewer slot is load-bearing, owners, tool canary, consulted experts first, write-back)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Non-goal n-4: no isolation enforced between runs (Jordan's ruling 2026-11-25, round 2, ruling 5)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-01 done_when: pod down runs the template's close procedure, then the freeze (pm-001 ruling 2026-11-25 on PRD 008 req-06: the close steps live with the template's procedures, not in 008)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #347 (s01): req-01 shipped."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-03: init copies each type's seed, the part of a type a repo owns; a type's rules stay pij's, as PRD 006 has them, so there is no governance copy of them to write."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #347 (s02): req-02 and req-03 shipped; req-06 in progress (export arrives with s03; its live spawn-counter receipt after deploy)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #347 (s03): req-04 shipped (pod and role export, the view's save-as-template suggestion); req-06 stays in progress until its live spawn-counter receipt after deploy."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "Built on #347 (s04): req-05 shipped (the build and live-call pods; the build pod's up and close procedures ship with the pij skill, area pods)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-06 done_when: no seat launch beyond the named writer commits (git and ddocs), measured after deploy; a governance write necessarily counts its writer launches (B347-R1-06, pm-001 ruling). It stays in progress until that receipt."
+				}
+			]
+		}
+	],
+	"references": []
+}

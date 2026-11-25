@@ -1,0 +1,109 @@
+{
+	"dd": {
+		"schema": "pij/pod-template"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"name": "live-call",
+				"title": "Live-call pod: one meeting",
+				"version": "1",
+				"summary": "A note taker, a researcher and a validator for one meeting on a subject. The note taker owns the meeting record; the validator is required and runs on another model than the researcher, whose findings it checks. The subject's lead is consulted and needed before up, and the record is written back to the subject's knowledge role. Adopt it and rename subject-lead and subject-knowledge to your subject's roles."
+			}
+		},
+		{
+			"name": "parameters",
+			"value": [
+				{
+					"name": "subject",
+					"need": "required",
+					"describe": "What the meeting is about, for example 'the billing migration'. Memory is filed under it."
+				},
+				{
+					"name": "meeting",
+					"need": "required",
+					"describe": "Which meeting: its title and date."
+				}
+			]
+		},
+		{
+			"name": "slots",
+			"value": [
+				{
+					"id": "note-taker",
+					"role": "note-taker",
+					"tools": ["transcript"],
+					"seed": "Keep the meeting's record: decisions, actions with owners, open questions. Send each draft to the validator."
+				},
+				{
+					"id": "researcher",
+					"role": "researcher",
+					"tools": ["web-search", "code-search"],
+					"seed": "Answer the questions the subject raises while the call runs, each with its source. Training mode: when you don't know, can't reach a source or aren't sure, say so plainly and name what would settle it. An honest gap beats a confident wall."
+				},
+				{
+					"id": "validator",
+					"role": "validator",
+					"tools": ["web-search"],
+					"not_model_of": "researcher",
+					"seed": "Check the researcher's findings and the note taker's draft against their sources. Name each claim you could not confirm."
+				}
+			]
+		},
+		{
+			"name": "wiring",
+			"value": [
+				{
+					"from": "researcher",
+					"to": "note-taker",
+					"what": "findings with sources"
+				},
+				{
+					"from": "researcher",
+					"to": "validator",
+					"what": "each finding to check"
+				},
+				{
+					"from": "note-taker",
+					"to": "validator",
+					"what": "the draft record"
+				},
+				{
+					"from": "validator",
+					"to": "note-taker",
+					"what": "what it could not confirm"
+				}
+			]
+		},
+		{
+			"name": "consulted",
+			"value": [
+				{
+					"role": "subject-lead",
+					"before_up": "yes",
+					"why": "The subject's lead knows what the meeting is for and what is already settled; the pod asks first."
+				}
+			]
+		},
+		{
+			"name": "deliverables",
+			"value": [
+				{
+					"id": "record",
+					"title": "The meeting record",
+					"owner": "note-taker",
+					"stages": ["draft", "validated"],
+					"write_back": "subject-knowledge",
+					"stage_needs": [
+						{
+							"stage": "validated",
+							"slots": ["validator"]
+						}
+					]
+				}
+			]
+		}
+	],
+	"references": []
+}

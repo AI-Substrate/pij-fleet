@@ -728,6 +728,12 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// A prime's setup: seeds and pod templates into a project (PRD 010).
+    #[command(disable_help_flag = true)]
+    Community {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Write a role's output and tell whoever asked (plan 200).
     #[command(disable_help_flag = true)]
     Output {
@@ -1510,6 +1516,12 @@ async fn run(cli: Cli) -> ExitCode {
         && pij_core::directory::wants_help(args)
     {
         return directory_help(args);
+    }
+    if let Command::Community { args } = &cli.command
+        && (args.is_empty() || pij_core::directory::wants_help(args))
+    {
+        println!("{}", pij_core::pod::COMMUNITY_HELP);
+        return ExitCode::SUCCESS;
     }
     if let Command::Pod { args } = &cli.command
         && (args.is_empty() || pij_core::directory::wants_help(args))
@@ -2309,11 +2321,29 @@ async fn run(cli: Cli) -> ExitCode {
             let response =
                 pij_cli::governance::governance(&client, "pod", &args, &caller_context()).await;
             match response.data.as_ref().filter(|_| response.ok && !as_json) {
-                Some(data) if data.get("pod").is_some() && data.get("confirmed").is_none() => {
+                Some(data)
+                    if (data.get("pod").is_some() && data.get("confirmed").is_none())
+                        || data.get("wrote").is_some()
+                        || data.get("templates").is_some()
+                        || data.get("diff").is_some() =>
+                {
                     println!("{}", pij_cli::pod::render(data));
                     ExitCode::SUCCESS
                 }
                 _ => emit(&response, as_json),
+            }
+        }
+        Command::Community { args } => {
+            let as_json = cli.json || args.iter().any(|arg| arg == "--json");
+            let response =
+                pij_cli::governance::governance(&client, "community", &args, &caller_context())
+                    .await;
+            match response.data.as_ref().filter(|_| response.ok && !as_json) {
+                Some(data) => {
+                    println!("{}", pij_cli::pod::render(data));
+                    ExitCode::SUCCESS
+                }
+                None => emit(&response, as_json),
             }
         }
         Command::Output { args } => {
@@ -4130,6 +4160,18 @@ fn render_directory_at(
             text(&view["suggestions"]["command"])
         );
     }
+    let save = list(&view["save_as_template"]);
+    if !save.is_empty() {
+        out.push_str("\n\nWorth saving as a template (a shape made a second time):");
+        for row in &save {
+            let _ = write!(
+                out,
+                "\n  {}\n    {}",
+                row["why"].as_str().unwrap_or_default(),
+                row["command"].as_str().unwrap_or_default()
+            );
+        }
+    }
     let reviews = list(&view["reviews"]);
     if !reviews.is_empty() {
         out.push_str("\n\nBoundary review (at a wave end, a compact or a PR merge):");
@@ -5398,6 +5440,7 @@ impl Command {
             Command::Spine { .. } => "pij spine",
             Command::Directory { .. } => "pij directory",
             Command::Pod { .. } => "pij pod",
+            Command::Community { .. } => "pij community",
             Command::Output { .. } => "pij output",
             Command::Outputs { .. } => "pij outputs",
             Command::Claim { .. } => "pij claim",
@@ -6665,6 +6708,7 @@ PEC notice";
                 "spine",
                 "directory",
                 "pod",
+                "community",
                 "output",
                 "outputs",
                 "claim",

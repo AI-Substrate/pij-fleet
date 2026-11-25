@@ -1,6 +1,6 @@
 {
   "dd_schema": 1,
-  "description": "A pij pod template (PRD 008): what a pod is made from. Parameters set once for the group; slots, each a seat the pod starts in a role; how the slots feed each other; the outside roles it consults; its deliverables, each with an owner role, stages and a role it is written back to. A pod command names a template by its path; pij does not enforce where it lives.",
+  "description": "A pij pod template (PRD 008): what a pod is made from. Parameters set once for the group; slots, each a seat the pod starts in a role; how the slots feed each other; the outside roles it consults; its deliverables, each with an owner role, stages and a role it is written back to. A pod command names a template by its path; pij does not enforce where it lives; and the procedures it names: its own, under procedures/ in its folder, and linked ones from the repo (PRD 010 req-01).",
   "enums": {
     "need": {
       "values": [
@@ -12,6 +12,19 @@
       "values": [
         "yes",
         "no"
+      ]
+    },
+    "procedure_from": {
+      "values": [
+        "template",
+        "repo"
+      ]
+    },
+    "procedure_use": {
+      "values": [
+        "up",
+        "run",
+        "close"
       ]
     }
   },
@@ -37,6 +50,9 @@
           },
           "summary": {
             "type": "text"
+          },
+          "from": {
+            "type": "string"
           }
         }
       }
@@ -228,6 +244,34 @@
               "type": "string"
             },
             "why": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    "procedures": {
+      "shape": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "from"
+          ],
+          "fields": {
+            "id": {
+              "type": "string"
+            },
+            "from": {
+              "type": "enum",
+              "enum": "procedure_from"
+            },
+            "use": {
+              "type": "enum",
+              "enum": "procedure_use"
+            },
+            "describe": {
               "type": "text"
             }
           }

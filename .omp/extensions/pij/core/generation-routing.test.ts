@@ -316,6 +316,7 @@ describe("explicit generation forcing", () => {
 			"directory",
 			"claim",
 			"claims",
+			"community",
 			"delivered",
 			"output",
 			"outputs",

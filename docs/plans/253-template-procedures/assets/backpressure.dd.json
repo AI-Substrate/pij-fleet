@@ -1,0 +1,44 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 253 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1,AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Procedure tests: a template procedure and a linked one run by id; adopt reports the missing link.",
+          "state": "checked",
+          "probe": "just procedures-check; node --test procedures"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "ABSENT",
+          "tier": "human-judgement",
+          "proof": "The reviewer reads the example template and its seed.",
+          "state": "checked",
+          "probe": "docs"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

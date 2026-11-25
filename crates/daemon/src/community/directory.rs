@@ -745,6 +745,32 @@ impl DirectoryService {
                 ),
             });
         }
+        // PRD 010 req-04: a shape made a second time is worth saving as a
+        // template. File reads only; a suggestion creates nothing.
+        let pods: Vec<(String, Value, Option<Vec<String>>)> =
+            std::fs::read_dir(root.worktree.join(super::layout::COMMUNITY).join("pods"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter_map(|entry| {
+                    let record: Value = serde_json::from_slice(
+                        &std::fs::read(entry.path().join(super::pod::POD_FILE)).ok()?,
+                    )
+                    .ok()?;
+                    let slots = super::pod_templates::template_roles(repo, &record);
+                    Some((
+                        entry.file_name().to_string_lossy().to_string(),
+                        record,
+                        slots,
+                    ))
+                })
+                .collect();
+        let shapes: Vec<(String, Value)> =
+            ids.iter().cloned().zip(documents.iter().cloned()).collect();
+        let save = super::pod_templates::save_suggestions(&shapes, &pods);
+        if !save.is_empty() {
+            view["save_as_template"] = save.into();
+        }
         if !prompts.is_empty() {
             view["prompts"] = prompts
                 .iter()

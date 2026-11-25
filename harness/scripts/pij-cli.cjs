@@ -160,5 +160,25 @@ function runCli() {
 	process.exit(result.status ?? 1);
 }
 
+/** PRD 010 req-01: `pij pod down` runs the pod template's close procedure here first (the runner, in-process). */
+function runPodDown(rest) {
+	const pijRs = resolvePijRs(process.env);
+	if (pijRs === undefined) {
+		console.error("pij: cannot run pij-rs: it is not on PATH (run `just rs-install`)");
+		process.exit(127);
+	}
+	const runner = require(
+		path.resolve(__dirname, "..", "..", "skills", "pij", "tools", "procedures", "procedures.ts"),
+	);
+	process.exitCode = runner.podDown(args, rest, runner.realIo(), pijRs);
+}
+
 if (found !== undefined && found.verb === "proc") runProcedures(found.rest);
+else if (
+	found !== undefined &&
+	found.verb === "pod" &&
+	found.rest[0] === "down" &&
+	forwardsToPijRs(args, process.env, native)
+)
+	runPodDown(found.rest);
 else runCli();

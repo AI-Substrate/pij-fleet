@@ -1,0 +1,119 @@
+{
+	"dd": {
+		"schema": "pij/pod-template"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"name": "build",
+				"title": "Build pod: one workstream step",
+				"version": "1",
+				"summary": "A project manager, a coder and a reviewer for one workstream step. The project manager owns the step's PR; the reviewer is required, runs on another model than the coder and reviews the PR at its exact head. Its up procedure makes the step's branch and worktree; its close procedure stops pod down while work is uncommitted or the PR is open."
+			}
+		},
+		{
+			"name": "parameters",
+			"value": [
+				{
+					"name": "subject",
+					"need": "required",
+					"describe": "The workstream step, for example 'workstream 008 s02'. Memory is filed under it."
+				},
+				{
+					"name": "work-folder",
+					"need": "optional",
+					"describe": "The absolute folder of the step's worktree, so pod down records where it stands. PROC-pods-0001 sets it."
+				}
+			]
+		},
+		{
+			"name": "slots",
+			"value": [
+				{
+					"id": "project-manager",
+					"role": "pm",
+					"tools": ["gh"],
+					"seed": "You run this step: write the coder's packet, route the review, keep the step's states true, and own its PR until it merges."
+				},
+				{
+					"id": "coder",
+					"role": "coder",
+					"tools": ["git", "gh", "just"],
+					"seed": "Build the step in its own worktree and branch, then open its PR and send the project manager the frozen head."
+				},
+				{
+					"id": "reviewer",
+					"role": "reviewer",
+					"tools": ["git", "gh", "just"],
+					"not_model_of": "coder",
+					"seed": "Review the coder's PR at its exact head, read-only, in a detached worktree. Send your verdict to the project manager."
+				}
+			]
+		},
+		{
+			"name": "wiring",
+			"value": [
+				{
+					"from": "project-manager",
+					"to": "coder",
+					"what": "the step's packet"
+				},
+				{
+					"from": "coder",
+					"to": "project-manager",
+					"what": "the PR's frozen head"
+				},
+				{
+					"from": "project-manager",
+					"to": "reviewer",
+					"what": "a verdict request at that head"
+				},
+				{
+					"from": "reviewer",
+					"to": "project-manager",
+					"what": "the verdict"
+				}
+			]
+		},
+		{
+			"name": "deliverables",
+			"value": [
+				{
+					"id": "pr",
+					"title": "The step's PR",
+					"owner": "pm",
+					"stages": ["final", "verdict"],
+					"stage_needs": [
+						{
+							"stage": "final",
+							"slots": ["coder"]
+						},
+						{
+							"stage": "verdict",
+							"slots": ["reviewer"]
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "procedures",
+			"value": [
+				{
+					"id": "PROC-pods-0001",
+					"from": "repo",
+					"use": "up",
+					"describe": "Make the step's branch in its own worktree and record it as the pod's work-folder. pod up does not run it: after up, run pij proc PROC-pods-0001 s0001 --key pod-<pod> --arg branch=<branch> --arg folder=<folder>, then the same with s0002."
+				},
+				{
+					"id": "PROC-pods-0002",
+					"from": "repo",
+					"use": "close",
+					"describe": "Run by pij pod down first: nothing uncommitted in the work-folder and no open PR on its branch, or down closes nothing."
+				}
+			]
+		}
+	],
+	"references": []
+}

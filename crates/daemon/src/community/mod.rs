@@ -17,6 +17,7 @@ pub mod memory;
 pub mod output;
 pub mod picture;
 pub mod pod;
+pub mod pod_templates;
 pub mod pointer;
 pub mod role;
 pub mod root;

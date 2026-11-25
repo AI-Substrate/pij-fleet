@@ -1,0 +1,44 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 256 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1,AC2,AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP tests: plan on each shipped pod is complete and warning-free; the same-model reviewer warns.",
+          "state": "checked",
+          "probe": "cargo test -p pij-daemon shipped_pods"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "pij-skill-check: the route's budget and verb coverage.",
+          "state": "checked",
+          "probe": "just pij-skill-check"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

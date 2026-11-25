@@ -1,0 +1,100 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Procedures in a template (workstream 010 s01)",
+        "slug": "template-procedures",
+        "ordinal": 253,
+        "status": "ready",
+        "summary": "A pod template carries procedures about the pod itself and links procedures in the repo; its procedures and seed text carry what pij does not do, such as creating a run's branch and worktree or asking seats in training not to read earlier runs.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "A pod template carries procedures about the pod itself and links procedures in the repo; its procedures and seed text carry what pij does not do, such as creating a run's branch and worktree or asking seats in training not to read earlier runs."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A template brings how to run it, and what pij leaves to it, wherever it goes."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Running procedures (PRD 005 does)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "A template folder may hold `procedures/<PROC-id>/` (PRD 005's layout) and a list of linked repo procedures; `pij proc` runs both by id from a pod's template path.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "Adopting a template into another repo brings its own procedures and reports each linked one missing there.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "The docs and an example template show a branch-and-worktree procedure and a training-mode seed line; `pod up` creates neither and pij walls nothing off.",
+          "state": "checked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Procedures in a template (workstream 010 s01)",
+          "brief": "One phase on PR #347.",
+          "state": "checked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Procedures: skills/pij/procedures and harness/scripts/procedures (PRD 005); pod templates (plan 247)."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "A template's procedure collides with a repo procedure id.",
+          "likelihood": "Low",
+          "impact": "Low",
+          "mitigation": "Ids are scoped by the template's path; the run names which it used."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: on demand only: reading a template's procedures is in-process. No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

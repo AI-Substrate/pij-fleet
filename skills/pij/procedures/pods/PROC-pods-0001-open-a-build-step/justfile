@@ -1,0 +1,20 @@
+# PROC-pods-0001's own recipes, run from the repo's root. Inputs: PROC_IN_BRANCH, PROC_IN_FOLDER, PROC_IN_BASE; the
+# pod's name is the run's key without its pod- prefix.
+
+a-pod-key:
+    @case "$PROC_KEY" in pod-?*) ;; *) echo "key $PROC_KEY is not pod-<pod>" >&2; exit 1 ;; esac
+
+add-worktree:
+    #!/bin/sh
+    set -eu
+    if [ -d "$PROC_IN_FOLDER" ] && [ "$(git -C "$PROC_IN_FOLDER" symbolic-ref --short -q HEAD)" = "$PROC_IN_BRANCH" ]; then exit 0; fi
+    git worktree add -b "$PROC_IN_BRANCH" -- "$PROC_IN_FOLDER" "${PROC_IN_BASE:-origin/main}"
+
+worktree-on-branch:
+    @test "$(git -C "$PROC_IN_FOLDER" symbolic-ref --short -q HEAD)" = "$PROC_IN_BRANCH"
+
+record-folder:
+    @pij pod set "${PROC_KEY#pod-}" "work-folder=$PROC_IN_FOLDER"
+
+folder-recorded:
+    @pij --json pod show "${PROC_KEY#pod-}" | jq -e --arg f "$PROC_IN_FOLDER" '.data.parameters[] | select(.name == "work-folder" and .value == $f)' >/dev/null

@@ -23,6 +23,7 @@ import {
 	type Io,
 	main,
 	pathsIn,
+	podDown,
 	progressDir,
 	RELAYED_MESSAGE,
 	readProgress,
@@ -51,6 +52,10 @@ let recipes: Record<string, Recipe>;
 let out: string[];
 let err: string[];
 let claimNumber: number;
+/** What the fake `pij-rs pod show` answers with. */
+let podShown: Record<string, unknown>;
+/** When set, what the fake `pij-rs pod show` answers instead (a failed or unreadable show). */
+let showAnswer: ExecResult | undefined;
 
 function write(path: string, text: string): void {
 	mkdirSync(dirname(join(root, path)), { recursive: true });
@@ -88,6 +93,10 @@ function fakeExec(
 			stderr: "",
 		};
 	if (tool === "ddocs") return { status: 0, stdout: "{}", stderr: "" };
+	if (tool === "pij-rs" && args.includes("show") && showAnswer) return showAnswer;
+	if (tool === "pij-rs" && args.includes("show"))
+		return { status: 0, stdout: JSON.stringify({ ok: true, data: podShown }), stderr: "" };
+	if (tool === "pij-rs") return { status: 0, stdout: "", stderr: "" };
 	if (tool === "just") {
 		const justfile = args[args.indexOf("--justfile") + 1] ?? "";
 		if (args.includes("--summary"))
@@ -202,6 +211,8 @@ beforeEach(() => {
 	out = [];
 	err = [];
 	claimNumber = 1;
+	podShown = {};
+	showAnswer = undefined;
 });
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -866,5 +877,228 @@ describe("real io", () => {
 		const result = realIo().exec("/bin/sleep", ["5"], root, {}, false, 100);
 		expect(result.status).toBe(EXIT_TIMED_OUT);
 		expect(result.stderr).toContain("timed out");
+	});
+});
+
+describe("a pod template's procedures (PRD 010 req-01)", () => {
+	function template(folder: string, procedures: unknown[]): void {
+		write(
+			`${folder}/pod-template.dd.json`,
+			JSON.stringify({
+				dd: { schema: "pij/pod-template" },
+				sections: [
+					{ name: "meta", value: { name: "build", title: "build", version: "1" } },
+					{ name: "slots", value: [{ id: "lead", role: "lead" }] },
+					{ name: "procedures", value: procedures },
+				],
+			}),
+		);
+	}
+
+	it("runs its own procedures and the repo's it links by id, and lists a linked one this repo lacks as missing", () => {
+		template("pods/build", [
+			{ id: "PROC-pod-0001", from: "template", use: "close" },
+			{ id: "PROC-fleet-0002", from: "repo" },
+			{ id: "PROC-fleet-0009", from: "repo" },
+		]);
+		procedure("pod", "0001", "close-run", THREE_STEPS, THREE_RECIPES, "pods/build/procedures");
+		procedure("fleet", "0002", "branch-and-worktree", THREE_STEPS, THREE_RECIPES);
+		// A repo procedure with the template's own id is hidden by the template's.
+		procedure("pod", "0001", "repo-copy", THREE_STEPS, THREE_RECIPES);
+		expect(run(["list", "--template", "pods/build"])).toBe(EXIT_OK);
+		const listed = out.join("\n");
+		expect(listed).toContain(
+			"PROC-pod-0001 [close]  close-run title  (its own: pods/build/procedures/pod/PROC-pod-0001-close-run)",
+		);
+		expect(listed).toContain("PROC-fleet-0002  branch-and-worktree title  (linked from the repo");
+		expect(listed).toContain("PROC-fleet-0009  MISSING (linked from the repo)");
+		out = [];
+		expect(run(["PROC-pod-0001", "--template", "pods/build"])).toBe(EXIT_OK);
+		expect(out.join("\n")).toContain(
+			"from: the pod template's own, pods/build/procedures/pod/PROC-pod-0001-close-run",
+		);
+		expect(run(["PROC-pod-0001", "s0002", "--template", "pods/build"])).toBe(EXIT_OK);
+		expect(run(["PROC-fleet-0002", "s0002", "--template", "pods/build"])).toBe(EXIT_OK);
+		expect(run(["check", "--template", "pods/build"])).toBe(EXIT_USAGE);
+	});
+
+	it("pod down runs the close procedure first, and closes nothing when it stops early", () => {
+		template("pods/build", [{ id: "PROC-pod-0001", from: "template", use: "close" }]);
+		procedure(
+			"pod",
+			"0001",
+			"close-run",
+			{
+				steps: [
+					{ id: "s0001", title: "push the branch", kind: "run", run: "one", done_when: "pushed" },
+					{
+						id: "s0002",
+						title: "merge it",
+						kind: "decision",
+						decide: "the prime",
+						done_when: "merged",
+					},
+				],
+			},
+			THREE_RECIPES,
+			"pods/build/procedures",
+		);
+		podShown = {
+			close_procedure: { id: "PROC-pod-0001", template: join(root, "pods/build"), key: "pod-b1" },
+		};
+		const downs = () => calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"));
+		const args = ["pod", "down", "b1"];
+		const options = { skillHome: join(root, "no-skill-home") };
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+		expect(downs()).toEqual([]);
+		expect(runsOf("one")).toHaveLength(1);
+		expect(err.join("\n")).toContain(
+			"close procedure PROC-pod-0001 stopped at step s0002; nothing was closed",
+		);
+		expect(err.join("\n")).toContain(
+			`resume: just proc PROC-pod-0001 s0002 --template ${join(root, "pods/build")} --key pod-b1`,
+		);
+
+		expect(
+			run([
+				"PROC-pod-0001",
+				"s0002",
+				"--template",
+				"pods/build",
+				"--key",
+				"pod-b1",
+				"--decided-by",
+				"prime",
+				"--note",
+				"merged",
+			]),
+		).toBe(EXIT_OK);
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_OK);
+		expect(downs().map((c) => c.args)).toEqual([["pod", "down", "b1", "--close-procedure-ran"]]);
+
+		const skip = ["pod", "down", "b1", "--skip-close-procedure"];
+		calls = [];
+		expect(podDown(skip, skip.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_OK);
+		expect(calls.map((c) => c.args)).toEqual([skip]);
+	});
+
+	it("pod down of a shipped template (no folder) runs its repo close procedure, and stops the same way", () => {
+		procedure("fleet", "0003", "close-a-step", {
+			steps: [
+				{
+					id: "s0001",
+					title: "merge it",
+					kind: "decision",
+					decide: "the prime",
+					done_when: "merged",
+				},
+			],
+		});
+		podShown = { close_procedure: { id: "PROC-fleet-0003", template: null, key: "pod-b1" } };
+		const args = ["pod", "down", "b1"];
+		const options = { skillHome: join(root, "no-skill-home") };
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+		expect(calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"))).toEqual([]);
+		expect(err.join("\n")).toContain("resume: just proc PROC-fleet-0003 s0001 --key pod-b1");
+	});
+
+	// B347-R1-01: a failed show, or a template pij cannot read, never reads as "no close procedure".
+	it("pod down closes nothing when the show fails or the template cannot be read, unless told to skip", () => {
+		const downs = () => calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"));
+		const args = ["--socket", "/tmp/s", "pod", "down", "b1"];
+		const options = { skillHome: join(root, "no-skill-home") };
+		for (const answer of [
+			{ status: 1, stdout: "", stderr: "daemon not running" },
+			{ status: 0, stdout: "not json", stderr: "" },
+			{ status: 0, stdout: JSON.stringify({ ok: false, meta: "E-RS-STORE down" }), stderr: "" },
+		]) {
+			showAnswer = answer;
+			err = [];
+			expect(podDown(args, args.slice(3), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+			expect(err.join("\n")).toContain("nothing was closed");
+		}
+		expect(calls.filter((c) => c.args.includes("show")).map((c) => c.args)).toContainEqual([
+			"--socket",
+			"/tmp/s",
+			"--json",
+			"pod",
+			"show",
+			"b1",
+		]);
+		showAnswer = undefined;
+		podShown = {
+			close_procedure: { error: "E-RS-POD-TEMPLATE pods/gone: no such file", key: "pod-b1" },
+		};
+		err = [];
+		expect(podDown(args, args.slice(3), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+		expect(err.join("\n")).toContain("its template cannot be read (E-RS-POD-TEMPLATE pods/gone");
+		expect(downs()).toEqual([]);
+		const skip = [...args, "--skip-close-procedure"];
+		expect(podDown(skip, skip.slice(3), io(), "/bin/pij-rs", options)).toBe(EXIT_OK);
+		expect(downs().map((c) => c.args)).toEqual([skip]);
+	});
+
+	// B347-R1-02, the reviewer's reproduction: a recorded step whose check fails now stops down again.
+	it("pod down rechecks a recorded step, stops when it fails now, and starts afresh after a down", () => {
+		procedure(
+			"fleet",
+			"0004",
+			"close-a-step",
+			{
+				steps: [
+					{
+						id: "s0001",
+						title: "nothing uncommitted",
+						kind: "run",
+						run: "clean",
+						done: "clean",
+						done_when: "clean",
+					},
+					{
+						id: "s0002",
+						title: "pr settled",
+						kind: "run",
+						run: "settled",
+						done: "settled",
+						done_when: "settled",
+					},
+				],
+			},
+			"clean:\n    true\nsettled:\n    true\n",
+		);
+		podShown = { close_procedure: { id: "PROC-fleet-0004", template: null, key: "pod-b1" } };
+		const downs = () => calls.filter((c) => c.file === "pij-rs" && c.args.includes("down"));
+		const args = ["pod", "down", "b1"];
+		const options = { skillHome: join(root, "no-skill-home") };
+		let dirty = false;
+		let prOpen = true;
+		recipes = { clean: () => (dirty ? 1 : 0), settled: () => (prOpen ? 1 : 0) };
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).not.toBe(EXIT_OK);
+		expect(err.join("\n")).toContain("stopped at step s0002");
+		dirty = true;
+		prOpen = false;
+		err = [];
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_REFUSED);
+		expect(err.join("\n")).toContain(
+			"step s0001 (nothing uncommitted) was done, and its check fails now",
+		);
+		expect(err.join("\n")).toContain(
+			"redo it: just proc PROC-fleet-0004 s0001 --again --key pod-b1",
+		);
+		expect(downs()).toEqual([]);
+
+		dirty = false;
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).toBe(EXIT_OK);
+		expect(downs()).toHaveLength(1);
+		expect(readProgress(root).runs["PROC-fleet-0004"]?.["pod-b1"]).toBeUndefined();
+		prOpen = true;
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs", options)).not.toBe(EXIT_OK);
+		expect(downs()).toHaveLength(1);
+	});
+
+	it("pod down goes straight to pij-rs when the template names no close procedure", () => {
+		const args = ["pod", "down", "b1"];
+		expect(podDown(args, args.slice(1), io(), "/bin/pij-rs")).toBe(EXIT_OK);
+		expect(calls.map((c) => c.args)).toEqual([["--json", "pod", "show", "b1"], args]);
 	});
 });

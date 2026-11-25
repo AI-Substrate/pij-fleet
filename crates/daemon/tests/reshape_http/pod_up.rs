@@ -1139,3 +1139,603 @@ async fn a_canary_settling_after_down_writes_and_sends_nothing() {
     assert_eq!(told, 0, "no degraded FYI for a pod that is down");
     rig.server.abort();
 }
+
+/// Plan 253 ac-0001, ac-0002: a template names its own procedures and links
+/// the repo's; `plan` lists each with whether it is there and warns, with the
+/// fix, about one that is not; `show` names the close procedure the pij CLI
+/// runs before down; down records whether it ran, was skipped, or did not run.
+#[tokio::test]
+async fn a_template_names_its_procedures_and_down_records_its_close_procedure() {
+    let repo = repo("pij-pod-procedures");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let file = repo.main.join("pods/build/pod-template.dd.json");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    document["sections"].as_array_mut().unwrap().push(json!({
+        "name": "procedures",
+        "value": [
+            {"id": "PROC-pod-0001", "from": "template", "use": "close"},
+            {"id": "PROC-fleet-0002", "from": "repo", "use": "up"},
+            {"id": "PROC-meta-0001", "from": "repo"},
+        ],
+    }));
+    std::fs::write(&file, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+    let own = repo
+        .main
+        .join("pods/build/procedures/pod/PROC-pod-0001-close-the-run");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("procedure.dd.json"), "{}").unwrap();
+
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &["plan", "pods/build", "--set", "subject=planning"],
+    )
+    .await;
+    assert_eq!(planned["ok"], true, "{planned}");
+    let present: Vec<(String, bool)> = planned["data"]["procedures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["id"].as_str().unwrap().to_string(),
+                row["present"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        present,
+        [
+            ("PROC-pod-0001".to_string(), true),
+            ("PROC-fleet-0002".to_string(), false),
+            ("PROC-meta-0001".to_string(), true),
+        ],
+        "the template's own is in its folder; a skill area ships with pij: {planned}"
+    );
+    assert!(
+        abouts(&planned).contains(&"procedure PROC-fleet-0002".to_string()),
+        "{planned}"
+    );
+
+    let up = pod(
+        rig.addr,
+        &repo,
+        &[
+            "up",
+            "pods/build",
+            "--set",
+            "subject=planning",
+            "--no-start",
+        ],
+    )
+    .await;
+    assert_eq!(up["ok"], true, "{up}");
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    let close = &shown["data"]["close_procedure"];
+    assert_eq!(close["id"], "PROC-pod-0001", "{shown}");
+    assert_eq!(close["key"], "pod-build");
+    assert_eq!(
+        std::fs::canonicalize(close["template"].as_str().unwrap()).unwrap(),
+        std::fs::canonicalize(repo.main.join("pods/build")).unwrap()
+    );
+
+    let down = pod(rig.addr, &repo, &["down", "build"]).await;
+    assert_eq!(down["ok"], true, "{down}");
+    assert!(
+        down["data"]["warnings"]
+            .to_string()
+            .contains("close procedure PROC-pod-0001 did not run"),
+        "{down}"
+    );
+    let ran = pod(rig.addr, &repo, &["down", "build", "--close-procedure-ran"]).await;
+    assert_eq!(ran["ok"], true, "{ran}");
+    let skipped = pod(
+        rig.addr,
+        &repo,
+        &["down", "build", "--skip-close-procedure"],
+    )
+    .await;
+    assert_eq!(skipped["ok"], true, "{skipped}");
+    let log = pod(rig.addr, &repo, &["show", "build"]).await["data"]["log"].to_string();
+    for line in [
+        "close procedure PROC-pod-0001 not run",
+        "close procedure PROC-pod-0001 ran (key pod-build)",
+        "close procedure PROC-pod-0001 skipped (--skip-close-procedure)",
+    ] {
+        assert!(log.contains(line), "{line}: {log}");
+    }
+
+    // B347-R1-01: a template moved away is not "no close procedure".
+    std::fs::rename(repo.main.join("pods/build"), repo.main.join("pods/moved")).unwrap();
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    assert!(
+        shown["data"]["close_procedure"]["error"].is_string(),
+        "{shown}"
+    );
+    let refused = pod(rig.addr, &repo, &["down", "build"]).await;
+    assert_eq!(refused["details"]["code"], "E-RS-POD-TEMPLATE", "{refused}");
+    assert!(
+        refused["meta"]
+            .as_str()
+            .unwrap()
+            .contains("--skip-close-procedure"),
+        "{refused}"
+    );
+    let skipped = pod(
+        rig.addr,
+        &repo,
+        &["down", "build", "--skip-close-procedure"],
+    )
+    .await;
+    assert_eq!(skipped["ok"], true, "{skipped}");
+    let log = pod(rig.addr, &repo, &["show", "build"]).await["data"]["log"].to_string();
+    assert!(
+        log.contains("close procedure unknown, skipped (--skip-close-procedure)"),
+        "{log}"
+    );
+    rig.server.abort();
+}
+
+/// B347-R1-04: a template's procedures holding a link out of its folder
+/// refuse export by the link's path, never its content, and nothing is
+/// written or committed; a brake on what pij copies.
+#[tokio::test]
+async fn an_export_refuses_a_procedure_link_out_of_the_template() {
+    let repo = repo("pij-pod-export-link");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let own = repo
+        .main
+        .join("pods/build/procedures/pod/PROC-pod-0001-close");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("procedure.dd.json"), "{}").unwrap();
+    let outside = repo.main.join("outside-marker.txt");
+    std::fs::write(&outside, "MARKER-NOT-TO-BE-COPIED").unwrap();
+    std::os::unix::fs::symlink(&outside, own.join("config.txt")).unwrap();
+    up_started(&rig, &repo).await;
+    let before = head(&repo);
+    for target in [
+        "pods/out",
+        ".harness/government/community/pod-templates/out",
+    ] {
+        let cwd_target = if target.starts_with(".harness") {
+            repo.gov.join(target).display().to_string()
+        } else {
+            target.to_string()
+        };
+        let refused = pod(
+            rig.addr,
+            &repo,
+            &[
+                "export",
+                "build",
+                "--as-template",
+                &cwd_target,
+                "--why",
+                "w",
+            ],
+        )
+        .await;
+        assert_eq!(refused["details"]["code"], "E-RS-POD-TEMPLATE", "{refused}");
+        let text = refused.to_string();
+        assert!(text.contains("config.txt"), "names the link: {text}");
+        assert!(!text.contains("MARKER-NOT-TO-BE-COPIED"), "{text}");
+    }
+    assert!(!repo.main.join("pods/out").exists());
+    assert_eq!(head(&repo), before, "nothing committed");
+    rig.server.abort();
+}
+
+/// Plan 254 ac-0001..ac-0005 (PRD 010 req-02, req-03, req-06): a shipped
+/// template is named as `shipped:<name>`, recorded at its version, adopted to
+/// governance (one commit) or a path (files), read by that path, diffed
+/// against upstream without being changed, and `community init` copies the
+/// ten seeds and the named templates, keeping what is there. Nothing
+/// launches a seat.
+#[tokio::test]
+async fn shipped_templates_are_named_adopted_diffed_and_set_up_by_init() {
+    let repo = repo("pij-pod-shipped");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+
+    let listed = pod(rig.addr, &repo, &["templates"]).await;
+    assert_eq!(listed["data"]["templates"][0]["name"], "build", "{listed}");
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &["plan", "shipped:build", "--set", "subject=step"],
+    )
+    .await;
+    assert_eq!(planned["ok"], true, "{planned}");
+    assert_eq!(planned["data"]["template"]["source"], "shipped:build@v1");
+    let up = pod(
+        rig.addr,
+        &repo,
+        &["up", "shipped:build", "--set", "subject=step", "--no-start"],
+    )
+    .await;
+    assert_eq!(up["ok"], true, "{up}");
+    let set = pod(rig.addr, &repo, &["set", "build", "subject=again"]).await;
+    assert_eq!(set["ok"], true, "a shipped template is read again: {set}");
+
+    let before = head(&repo);
+    let into = pod(
+        rig.addr,
+        &repo,
+        &["adopt", "build", "--into", "pods/mine", "--why", "ours"],
+    )
+    .await;
+    assert_eq!(into["ok"], true, "{into}");
+    assert_eq!(
+        into["data"]["commit"],
+        Value::Null,
+        "files in the repo, no commit"
+    );
+    assert_eq!(head(&repo), before);
+    let file = repo.main.join("pods/mine/pod-template.dd.json");
+    let copy: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(section(&copy, "meta")["from"], "shipped:build@v1");
+    let again = pod(
+        rig.addr,
+        &repo,
+        &["adopt", "build", "--into", "pods/mine", "--why", "ours"],
+    )
+    .await;
+    assert_eq!(again["ok"], false, "never overwritten: {again}");
+    let governed = pod(rig.addr, &repo, &["adopt", "build", "--why", "ours"]).await;
+    assert_eq!(governed["ok"], true, "{governed}");
+    let path = governed["data"]["wrote"][0]["path"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(path, ".harness/government/community/pod-templates/build");
+    assert!(
+        repo.gov.join(&path).join("pod-template.dd.json").is_file(),
+        "{governed}"
+    );
+    assert_ne!(head(&repo), before, "one governance commit");
+
+    let mine = pod(
+        rig.addr,
+        &repo,
+        &[
+            "plan",
+            "pods/mine",
+            "--set",
+            "subject=step",
+            "--name",
+            "mine",
+        ],
+    )
+    .await;
+    assert_eq!(mine["data"]["template"]["source"], "pods/mine", "{mine}");
+    let edited = std::fs::read(&file).unwrap();
+    let diffed = pod(rig.addr, &repo, &["template-diff", "pods/mine"]).await;
+    assert_eq!(diffed["data"]["from"], "shipped:build@v1", "{diffed}");
+    assert_eq!(diffed["data"]["current"], true, "{diffed}");
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        edited,
+        "diff applies nothing"
+    );
+
+    let init = call(
+        rig.addr,
+        "/v1/pod",
+        &[
+            "community",
+            "init",
+            "--seeds",
+            "all",
+            "--templates",
+            "build",
+            "--why",
+            "setup",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(init["ok"], true, "{init}");
+    assert_eq!(
+        init["data"]["wrote"].as_array().unwrap().len(),
+        10,
+        "{init}"
+    );
+    assert_eq!(
+        init["data"]["kept"][0]["path"], ".harness/government/community/pod-templates/build",
+        "{init}"
+    );
+    let twice = call(
+        rig.addr,
+        "/v1/pod",
+        &["community", "init", "--seeds", "all", "--why", "setup"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(twice["data"]["commit"], Value::Null, "{twice}");
+    assert_eq!(twice["data"]["kept"].as_array().unwrap().len(), 10);
+    let elsewhere = call(
+        rig.addr,
+        "/v1/pod",
+        &[
+            "community",
+            "init",
+            "--templates",
+            "build",
+            "--into",
+            "tpl",
+            "--why",
+            "setup",
+        ],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(elsewhere["ok"], true, "{elsewhere}");
+    assert!(repo.main.join("tpl/build/pod-template.dd.json").is_file());
+    let nothing = call(
+        rig.addr,
+        "/v1/pod",
+        &["community", "init", "--why", "x"],
+        &repo.main,
+    )
+    .await;
+    assert_eq!(
+        nothing["ok"], false,
+        "pij copies nothing on its own: {nothing}"
+    );
+
+    assert_eq!(
+        super::role_start::launches(&rig.tmux),
+        0,
+        "no seat launched"
+    );
+    rig.server.abort();
+}
+
+/// Plan 255 ac-0001..ac-0003 (PRD 010 req-04): a pod with a seat added while
+/// it ran exports to a template with that extra slot and no seat id, which
+/// `plan` reads; to governance it is one commit. A role saves as the repo's
+/// own role template, and a role is made from it. A role shape made twice
+/// by hand is suggested in the view. Nothing launches.
+#[tokio::test]
+async fn a_pod_and_a_role_export_as_templates_and_a_repeated_shape_is_suggested() {
+    let repo = repo("pij-pod-export");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let (lead, reviewer) = up_started(&rig, &repo).await;
+    let launched = super::role_start::launches(&rig.tmux);
+    assert_eq!(
+        pod(rig.addr, &repo, &["add", "build", SEAT]).await["ok"],
+        true
+    );
+
+    let exported = pod(
+        rig.addr,
+        &repo,
+        &[
+            "export",
+            "build",
+            "--as-template",
+            "pods/grown",
+            "--why",
+            "it worked",
+        ],
+    )
+    .await;
+    assert_eq!(exported["ok"], true, "{exported}");
+    assert_eq!(exported["data"]["commit"], Value::Null, "files in the repo");
+    let text = std::fs::read_to_string(repo.main.join("pods/grown/pod-template.dd.json")).unwrap();
+    for seat in [lead.as_str(), reviewer.as_str(), SEAT] {
+        assert!(!text.contains(seat), "no seat id: {seat}: {text}");
+    }
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &[
+            "plan",
+            "pods/grown",
+            "--set",
+            "subject=again",
+            "--name",
+            "again",
+        ],
+    )
+    .await;
+    assert_eq!(planned["ok"], true, "{planned}");
+    assert_eq!(
+        planned["data"]["slots"].as_array().unwrap().len(),
+        3,
+        "lead, reviewer and the seat added while it ran: {planned}"
+    );
+    let before = head(&repo);
+    let governed = repo
+        .gov
+        .join(".harness/government/community/pod-templates/grown");
+    let into_governance = pod(
+        rig.addr,
+        &repo,
+        &[
+            "export",
+            "build",
+            "--as-template",
+            governed.to_str().unwrap(),
+            "--why",
+            "keep it",
+        ],
+    )
+    .await;
+    assert_eq!(into_governance["ok"], true, "{into_governance}");
+    assert!(
+        into_governance["data"]["commit"].is_string(),
+        "{into_governance}"
+    );
+    assert_ne!(head(&repo), before);
+    assert!(governed.join("pod-template.dd.json").is_file());
+
+    let saved = directory(
+        rig.addr,
+        &repo,
+        &[
+            "export",
+            "notes",
+            "--as-template",
+            "roles/notes",
+            "--why",
+            "reuse it",
+        ],
+    )
+    .await;
+    assert_eq!(saved["ok"], true, "{saved}");
+    assert_eq!(saved["data"]["parameters"][0]["name"], "subject", "{saved}");
+    let made = directory(
+        rig.addr,
+        &repo,
+        &[
+            "add",
+            "notes-two",
+            "--file",
+            "roles/notes/role.dd.json",
+            "--why",
+            "from our template",
+        ],
+    )
+    .await;
+    assert_eq!(made["ok"], true, "{made}");
+
+    let view = directory(rig.addr, &repo, &[]).await;
+    let save = &view["data"]["save_as_template"];
+    assert_eq!(save[0]["roles"], json!(["notes", "notes-two"]), "{view}");
+    assert!(
+        save[0]["command"]
+            .as_str()
+            .unwrap()
+            .starts_with("pij directory export notes --as-template"),
+        "{save}"
+    );
+    assert_eq!(
+        super::role_start::launches(&rig.tmux),
+        launched,
+        "export launches nothing"
+    );
+    rig.server.abort();
+}
+
+/// Plan 256 ac-0001..ac-0003: on a project with their roles, the shipped
+/// build and live-call pods each plan with no warning (the live call's lead
+/// live, its procedures pij's own), warn once the reviewing slot shares its
+/// author's model, and each stands up and comes down.
+#[tokio::test]
+async fn the_shipped_pods_plan_clean_then_stand_up_and_come_down() {
+    let repo = repo("pij-pod-shipped-two");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    for (role, kind, model) in [
+        ("pm", "project-manager", "model-a"),
+        ("coder", "coder", "model-a"),
+        ("reviewer", "reviewer", "model-b"),
+        ("note-taker", "worker", "model-a"),
+        ("researcher", "worker", "model-a"),
+        ("validator", "reviewer", "model-b"),
+        ("subject-lead", "worker", "model-a"),
+        ("subject-knowledge", "worker", "model-a"),
+    ] {
+        let added = super::directory(
+            rig.addr,
+            &repo,
+            &[
+                "add",
+                role,
+                "--type",
+                kind,
+                "--title",
+                role,
+                "--holders",
+                "many",
+                "--rule",
+                "r",
+                "--packet",
+                "p",
+                "--harness",
+                "omp",
+                "--model",
+                model,
+                "--why",
+                "w",
+            ],
+        )
+        .await;
+        assert_eq!(added["ok"], true, "{added}");
+    }
+    let listed = pod(rig.addr, &repo, &["templates"]).await;
+    let names: Vec<&str> = listed["data"]["templates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["build", "live-call"], "{listed}");
+    let lead =
+        super::role_start::spawn(rig.addr, &repo, Some(json!({"role": "subject-lead"}))).await;
+    assert_eq!(lead["ok"], true, "{lead}");
+
+    let build = ["shipped:build", "--set", "subject=step"];
+    let call = [
+        "shipped:live-call",
+        "--set",
+        "subject=billing",
+        "--set",
+        "meeting=standup",
+    ];
+    for argv in [&build[..], &call[..]] {
+        let planned = pod(rig.addr, &repo, &[&["plan"], argv].concat()).await;
+        assert_eq!(planned["ok"], true, "{planned}");
+        assert_eq!(abouts(&planned), Vec::<String>::new(), "{planned}");
+        assert_eq!(planned["data"]["slots"].as_array().unwrap().len(), 3);
+    }
+    for (role, argv, slot) in [
+        ("reviewer", &build[..], "slot reviewer"),
+        ("validator", &call[..], "slot validator"),
+    ] {
+        let edited = super::directory(
+            rig.addr,
+            &repo,
+            &["edit", role, "--model", "model-a", "--why", "w"],
+        )
+        .await;
+        assert_eq!(edited["ok"], true, "{edited}");
+        let planned = pod(rig.addr, &repo, &[&["plan"], argv].concat()).await;
+        assert_eq!(abouts(&planned), [slot], "its author's model: {planned}");
+    }
+
+    for (argv, name) in [(&build[..], "build"), (&call[..], "live-call")] {
+        let up = pod(
+            rig.addr,
+            &repo,
+            &[&["up"], argv, &["--session", "work"]].concat(),
+        )
+        .await;
+        assert_eq!(up["ok"], true, "{up}");
+        assert_eq!(up["data"]["members"].as_array().unwrap().len(), 3, "{up}");
+        let down = pod(rig.addr, &repo, &["down", name]).await;
+        assert_eq!(down["ok"], true, "{down}");
+        let shown = pod(rig.addr, &repo, &["show", name]).await;
+        assert_ne!(shown["data"]["state"], "up", "{shown}");
+    }
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    assert_eq!(shown["data"]["close_procedure"]["id"], "PROC-pods-0002");
+    assert_eq!(
+        shown["data"]["close_procedure"]["template"],
+        Value::Null,
+        "a shipped template has no folder: {shown}"
+    );
+    assert_eq!(shown["data"]["close_procedure"]["present"], true);
+    rig.server.abort();
+}

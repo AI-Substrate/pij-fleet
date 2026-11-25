@@ -172,7 +172,7 @@
 					"statement": "`up` launches one process per slot and nothing for a role the pod only consults. `plan`, `show`, `set`, `activity` and `sessions` launch no seat. The tool canary is one message to each new seat and one bounded wait on its answer (a subscription and a deadline, no poll). `down` adds at most two git reads in the pod's work folder for the freeze (req-14). No pod command adds a loop, poll or timer.",
 					"actor": "operator",
 					"priority": "must",
-					"state": "in-progress",
+					"state": "shipped",
 					"done_when": "`pij-rs --json ping | jq .data.spawns` before and after `up` on a template with two slots and one consulted role differs by two spawns' worth plus the writer commits; before and after `plan`, `show`, `activity` and `sessions` it does not move.",
 					"source": "AGENTS.md: resource cost is a correctness property"
 				},
@@ -418,6 +418,16 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "#346 review round 1 fixed on #346: a secret-shaped parameter is refused before any write (req-03, req-05), each record change is built from the current record (req-05, req-08, req-16, req-19), a later confirm recovers a degraded slot (req-19), the template is recorded as resolved (req-07), a seat in one pod is refused by a second (req-01, pm-001 ruling), a late work folder drives the freeze (req-14), the write-back honours the dispatch brake (req-17, req-19), and the text output shows warnings, outcomes, first turns, wiring, types and folders (req-01, req-03, req-07)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-09 shipped: live receipt at 387362db (deployed): pij-rs --json ping .data.spawns 546→548 over 20 s idle (+2 ps.registration-native-process, background); one `pod up` of a 1-slot pod 548→579: +4 tmux (new-window, rename-window, pipe-pane attach, set-options tap owner: one spawn) and +27 writer launches (git.community +21, ddocs.community +6: record, role, members commits); then 579→581 over 20 s (+2 background). plan, show, activity, sessions: 581→581. just spawn-rate --seconds 20: no daemon children sampled."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "req-09: the receipt taken again in its done_when's shape, two slots and one consulted role with a live holder (B347-R1-06, pm-001 ruling): 676\u2192720 on up, two spawns' worth (+8 tmux) plus the writer commits (+36), nothing for the consulted role; plan, show, activity and sessions did not move. It stays shipped."
 				}
 			]
 		}

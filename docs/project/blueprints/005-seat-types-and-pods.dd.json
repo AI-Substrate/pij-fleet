@@ -271,6 +271,36 @@
 						"../prds/008-pods.dd.json#requirements/req-20"
 					],
 					"state": "planned"
+				},
+				{
+					"id": "c-pod-templates",
+					"name": "Shipped pod templates, adopt, diff, init and export",
+					"kind": "verb",
+					"where": "templates/pods/<name>/v<N>/; crates/daemon/src/community/pod_templates.rs; crates/cli/src/main.rs",
+					"responsibility": "Versioned immutable originals (the build pod and the live-call pod first, each with a required reviewing slot on another model, an owner role per deliverable, slot tools, and for the live call a consulted role needed before up and a write-back). A pod command names a template by path or as `shipped:<name>[@v<n>]`; `pij pod adopt [--into <path>]`, `pij pod template-diff`, `pij community init --seeds all --templates <names> [--into <path>]` and `pij pod export --as-template <path>` copy and compare through the single writer, launch no seat and say which copy they used. A template's procedures and seed text carry what pij does not do (a run's branch and worktree, honesty instructions).",
+					"realises": [
+						"../prds/010-pod-templates.dd.json#requirements/req-01",
+						"../prds/010-pod-templates.dd.json#requirements/req-02",
+						"../prds/010-pod-templates.dd.json#requirements/req-03",
+						"../prds/010-pod-templates.dd.json#requirements/req-04",
+						"../prds/010-pod-templates.dd.json#requirements/req-05",
+						"../prds/010-pod-templates.dd.json#requirements/req-06"
+					],
+					"state": "planned"
+				},
+				{
+					"id": "c-docs",
+					"name": "Concepts page and prime instructions",
+					"kind": "skill",
+					"where": "skills/pij/references/community/ (concepts: role, type, position, pod, seed, template), the prime, pm and pa role templates",
+					"responsibility": "Rewrites the prime's community route around type, spawn with a role, plan-confirm-up and spot-and-suggest, and the pod commands. The concepts page (skills/pij/references/community/concepts.md: role, type, position, pod, pod template, seed) is delivered by PRD 009 / #348, which renders the type pages from c-type-catalog's pure read.",
+					"realises": [
+						"../prds/006-seat-types.dd.json#requirements/req-02",
+						"../prds/006-seat-types.dd.json#requirements/req-08",
+						"../prds/007-role-start.dd.json#requirements/req-08",
+						"../prds/010-pod-templates.dd.json#requirements/req-03"
+					],
+					"state": "planned"
 				}
 			]
 		},
@@ -380,6 +410,12 @@
 					"decision": "`pod down` records the work branch's head by reading the pod's work folder with git (two reads), and only warns on uncommitted work.",
 					"why": "The freeze is a record and a warning, never a refusal (Jordan's ruling 2026-11-25, round 2, ruling 6); the reads happen once per down.",
 					"realises": ["../prds/008-pods.dd.json#requirements/req-14"]
+				},
+				{
+					"id": "d-15",
+					"decision": "A shipped template is named `shipped:<name>[@v<n>]`; any other template is a path, and pij never searches for one.",
+					"why": "Templates live where the repo keeps them (Jordan's ruling 2026-11-25, round 2, ruling 1); naming the source keeps every command honest about which copy it read.",
+					"realises": ["../prds/010-pod-templates.dd.json#requirements/req-02"]
 				}
 			]
 		},
@@ -446,6 +482,13 @@
 					"rate": "indexed event-log reads per member when asked; no launch",
 					"scaling": "on demand only; linear in members",
 					"component": ["#components/c-pod-activity"]
+				},
+				{
+					"id": "k-9",
+					"what": "Pod templates.",
+					"rate": "adopt, init, export: one writer commit each (init: one per place written); template-diff and templates: in-process reads; no seat launched",
+					"scaling": "on demand only",
+					"component": ["#components/c-pod-templates"]
 				}
 			]
 		},
@@ -486,6 +529,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "PRD 008's components join: c-pod-schema and c-pod-verbs (amended for the round-2 rulings), c-pod-checks, c-session-history, c-pod-activity and c-pod-deliverables, with decisions d-10 to d-14 and costs k-6 to k-8 (Jordan's ruling 2026-11-25, round 2; pod dogfood input 2026-11-25; PM rulings 2026-11-25)."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "PRD 010's components join: c-pod-templates (amended: templates by path, adopt and init `--into`, the shipped pods' reviewing slot, owners, tools, consulted role and write-back) and c-docs, with decision d-15 and cost k-9 (Jordan's ruling 2026-11-25, round 2; pod dogfood input 2026-11-25)."
 				}
 			]
 		}
