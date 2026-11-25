@@ -1,0 +1,100 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Export a pod and save a role as a template (workstream 010 s03)",
+        "slug": "export-and-role-templates",
+        "ordinal": 255,
+        "status": "ready",
+        "summary": "`pij pod export <pod> --as-template <path>` writes a running or closed pod, with any seat added while it ran, as a template at a path; a role can be saved as a role template with named parameters; the view suggests saving one when the same role or group is made a second time.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "`pij pod export <pod> --as-template <path>` writes a running or closed pod, with any seat added while it ran, as a template at a path; a role can be saved as a role template with named parameters; the view suggests saving one when the same role or group is made a second time."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "A repo grows its own templates from what it actually ran."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Sharing a template back into pij (by pull request, PRD 010 q-01)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`pij pod export <pod> --as-template <path> --why <text>` writes the pod's slots (including seats added while it ran), parameters, consulted roles and deliverables as a template at the path, in one commit when the path is in governance and as files otherwise.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`pij directory export <role> --as-template <path>` saves a role with its parameters as a role template.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "The view suggests saving a template when a role or a group of roles of the same shape is created a second time, with the export command.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0003"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "Export a pod and save a role as a template (workstream 010 s03)",
+          "brief": "One phase on PR #347.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Pod folders and templates (plans 247, 254); role parameters (plan 240); the view's prompts (community/picture.rs)."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "An exported template names a seat-specific value.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "Export writes parameters, never seat ids or paths."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: one write per export; the view's suggestion is computed when the view is asked. No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}

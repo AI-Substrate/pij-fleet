@@ -1,0 +1,64 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 254 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "A shipped version is never edited: pinned hashes.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_templates_pinned"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP tests: adopt into governance and --into; plan names the copy it read; diff lists a change and alters nothing.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_adopt"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: init writes the types and templates where asked; with no init nothing is written.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon community_init"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "The spawn counter does not move across init, adopt, diff and export.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_templates_cost"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

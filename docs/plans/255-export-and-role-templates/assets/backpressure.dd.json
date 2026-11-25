@@ -1,0 +1,54 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 255 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: a pod with a seat added after up exports with that slot, and plan on the export lists it.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_export"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: a role saved as a template keeps its parameters.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon role_export"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Picture unit test: a second similar role prompts an export.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon export_suggestion"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

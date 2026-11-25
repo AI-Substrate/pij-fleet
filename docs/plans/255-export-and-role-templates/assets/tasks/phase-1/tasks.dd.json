@@ -1,0 +1,84 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Export a pod and save a role as a template (workstream 010 s03)",
+        "slug": "phase-1",
+        "status": "draft",
+        "summary": ""
+      }
+    },
+    {
+      "name": "summary",
+      "value": ""
+    },
+    {
+      "name": "tasks",
+      "value": [
+        {
+          "id": "tk-0001",
+          "title": "pod export",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0001"
+          ],
+          "done": "#done_when/tk-0001"
+        },
+        {
+          "id": "tk-0002",
+          "title": "role export",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0002"
+          ],
+          "done": "#done_when/tk-0002"
+        },
+        {
+          "id": "tk-0003",
+          "title": "the view's suggestion",
+          "phase": "ph-0001",
+          "state": "unchecked",
+          "satisfies": [
+            "../../../plan.dd.json#acceptance_criteria/ac-0003"
+          ],
+          "done": "#done_when/tk-0003"
+        }
+      ]
+    },
+    {
+      "name": "done_when",
+      "value": {
+        "tk-0001": [
+          {
+            "id": "dw-0001",
+            "assertion": "pod export",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0002": [
+          {
+            "id": "dw-0002",
+            "assertion": "role export",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ],
+        "tk-0003": [
+          {
+            "id": "dw-0003",
+            "assertion": "the view's suggestion",
+            "state": "unchecked",
+            "pressure": "../../backpressure.dd.json#rows/bp-0001"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "dd": {
+    "schema": "builder/plan"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "The build pod and the live-call pod (workstream 010 s04)",
+        "slug": "build-and-live-call-pods",
+        "ordinal": 256,
+        "status": "ready",
+        "summary": "pij ships two pod templates: a build pod (project manager, coder, reviewer on another model) and a live-call pod (note taker, researcher, validator on another model, consulting the subject's lead). Both carry a required reviewing slot, an owner role per deliverable and slot tools; the live call marks its consulted lead as needed before up and writes its record back to the subject's knowledge role. The prime's community route is rewritten around the pod commands.",
+        "backpressure": "assets/backpressure.dd.json#rows"
+      }
+    },
+    {
+      "name": "summary",
+      "value": "pij ships two pod templates: a build pod (project manager, coder, reviewer on another model) and a live-call pod (note taker, researcher, validator on another model, consulting the subject's lead). Both carry a required reviewing slot, an owner role per deliverable and slot tools; the live call marks its consulted lead as needed before up and writes its record back to the subject's knowledge role. The prime's community route is rewritten around the pod commands."
+    },
+    {
+      "name": "goals",
+      "value": [
+        "Two working pods out of the box, shaped by what the trials showed matters."
+      ]
+    },
+    {
+      "name": "non_goals",
+      "value": [
+        "Templates for any other recurring group (a repo exports its own, plan 255)."
+      ]
+    },
+    {
+      "name": "acceptance_criteria",
+      "value": [
+        {
+          "id": "ac-0001",
+          "claim": "`templates/pods/build/v1/`: slots project-manager (owns the step's PR), coder and reviewer (must not share the coder's model; required); parameters for the workstream step; procedures to make the run's branch and worktree and to close it.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0002",
+          "claim": "`templates/pods/live-call/v1/`: slots note-taker (owns the meeting record), researcher (its tools named) and validator (must not share the researcher's model; required); the subject's lead consulted and needed before up; the record written back to the subject's knowledge role; a training-mode seed line as an example of honesty instead of walls.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0003",
+          "claim": "`plan` on each with its required parameters prints a complete plan with no warning; with the reviewing slot on its author's model it warns.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0001"
+        },
+        {
+          "id": "ac-0004",
+          "claim": "The prime's community route (skills/pij/references/routes/community.md) covers type, spawn with a role, plan-confirm-up, pod down and spot-and-suggest, within its line budget, linking the concepts page PRD 009 delivers.",
+          "state": "unchecked",
+          "pressure": "assets/backpressure.dd.json#rows/bp-0002"
+        }
+      ]
+    },
+    {
+      "name": "phases",
+      "value": [
+        {
+          "id": "ph-0001",
+          "title": "The build pod and the live-call pod (workstream 010 s04)",
+          "brief": "One phase on PR #347.",
+          "state": "unchecked",
+          "tasks": "assets/tasks/phase-1/tasks.dd.json#tasks"
+        }
+      ]
+    },
+    {
+      "name": "tasks",
+      "value": []
+    },
+    {
+      "name": "done_when",
+      "value": {}
+    },
+    {
+      "name": "research_context",
+      "value": "Pod templates (plans 247, 254); warnings (plan 248)."
+    },
+    {
+      "name": "risks",
+      "value": [
+        {
+          "risk": "The shipped pods do not fit another repo's work.",
+          "likelihood": "Medium",
+          "impact": "Low",
+          "mitigation": "They are examples to adopt and edit, not a checklist (ruling C18)."
+        }
+      ]
+    },
+    {
+      "name": "execution_guardrails",
+      "value": [
+        "Cost: templates are read in-process; nothing launches until up. No loop, poll or timer.",
+        "No permission rule changes (PRD 003); no daemon enforcement of a type's rules; no existing JSON field removed or renamed.",
+        "Builds nice-19 through `just shared-build`, one at a time."
+      ]
+    }
+  ]
+}
