@@ -3145,7 +3145,10 @@
 					"harness_session": "f8676636-ae62-405b-85da-5c3b9988fea5",
 					"instance_key": "354",
 					"machine": "studio",
+					"release_why": "close",
+					"released_by": "pij-steady-otter",
 					"seat": "pij-graceful-ocelot",
+					"to": "2026-11-25T07:59:09.764Z",
 					"why": "one C34 review of #354 (009 pods page) at d5813ca"
 				}
 			]
