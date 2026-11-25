@@ -86,4 +86,4 @@
 | — | pij-responsible-locust | copilot | dea7ab1d-62ef-46e8-b479-333d15257194 | JordansacStudio.localdomain | 334 | 2026-11-21T23:34:21.125Z | 2026-11-22T01:12:53.255Z | pij-steady-otter | pij-steady-otter | #334 F279 R1 verdict (fresh seat; C35-approved) | close |
 | — | pij-developed-parakeet | copilot | — | studio | receipt | 2026-11-25T07:22:52.227Z | 2026-11-25T07:24:25.841Z | pij-multiple-nightingale | pij-multiple-nightingale | started in the role by pij-multiple-nightingale (pij spawn --as) | close |
 | — | pij-complex-termite | copilot | — | studio | receipt-a | 2026-11-25T09:03:32.178Z | — | pij-multiple-nightingale | — | started in the role by pij-multiple-nightingale (pij spawn --as) | — |
-| — | pij-long-vole | copilot | — | studio | receipt-b | 2026-11-25T09:03:32.683Z | — | pij-multiple-nightingale | — | started in the role by pij-multiple-nightingale (pij spawn --as) | — |
+| — | pij-long-vole | copilot | — | studio | receipt-b | 2026-11-25T09:03:32.683Z | 2026-11-25T09:05:07.972Z | pij-multiple-nightingale | pij-multiple-nightingale | started in the role by pij-multiple-nightingale (pij spawn --as) | close |
