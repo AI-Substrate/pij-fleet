@@ -1,0 +1,64 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 250 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Unit tests of the fold: spawn, compact, revive and rebind give the right sessions and reasons.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon session_history"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: --history and pod sessions list the sessions; the spawn counter does not move.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon sessions_history_http"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "Unit tests: a fixture transcript's tail gives the figure; a missing file or a figure outside the cap gives unknown; at most the cap is read.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon session_tail"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "ABSENT",
+          "tier": "human-judgement",
+          "proof": "The performance role checks the cost row on the live store.",
+          "state": "unchecked",
+          "probe": "review"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}

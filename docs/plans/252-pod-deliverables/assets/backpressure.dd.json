@@ -1,0 +1,64 @@
+{
+  "dd": {
+    "schema": "builder/backpressure"
+  },
+  "sections": [
+    {
+      "name": "meta",
+      "value": {
+        "title": "Plan 252 backpressure",
+        "plan": "../plan.dd.json#meta",
+        "certainty": "Confident"
+      }
+    },
+    {
+      "name": "rows",
+      "value": [
+        {
+          "id": "bp-0001",
+          "criterion": "AC1",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: show lists owners; a missing owner role warns with its fix.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_owner"
+        },
+        {
+          "id": "bp-0002",
+          "criterion": "AC2",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: a first stage is recorded while one member works; the second completes it.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_stage"
+        },
+        {
+          "id": "bp-0003",
+          "criterion": "AC3",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "HTTP test: recording a stage sends one request to the write-back role, which outlives pod down.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_write_back"
+        },
+        {
+          "id": "bp-0004",
+          "criterion": "AC4",
+          "phase": "ph-0001",
+          "mode": "BUILD",
+          "tier": "computational",
+          "proof": "The spawn counter across a stage.",
+          "state": "unchecked",
+          "probe": "cargo test -p pij-daemon pod_stage_cost"
+        }
+      ]
+    },
+    {
+      "name": "sensors",
+      "value": []
+    }
+  ]
+}
