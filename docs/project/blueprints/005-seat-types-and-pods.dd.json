@@ -15,7 +15,7 @@
 		},
 		{
 			"name": "overview",
-			"value": "Everything is built in the daemon's community module and its HTTP and CLI verbs, on the machinery role templates already use: versioned shipped originals compiled into the daemon, a governance copy a repo owns, and the single writer that commits every governance change with its reason. PRD 006 adds the type catalog and seeds, the type on the role document and the holding, and the retype migration. PRD 007 builds on it: launch settings, the assembled first turn, spawn with a role and close with --stop. PRD 008 defines pods as governance folders driven by the same spawn and close paths, once per member. PRD 010 ships pod templates and the adopt, diff, init and export verbs. Nothing adds a loop, poll or timer, no permission rule changes, and no existing JSON field is removed."
+			"value": "Everything is built in the daemon's community module and its HTTP and CLI verbs, on the machinery role templates already use: versioned shipped originals compiled into the daemon, a governance copy a repo owns, and the single writer that commits every governance change with its reason. PRD 006 adds the type catalog and seeds, the type on the role document and the holding, and the retype migration. PRD 007 builds on it: launch settings, the assembled first turn, spawn with a role and close with --stop. PRD 008 defines pods as governance folders driven by the same spawn and close paths, once per member. PRD 010 ships pod templates and the adopt, diff, init and export verbs. Nothing adds a loop, poll or timer, no permission rule changes, and no existing JSON field is removed. This PR (PRD 006) carries the components PRD 006 builds. The rest of the design, designed with them in workstream 006 s01, lands with its PRD so that every component is built by a step the moment it appears: PRD 007 adds launch settings and parameters on a role, the assembled first turn, spawn with a role, seats with no role in the view, suggest and close with --stop; PRD 008 the pod definition and the pod verbs; PRD 010 the shipped pod templates with adopt, diff, init and export; and the concepts page is PRD 009's."
 		},
 		{
 			"name": "components",
@@ -124,106 +124,6 @@
 						"../prds/006-seat-types.dd.json#requirements/req-07"
 					],
 					"state": "planned"
-				},
-				{
-					"id": "c-launch-settings",
-					"name": "Launch settings and parameters on a role",
-					"kind": "schema",
-					"where": "role schema `default_seat` and a new `parameters` section; crates/daemon/src/community/role.rs",
-					"responsibility": "Harness, model and effort the holder runs on, and named parameters each marked required or optional. A spawn without a required parameter refuses and names it.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 007 req-01; the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-first-turn",
-					"name": "The assembled first turn",
-					"kind": "module",
-					"where": "crates/daemon/src/community/first_turn.rs; stored at community/roles/<id>/first-turns/<seat>.md (or the pod folder)",
-					"responsibility": "Builds one first turn from the type's seed, the role text, the filled parameters, the creator's focus or packet and the memory index, with a source line per part; written to governance before the seat starts; `pij directory show <role> --first-turn` prints it and launches nothing.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 007 req-03, req-04, req-05; PRD 006 req-02 (a seat receives its type's definition); the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-spawn-role",
-					"name": "`pij spawn --as role:<id>`",
-					"kind": "verb",
-					"where": "crates/daemon/src/http/lifecycle.rs, crates/cli/src/main.rs, the OMP and Copilot spawn tools",
-					"responsibility": "Spawn with a role named: the role's launch settings (command line overrides), assign, deliver the first turn, under today's revive rules. A failure partway names the step and leaves no live seat without a role. A spawn with no role still works and warns with the `--as role:` form (also as a JSON field). A missing governance seed warns with the copy command and uses the shipped one. A non-prime creator is recorded and the prime gets one non-waking note.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 007 req-02, req-07, req-09, req-10, req-11; the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-unregistered",
-					"name": "Seats with no role in the view",
-					"kind": "module",
-					"where": "crates/daemon/src/community/picture.rs",
-					"responsibility": "A live project seat holding no role is an action with the line that assigns or closes it.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 007 req-06; the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-suggest",
-					"name": "`pij directory suggest`",
-					"kind": "verb",
-					"where": "crates/daemon/src/http/directory.rs, community/suggestions.dd.json",
-					"responsibility": "Records a seat's suggestion of an unowned area without interrupting anyone; the view lists open ones; the prime answers yes, no or not yet with a reason. The prime role template states create-when-sure, ask-when-unsure.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 007 req-08; the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-close-stop",
-					"name": "`pij close --stop`",
-					"kind": "verb",
-					"where": "crates/daemon/src/http/lifecycle.rs, crates/daemon/src/http/memory_turn.rs",
-					"responsibility": "After the memory turn, asks the holder to answer ready, then stops the exact process recorded at launch (never by name). Silent or memoryless seats stay running and the prime is told; a cold seat is not woken. Without `--stop`, close is unchanged. Pod down calls this per member.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 007 req-12; the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-pod-schema",
-					"name": "Pod definition and pod folders",
-					"kind": "schema",
-					"where": ".dd/schemas/pij/pod-template, .dd/schemas/pij/pod; community/pod-templates/<name>/, community/pods/<pod>/ on the governance branch",
-					"responsibility": "A template folder: parameters, slots (a seat the pod starts), wiring, per-slot seed, consulted roles, keep-open marks and its own procedures. A pod folder: filled parameters, slot to seat id, each first turn, a change log. Seat facts stay in the database. Memory is filed per role and subject.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 008 req-01, req-02, req-07, req-10, req-12; PRD 010 req-01; the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-pod-verbs",
-					"name": "`pij pod plan/up/show/set/down/add/release`",
-					"kind": "verb",
-					"where": "crates/daemon/src/http/pod.rs, crates/daemon/src/community/pod.rs, crates/cli/src/main.rs",
-					"responsibility": "`plan` prints and writes nothing; `up` spawns each slot through c-spawn-role (or `--no-start`), and on a closed pod revives its members; `show` reads the folder and the database; `set` delivers a late parameter to the members that need it; `down` runs the template's close steps then c-close-stop per member, skipping keep-open members with a warning and never touching a consulted role; add and release reshape a running pod and log it.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 008 req-03 to req-06, req-08, req-09, req-11; the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-pod-templates",
-					"name": "Shipped pod templates, adopt, diff, init and export",
-					"kind": "verb",
-					"where": "templates/pods/<name>/v<N>/; crates/daemon/src/community/pod_templates.rs; crates/cli/src/main.rs",
-					"responsibility": "Versioned immutable originals (the build pod and the live-call pod first); `pij pod adopt`, `pij pod template-diff`, `pij community init --seeds all --templates <names>` and `pij pod export --as-template` copy and compare through the single writer, launch no seat and say which copy they used.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 010 req-02 to req-06; the links are added in the PR that brings that PRD to main."
-				},
-				{
-					"id": "c-docs",
-					"name": "Concepts page and prime instructions",
-					"kind": "skill",
-					"where": "skills/pij/references/community/ (concepts: role, type, position, pod, seed, template), the prime, pm and pa role templates",
-					"responsibility": "Explains the terms and the factory framing, and rewrites the prime's community route around type, spawn with a role, plan-confirm-up and spot-and-suggest.",
-					"realises": [],
-					"state": "planned",
-					"note": "Realises PRD 006 req-02, req-08; PRD 007 req-08; PRD 010 req-03; the links are added in the PR that brings that PRD to main. The concepts page (skills/pij/references/community/concepts.md) is delivered by PRD 009 / #348, which renders the type pages from c-type-catalog's pure read (types::all, types::get, TypeDef::show)."
 				}
 			]
 		},
@@ -266,8 +166,8 @@
 				},
 				{
 					"id": "d-6",
-					"decision": "One blueprint serves PRDs 006, 007, 008 and 010; components for a later PRD carry its links from the PR that brings that PRD to main.",
-					"why": "The PRDs land one PR at a time, and ddocs refuses a link to a document that is not on the branch yet.",
+					"decision": "One blueprint serves PRDs 006, 007, 008 and 010; each PRD's components join it in the PR that brings that PRD to main.",
+					"why": "The PRDs land one PR at a time. ddocs refuses a link to a document not on the branch yet, and the coverage check refuses a component no workstream step builds, so a component appears with its PRD and the step that builds it.",
 					"realises": []
 				},
 				{
@@ -301,24 +201,6 @@
 					"rate": "0 launches: one indexed store query per `pij list` (open holdings joined to pointers); each directory write reads the role documents it committed once, in-process",
 					"scaling": "with the rows listed; no loop, poll or timer",
 					"component": ["#components/c-seat-type", "#components/c-mixed-types"]
-				},
-				{
-					"id": "k-3",
-					"what": "Spawning with a role named, and closing with --stop.",
-					"rate": "exactly the one launch a spawn costs today; the first turn is built in-process and committed by the writer; close --stop sends one signal to the recorded pid",
-					"scaling": "per spawn or close the seat asks for; nothing per tick per seat",
-					"component": [
-						"#components/c-spawn-role",
-						"#components/c-first-turn",
-						"#components/c-close-stop"
-					]
-				},
-				{
-					"id": "k-4",
-					"what": "Pod and template verbs.",
-					"rate": "`up` one spawn per slot, nothing for a consulted role; `plan`, `show`, `set`, adopt, diff, init and export launch no seat",
-					"scaling": "with the slots of the pods started; no loop, poll or timer",
-					"component": ["#components/c-pod-verbs", "#components/c-pod-templates"]
 				}
 			]
 		},
@@ -339,6 +221,11 @@
 					"date": "2026-11-25",
 					"by": "pij-multiple-nightingale",
 					"change": "d-4 and c-seat-type: the type rides the role document's pointer (migration 0052), not each holding."
+				},
+				{
+					"date": "2026-11-25",
+					"by": "pij-multiple-nightingale",
+					"change": "The components of PRDs 007, 008 and 010 move to the PRs that bring those PRDs (d-6), since coverage needs a building step for each."
 				}
 			]
 		}

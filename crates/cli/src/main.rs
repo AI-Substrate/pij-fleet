@@ -4073,8 +4073,8 @@ fn render_retype(data: &Value) -> String {
         let _ = write!(
             out,
             "\n  {}: {} ({})",
-            shown(&row["id"], render::name),
-            shown(&row["type"], render::word),
+            shown(&row["id"], pij_core::render::name),
+            shown(&row["type"], pij_core::render::word),
             row["source"].as_str().unwrap_or("-"),
         );
     }
@@ -4084,7 +4084,7 @@ fn render_retype(data: &Value) -> String {
             let _ = write!(
                 out,
                 "\n  {}: {}\n    {}",
-                shown(&row["id"], render::name),
+                shown(&row["id"], pij_core::render::name),
                 row["reason"].as_str().unwrap_or("-"),
                 row["command"].as_str().unwrap_or("-"),
             );
