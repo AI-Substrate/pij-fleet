@@ -111,7 +111,7 @@ export default function (pi: ExtensionAPI): void {
 			{
 				to: Type.String({
 					description:
-						"Target peer session id, e.g. pij-1gzyr0p, or seat@machine for a paired machine (the <id> from a `[pij-rs from <id>] … [/pij]` message, verbatim, or from `pij list --here`).",
+						"Target peer session id, e.g. pij-1gzyr0p, or seat@machine for a paired machine (the <id> from a `[pij-rs from <id>] … [/pij]` message, verbatim, or from `pij list --here`), or `role:<id>[/<instance>]` to send to a role's holder in this session's project.",
 				}),
 				message: Type.Optional(
 					Type.String({

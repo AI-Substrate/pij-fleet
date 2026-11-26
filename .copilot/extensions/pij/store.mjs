@@ -2575,12 +2575,12 @@ export class NativeBridge {
 					msg_id: msgId,
 					...(input.fyi === true ? { fyi: true } : {}),
 					...(force ? { force: true, reason: input.reason } : {}),
-					// F154: a reply carries this seat's registered identity, so the
-					// daemon binds it (by pane, or by native session when paneless)
-					// and a holder's reply answers the role request it names.
-					...(inReplyTo === undefined
-						? {}
-						: { in_reply_to: inReplyTo, caller: replyCaller(this.registration) }),
+					// Every send carries this seat's registered identity and folder:
+					// a role send finds its project from the cwd, and (F154) a reply
+					// binds to this seat (by pane, or by native session when
+					// paneless) so a holder's reply answers the request it names.
+					caller: replyCaller(this.registration),
+					...(inReplyTo === undefined ? {} : { in_reply_to: inReplyTo }),
 				},
 				this.controller.signal,
 			);
@@ -2602,7 +2602,7 @@ export class NativeBridge {
 	}
 }
 
-/** The caller context a reply sends: the registration the daemon already holds. */
+/** The caller context every send carries: the registration the daemon already holds. */
 export function replyCaller(registration) {
 	return {
 		PIJ_SESSION_ID: registration.id,

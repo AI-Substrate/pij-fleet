@@ -125,11 +125,25 @@ pub(crate) fn check_values(options: &RoleOptions) -> Result<(), Refusal> {
     Ok(())
 }
 
+/// How a send to `role:<id>` names a project. The native `pij_send` tools have
+/// no project field: they send the seat's folder, so their only other way is
+/// the CLI's `--project`.
+pub const ROLE_SEND_PROJECT_ROUTE: &str = "name one with `pij send <to> --project <slug>` \
+     from the shell (a native pij_send finds it from the seat's folder, so start the seat in the \
+     project's repo)";
+
 async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) -> Response {
     let command = call.command;
     let caller = call.caller.cloned().unwrap_or_default();
     let (project, repo) =
-        match super::directory::project_and_repo(state, &caller, call.project.clone()).await {
+        match super::directory::project_and_repo_routed(
+            state,
+            &caller,
+            call.project.clone(),
+            ROLE_SEND_PROJECT_ROUTE,
+        )
+        .await
+        {
             Ok(found) => found,
             Err(refusal) => return refused(command, &refusal),
         };

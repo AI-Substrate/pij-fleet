@@ -1967,6 +1967,50 @@ async fn role_prime_resolves_to_the_designated_prime_not_its_rows() {
     assert!(text.contains("| role:prime | pij-second |"), "{text}");
 }
 
+/// Native `pij_send` (Copilot, OMP) to a role names no project: the daemon
+/// finds it from the caller's cwd. The native caller is paneless (session ids
+/// and cwd), sends no `in_reply_to`, and the request is still the sender's own.
+/// With no caller the refusal points at something a native seat can do, not a
+/// bare `--project` its tool lacks.
+#[tokio::test]
+async fn a_native_role_send_finds_the_project_from_the_caller_cwd() {
+    let repo = repo("pij-native-role-send");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet_with_prime(&rig, &repo).await;
+    let added = add_role(&rig, &repo, "prime", "docs/prime/**", "Runs the fleet.").await;
+    assert_eq!(added["ok"], true, "{added}");
+    let folder = repo.main.join("crates");
+    std::fs::create_dir_all(&folder).unwrap();
+
+    let native = json!({"caller": {
+        "PIJ_SESSION_ID": SEAT,
+        "HARNESS_SESSION_ID": "native-session-1",
+        "cwd": folder,
+    }});
+    let sent = send_to(rig.addr, &folder, "role:prime", "req-native", native).await;
+    assert_eq!(sent["ok"], true, "{sent}");
+    let request = rig.store.role_request("req-native").await.unwrap().unwrap();
+    assert_eq!(request.project, "fleet", "{sent}");
+    assert_eq!(request.requester, SEAT, "{sent}");
+    assert_eq!(request.holder.as_deref(), Some("pij-second"), "{sent}");
+
+    let bare = send_to(
+        rig.addr,
+        &folder,
+        "role:prime",
+        "req-no-caller",
+        json!({"caller": null}),
+    )
+    .await;
+    assert_eq!(refusal_code(&bare), "E-RS-ARG", "{bare}");
+    assert!(
+        bare.to_string().contains("pij send <to> --project <slug>")
+            && bare.to_string().contains("native pij_send"),
+        "{bare}"
+    );
+    rig.server.abort();
+}
+
 /// Plan 202 AC1 and AC3: a role add rewrites ROUTES.md (adopting a hand-written
 /// one) in its own commit, warns on an overlap and tells the prime once per
 /// change; assign and release change no route and tell the prime nothing.
