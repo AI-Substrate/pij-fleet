@@ -53,6 +53,20 @@ const INBOX_USAGE = `pij inbox register [--json]
   Paneless pull only for --wait; omit ms to wait for mail, or set a finite timeout.
   JSON is the complete v2 envelope; received claims are acknowledged only after output.`;
 
+const BG_USAGE = `pij bg create --title <text> --command <shell> [--cwd <dir>] [--timeout <dur>] [--json]
+  Runs <shell> with /bin/sh -c, detached and owned by the daemon, so it outlives your turn; prints the job id, pid and log path.
+  It runs in --cwd (relative to yours), else your current directory, under the daemon's umask; stdin is /dev/null.
+  stdout and stderr go to a private log (mode 0600): <daemon state dir>/bg/<job>.log.
+  When it ends, pij-bg sends you one turn: [pij bg] OK | FAILED (exit N) | TIMEOUT | KILLED | STOPPED | LOST
+    — <title> (<duration>) · full log: <path>, followed by the log's last lines.
+  --timeout <dur> (90s, 5m, 1h30m, 2d; a bare number is seconds) stops it and reports TIMEOUT.
+  --events makes it an event source: the job runs \`pij bg emit <text>\` (PIJ_BG_JOB and PIJ_BG_TOKEN are in
+    its env); --min-interval <dur> (default 1m) spaces the wakes, --inline-max <n> (default 5) caps the events
+    listed in the turn, --fyi holds them as FYIs instead of waking you.
+pij bg list [--all] [--json]       your jobs, running and finished, with state and exit code; --all adds your direct children's
+pij bg tail <job> [--lines <n>]    the log's last n lines (default 40, at most 1000)
+pij bg kill <job>                  SIGTERM a job you own, or one your direct child owns`;
+
 function routeDescription(row: RsRouteRow): string {
 	const label = `pij ${row.verb}${row.leaf === undefined ? "" : ` ${row.leaf}`}`;
 	if ("unported" in row) return `${label}: E-RS-UNPORTED — ${row.unported}`;
@@ -158,7 +172,9 @@ async function bootThroughGenerationRouting(): Promise<void> {
 					? LIST_USAGE
 					: verb === "inbox"
 						? INBOX_USAGE
-						: routeDescription(helpRow),
+						: verb === "bg"
+							? BG_USAGE
+							: routeDescription(helpRow),
 		);
 		return;
 	}

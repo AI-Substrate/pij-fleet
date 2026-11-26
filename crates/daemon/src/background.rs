@@ -299,7 +299,11 @@ enum PrimeRoute {
 // No user text is interpolated. The pipe is a persist-before-execute barrier:
 // losing the daemon before its release closes stdin and cannot run the command.
 // Only this runner supplies an exit code AND the original finish instant.
+//
+// `umask 077` keeps the runner's own receipt files private (a brake on who can
+// read them); the job itself runs under the umask the runner inherited.
 const RUNNER: &str = r#"
+__pij_bg_umask=$(umask)
 umask 077
 __pij_bg_finish() {
     trap '' TERM
@@ -314,7 +318,7 @@ trap '__pij_bg_finish 143; exit 143' TERM
 IFS= read -r __pij_bg_gate || exit 125
 [ "$__pij_bg_gate" = start ] || exit 125
 exec </dev/null
-/bin/sh -c "$PIJ_BG_COMMAND" &
+(umask "$__pij_bg_umask" && exec /bin/sh -c "$PIJ_BG_COMMAND") &
 __pij_bg_child=$!
 wait "$__pij_bg_child"
 __pij_bg_status=$?
@@ -5274,6 +5278,40 @@ mod tests {
         );
         assert!(work_was_not_run);
         assert_eq!(status.code(), Some(125));
+    }
+
+    #[test]
+    fn the_job_keeps_the_inherited_umask_and_the_receipt_stays_private() {
+        use std::io::Write as _;
+        use std::os::unix::fs::PermissionsExt;
+        use std::path::Path;
+        for (umask, wanted) in [("022", 0o644), ("002", 0o664)] {
+            let dir = fresh_dir("pij-bg-umask");
+            let made = dir.join("made");
+            let receipt = dir.join("job.exit");
+            let mut child = Command::new("/bin/sh")
+                .args([
+                    "-c",
+                    &format!("umask {umask} && exec /bin/sh -c \"$PIJ_TEST_RUNNER\""),
+                ])
+                .env("PIJ_TEST_RUNNER", RUNNER)
+                .env("PIJ_BG_COMMAND", "touch \"$PIJ_BG_SENTINEL\"")
+                .env("PIJ_BG_SENTINEL", &made)
+                .env("PIJ_BG_EXIT", &receipt)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .process_group(0)
+                .spawn()
+                .unwrap();
+            child.stdin.take().unwrap().write_all(b"start\n").unwrap();
+            assert_eq!(child.wait().unwrap().code(), Some(0));
+            let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+            let (job, exit) = (mode(&made), mode(&receipt));
+            std::fs::remove_dir_all(dir).unwrap();
+            assert_eq!(job, wanted, "job file under umask {umask}: {job:o}");
+            assert_eq!(exit, 0o600, "receipt under umask {umask}: {exit:o}");
+        }
     }
 
     #[test]
