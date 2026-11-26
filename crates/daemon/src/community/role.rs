@@ -675,6 +675,18 @@ pub fn stamp(
     Ok(document)
 }
 
+/// A standing packet that is given but invalid (an empty inline text, or
+/// both text and brief), as a problem for the add's one refusal (review
+/// B363-R1-01): the same check [`stamp`] runs, with the flag that fixes it.
+pub fn packet_problem(document: &Value, id: &str) -> Option<super::types::Problem> {
+    check_packet(document, id)
+        .err()
+        .map(|refusal| super::types::Problem {
+            flag: "--packet <text> or --brief <path>".to_string(),
+            refusal,
+        })
+}
+
 /// The pairing the schema cannot express (ddocs has no union type): an inline
 /// packet carries `text` and no `brief`; a brief packet carries `brief` and no
 /// `text`. A missing `standing_packet` is left for ddocs to name.
@@ -765,6 +777,34 @@ pub fn to_bytes(document: &Value) -> Vec<u8> {
     bytes
 }
 
+/// The fields the pij/role schema requires that `pij directory add` fills
+/// from a flag: (section, meta field or `None` for the section's own key
+/// field, the flag). id and changelog are filled by pij. Kept equal to the
+/// schema by a test.
+pub const SCHEMA_FIELDS: [(&str, &str, &str); 4] = [
+    ("meta", "title", "--title <text>"),
+    ("meta", "holders", "--holders one|many"),
+    ("scope", "rules", "--rule <text>"),
+    (
+        "standing_packet",
+        "source",
+        "--packet <text> or --brief <path>",
+    ),
+];
+
+/// The flags for every [`SCHEMA_FIELDS`] entry `document` lacks: the field
+/// absent, or its section absent. Presence only, as the schema checks it;
+/// ddocs stays the authority when the role is written.
+pub fn schema_gaps(document: &Value) -> Vec<String> {
+    SCHEMA_FIELDS
+        .iter()
+        .filter(|(name, field, _)| {
+            section(document, name).is_none_or(|value| value.get(*field).is_none())
+        })
+        .map(|(_, _, flag)| (*flag).to_string())
+        .collect()
+}
+
 fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
     document["sections"]
         .as_array()?
@@ -776,6 +816,42 @@ fn section<'a>(document: &'a Value, name: &str) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// OSK-DIRECTORY-ADD-SERIAL: the fields `schema_gaps` lists are exactly
+    /// the ones the pij/role schema requires, bar those pij fills itself.
+    #[test]
+    fn schema_fields_are_the_role_schemas_required_fields() {
+        let schema: Value = serde_json::from_slice(include_bytes!(
+            "../../../../.dd/schemas/pij/role/schema.json"
+        ))
+        .unwrap();
+        let mut required = Vec::new();
+        for (name, spec) in schema["sections"].as_object().unwrap() {
+            let fields = spec["shape"]["required"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if name == "meta" {
+                for field in fields {
+                    let field = field.as_str().unwrap();
+                    if field != "id" {
+                        required.push((name.clone(), field.to_string()));
+                    }
+                }
+            } else if spec["required"] == true && name != "changelog" {
+                for field in fields {
+                    required.push((name.clone(), field.as_str().unwrap().to_string()));
+                }
+            }
+        }
+        required.sort();
+        let mut table: Vec<(String, String)> = SCHEMA_FIELDS
+            .iter()
+            .map(|(name, field, _)| ((*name).to_string(), (*field).to_string()))
+            .collect();
+        table.sort();
+        assert_eq!(table, required);
+    }
 
     #[test]
     fn standing_reads_active_retired_and_merged_and_retire_sets_them() {

@@ -1480,7 +1480,17 @@ Source: [`governance.rs` parser and handlers](../../crates/daemon/src/http/gover
 `<government-root>/community/roles/<id>/role.dd.json` on the `prime-governance`
 branch, with `memory/INDEX.md` and `outputs/` beside it. `<government-root>` is
 the standing governance worktree's `.harness/government`, found as
-`harness/scripts/government-root.sh` finds it. The daemon is the only writer:
+`harness/scripts/government-root.sh` finds it. Before any of this, an add
+missing or getting wrong more than one field is refused once, naming each with
+the flag that gives it (`--why`, `--type`, the fields the type requires such as
+`--keeps`, a `--type-change`, and the schema's `--title`, `--holders`, `--rule`,
+`--packet`/`--brief`, and a packet given but invalid, such as an empty
+`--packet`), and pointing at `pij directory add --help`
+(OSK-DIRECTORY-ADD-SERIAL). Its code is the one the first of them always got:
+`E-RS-ARG` for a missing `--why`, else the type's (`E-RS-TYPE-MISSING`,
+`-UNKNOWN`, `-FIELD`, `-RULE`). One problem alone keeps its own refusal word for
+word, and schema fields alone are left to ddocs (`E-RS-DDOCS-INVALID`, which
+already lists every gap). The daemon is the only writer:
 
 1. It refuses before writing if any path it is about to write carries an edit it
    did not make (modified, staged or untracked), if that path or a directory
@@ -2559,7 +2569,15 @@ Reading more spellings can only raise the next number, never reuse one. Each cla
 `BEGIN IMMEDIATE` transaction over a unique (project, kind, number) key, so
 concurrent claims get distinct consecutive numbers and projects never interact.
 `data.number`, `data.formatted` (`0033`) and `data.floor` (the checkout's highest)
-come back with the row. An absent folder counts as empty, but a checkout or
+come back with the row. Every claim also says what it read (UMX-CLAIM-PRD-REPO):
+`data.scanned` is `{repo, folders, highest}` (the checkout, the folders found
+there relative to it, and the highest number in them), and `data.line`'s first line ends
+`; read <folders> in "<repo>": highest <kind> there <NNN>` (or `none
+numbered`), or `; read "<repo>": no <folders> there, so only earlier claims set
+the number`. The repo is fenced (a path a caller recorded) and the line stays
+one line. The checkout is the repo the project records, as it is on disk;
+no other repo is read, so a project whose docs live in a second repo is
+numbered without them, and this line is where that shows. An absent folder counts as empty, but a checkout or
 folder that exists and cannot be read refuses `E-RS-CLAIM-SCAN` and claims
 nothing: an unread folder is not an empty one. The checkout cannot see unmerged
 branches, so numbers handed out before claims existed are seeded once with

@@ -194,6 +194,8 @@ async fn claim(
     if typed != kind {
         line.push_str(&format!(" ({typed} is {kind}'s old name)"));
     }
+    line.push_str("; ");
+    line.push_str(&floor.scanned(&repo, kind));
     let warning = (!floor.found)
         .then(|| unseeded_warning(&repo, kind, claim.number))
         .flatten();
@@ -204,6 +206,11 @@ async fn claim(
     let mut data = serde_json::to_value(&claim).expect("a claim serialises");
     data["formatted"] = json!(formatted);
     data["floor"] = json!(floor.highest);
+    data["scanned"] = json!({
+        "repo": repo.display().to_string(),
+        "folders": floor.folders,
+        "highest": floor.highest,
+    });
     data["line"] = json!(line);
     if let Some(warning) = warning {
         data["warning"] = json!(warning);
@@ -804,6 +811,9 @@ fn floor(repo: &Path, kind: &str) -> Result<Floor, Refusal> {
             {
                 floor.highest = floor.highest.max(highest);
                 floor.found = true;
+                floor
+                    .folders
+                    .push(dir.strip_prefix(repo).unwrap_or(&dir).display().to_string());
             }
         }
     }
@@ -856,6 +866,33 @@ struct Floor {
     highest: u64,
     /// Whether any seed folder exists.
     found: bool,
+    /// The folders read, relative to the checkout, under the spelling found.
+    folders: Vec<String>,
+}
+
+impl Floor {
+    /// What a claim says it read, so a wrong checkout or folder shows before
+    /// the number is used (UMX-CLAIM-PRD-REPO): the folders, the checkout and
+    /// the highest number there, or that none of the folders exists. The
+    /// checkout is the path a caller recorded with the project, so fenced.
+    fn scanned(&self, repo: &Path, kind: &str) -> String {
+        let repo = render::caller_text(&repo.display().to_string());
+        if self.folders.is_empty() {
+            return format!(
+                "read {repo}: no {} there, so only earlier claims set the number",
+                claims::seed_folders(kind).join(" or "),
+            );
+        }
+        let highest = if self.highest == 0 {
+            "none numbered".to_string()
+        } else {
+            claims::format(kind, self.highest)
+        };
+        format!(
+            "read {} in {repo}: highest {kind} there {highest}",
+            self.folders.join(", "),
+        )
+    }
 }
 
 /// The highest `kind` number among `dir`'s entries (0 when none is
@@ -1017,13 +1054,8 @@ mod tests {
         ] {
             std::fs::write(root.join(file), "").unwrap();
         }
-        assert_eq!(
-            floor(&root, "usage").unwrap(),
-            Floor {
-                highest: 19,
-                found: true
-            }
-        );
+        let usage = floor(&root, "usage").unwrap();
+        assert_eq!((usage.highest, usage.found), (19, true));
         assert_eq!(highest("benchmark"), 7, "the plural shape");
         assert_eq!(highest("plan"), 195, "known kinds as before");
         assert_eq!(
@@ -1051,17 +1083,48 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert!(names.iter().any(|name| name == "Prds"), "{names:?}");
+        let prd = floor(&root, "prd").unwrap();
         assert_eq!(
-            floor(&root, "prd").unwrap(),
-            Floor {
-                highest: 97,
-                found: true
-            },
+            (prd.highest, prd.found),
+            (97, true),
             "spellings present: {names:?}"
         );
         // A file named like the folder is not the folder.
         std::fs::write(root.join("docs/project/prdS"), "").ok();
         assert_eq!(floor(&root, "prd").unwrap().highest, 97);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// UMX-CLAIM-PRD-REPO: a claim says which checkout and folder it read and
+    /// the highest number there, so a number from the wrong repo shows at once.
+    #[test]
+    fn a_claim_names_the_checkout_folder_and_highest_it_read() {
+        let root = pij_testkit::fresh_dir("pij-claims-scanned");
+        std::fs::create_dir_all(root.join("docs/project/prds/001-concept")).unwrap();
+        let read = floor(&root, "prd").unwrap();
+        assert_eq!(read.folders, ["docs/project/prds"]);
+        assert_eq!(
+            read.scanned(&root, "prd"),
+            format!(
+                "read docs/project/prds in {:?}: highest prd there 001",
+                root.display().to_string()
+            )
+        );
+        let none = floor(&root, "blueprint").unwrap();
+        assert_eq!(
+            none.scanned(&root, "blueprint"),
+            format!(
+                "read {:?}: no docs/project/blueprints there, so only earlier claims set the number",
+                root.display().to_string()
+            )
+        );
+        std::fs::create_dir_all(root.join("docs/project/workshops")).unwrap();
+        assert!(
+            floor(&root, "workshop")
+                .unwrap()
+                .scanned(&root, "workshop")
+                .ends_with(": highest workshop there none numbered")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

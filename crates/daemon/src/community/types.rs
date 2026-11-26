@@ -370,12 +370,38 @@ pub fn check_role_for(
     require: bool,
     verb: Verb,
 ) -> Result<(), Refusal> {
+    match combine(
+        id,
+        role_problems(id, document, require, verb),
+        Vec::new(),
+        verb,
+    ) {
+        Some(refusal) => Err(refusal),
+        None => Ok(()),
+    }
+}
+
+/// One thing a role write lacks or gets wrong: the flag that supplies or
+/// fixes it, and the refusal it gets on its own.
+#[derive(Clone, Debug)]
+pub struct Problem {
+    /// The flag, written as its usage shows it (`--keeps <value>`).
+    pub flag: String,
+    /// The refusal this problem alone gets.
+    pub refusal: Refusal,
+}
+
+/// Every type problem of a role document, in the order [`check_role_for`]
+/// has always checked them, so the first is the refusal a caller got before
+/// (dogfood OSK-DIRECTORY-ADD-SERIAL). Empty when the role passes.
+pub fn role_problems(id: &str, document: &Value, require: bool, verb: Verb) -> Vec<Problem> {
+    let mut problems = Vec::new();
     let Some(type_id) = of_role(document) else {
         let changes = section(document, "type_changes")
             .and_then(Value::as_array)
             .is_some_and(|rows| !rows.is_empty());
         if !require && !changes {
-            return Ok(());
+            return problems;
         }
         let why = if changes {
             format!("role {id:?} changes rules of a type it does not name; give it a type first")
@@ -390,17 +416,30 @@ pub fn check_role_for(
                 "Name one: pij directory edit {id} --set type=<type> --why <text> (pij directory types <type> explains each), or pij directory retype"
             ),
         };
-        return Err(Refusal::new(
-            E_TYPE_MISSING,
-            format!(
-                "{why}; every role is one of pij's ten seat types:\n{}\n{}",
-                menu(),
-                read(DOCS_PAGE)
-            ),
-        )
-        .with_next(next));
+        problems.push(Problem {
+            flag: "--type <type>".to_string(),
+            refusal: Refusal::new(
+                E_TYPE_MISSING,
+                format!(
+                    "{why}; every role is one of pij's ten seat types:\n{}\n{}",
+                    menu(),
+                    read(DOCS_PAGE)
+                ),
+            )
+            .with_next(next),
+        });
+        return problems;
     };
-    let def = get(type_id)?;
+    let def = match get(type_id) {
+        Ok(def) => def,
+        Err(refusal) => {
+            problems.push(Problem {
+                flag: "--type <type>".to_string(),
+                refusal,
+            });
+            return problems;
+        }
+    };
     for field in &def.requires {
         let given = meta(document)[field.as_str()]
             .as_str()
@@ -410,14 +449,17 @@ pub fn check_role_for(
                 .iter()
                 .find(|(name, _)| name == field)
                 .map_or(field.as_str(), |(_, flag)| flag);
-            return Err(Refusal::new(
-                E_TYPE_FIELD,
-                format!(
-                    "role {id:?} is of type {type_id}, which requires {flag} <value>. {}",
-                    read(&docs_page(type_id))
-                ),
-            )
-            .with_next(format!("pij directory types {type_id}")));
+            problems.push(Problem {
+                flag: format!("{flag} <value>"),
+                refusal: Refusal::new(
+                    E_TYPE_FIELD,
+                    format!(
+                        "role {id:?} is of type {type_id}, which requires {flag} <value>. {}",
+                        read(&docs_page(type_id))
+                    ),
+                )
+                .with_next(format!("pij directory types {type_id}")),
+            });
         }
     }
     for change in section(document, "type_changes")
@@ -426,42 +468,89 @@ pub fn check_role_for(
         .unwrap_or_default()
     {
         let rule_id = change["rule"].as_str().unwrap_or_default();
+        let flag = format!("--type-change {rule_id}=<why>");
         let Some(rule) = def.rules.iter().find(|rule| rule.id == rule_id) else {
             let rules: Vec<&str> = def.rules.iter().map(|rule| rule.id.as_str()).collect();
-            return Err(Refusal::new(
-                E_TYPE_RULE,
-                format!(
-                    "role {id:?}: type {type_id} has no rule {rule_id:?}; its rules are {}. {}",
-                    rules.join(", "),
-                    read(&docs_page(type_id))
-                ),
-            )
-            .with_next(format!("pij directory types {type_id}")));
+            problems.push(Problem {
+                flag,
+                refusal: Refusal::new(
+                    E_TYPE_RULE,
+                    format!(
+                        "role {id:?}: type {type_id} has no rule {rule_id:?}; its rules are {}. {}",
+                        rules.join(", "),
+                        read(&docs_page(type_id))
+                    ),
+                )
+                .with_next(format!("pij directory types {type_id}")),
+            });
+            continue;
         };
         if rule.fixed {
-            return Err(Refusal::new(
-                E_TYPE_RULE,
-                format!(
-                    "role {id:?}: rule {rule_id:?} of type {type_id} is fixed and no role may change it ({}). {}",
-                    rule.text,
-                    read(&docs_page(type_id))
+            problems.push(Problem {
+                flag,
+                refusal: Refusal::new(
+                    E_TYPE_RULE,
+                    format!(
+                        "role {id:?}: rule {rule_id:?} of type {type_id} is fixed and no role may change it ({}). {}",
+                        rule.text,
+                        read(&docs_page(type_id))
+                    ),
                 ),
-            ));
-        }
-        if change["why"]
+            });
+        } else if change["why"]
             .as_str()
             .is_none_or(|why| why.trim().is_empty())
         {
-            return Err(Refusal::new(
-                E_TYPE_RULE,
-                format!(
-                    "role {id:?}: the change to rule {rule_id:?} needs a reason: --type-change {rule_id}=<why>. {}",
-                    read(&docs_page(type_id))
+            problems.push(Problem {
+                flag,
+                refusal: Refusal::new(
+                    E_TYPE_RULE,
+                    format!(
+                        "role {id:?}: the change to rule {rule_id:?} needs a reason: --type-change {rule_id}=<why>. {}",
+                        read(&docs_page(type_id))
+                    ),
                 ),
-            ));
+            });
         }
     }
-    Ok(())
+    problems
+}
+
+/// One refusal for every problem of a role write (dogfood
+/// OSK-DIRECTORY-ADD-SERIAL), so a caller fixes them in one go. `None` when
+/// there is no problem: `gaps` alone (fields the pij/role schema requires,
+/// as their flags) never refuse here, since ddocs checks them when the role
+/// is written. A lone problem keeps its own refusal word for word; several
+/// are listed, each with its flag, under the FIRST problem's code, the one a
+/// caller got when pij refused them one at a time.
+pub fn combine(id: &str, problems: Vec<Problem>, gaps: Vec<String>, verb: Verb) -> Option<Refusal> {
+    let first = problems.first()?;
+    if problems.len() == 1 && gaps.is_empty() {
+        return Some(first.refusal.clone());
+    }
+    let (action, help) = match verb {
+        Verb::Add => ("added", "pij directory add --help"),
+        Verb::Edit => ("edited", "pij directory edit --help"),
+    };
+    let count = problems.len() + gaps.len();
+    let mut message = format!(
+        "role {id:?} cannot be {action}: {count} fields are missing or invalid, and nothing was written:"
+    );
+    for problem in &problems {
+        message.push_str(&format!(
+            "\n  {}: {}",
+            problem.flag, problem.refusal.message
+        ));
+    }
+    for gap in &gaps {
+        message.push_str(&format!("\n  {gap}: required by every role"));
+    }
+    message.push_str(&format!("\nEvery field and the flag that gives it: {help}"));
+    let refusal = Refusal::new(first.refusal.code, message);
+    Some(match &first.refusal.next {
+        Some(next) => refusal.with_next(next.clone()),
+        None => refusal.with_next(help),
+    })
 }
 
 /// The type `retype` would give a role written before types (PRD 006
