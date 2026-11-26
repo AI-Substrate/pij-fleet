@@ -57,6 +57,24 @@ describe("cargo-test-runner.sh", () => {
 		expect(seen).toContain("PIJ_RUNNER_PROBE=kept");
 	});
 
+	it("passes a binary whose deps folder is an ancestor, not its own directory, through untouched", () => {
+		const root = mkdtempSync(join(tmpdir(), "pij-cargo-runner-"));
+		roots.push(root);
+		const dir = join(root, "deps", "custom-target", "debug");
+		mkdirSync(dir, { recursive: true });
+		const record = join(root, "env.txt");
+		const binary = join(dir, "tool");
+		writeFileSync(binary, `#!/bin/sh\nenv > '${record}'\n`);
+		chmodSync(binary, 0o755);
+		const run = spawnSync(RUNNER, [binary], {
+			env: gitEnv({ GIT_DIR: "/nonexistent/pij-runner-probe" }),
+			encoding: "utf8",
+		});
+		expect(run.stderr).toBe("");
+		expect(run.status).toBe(0);
+		expect(readFileSync(record, "utf8")).toContain("GIT_DIR=/nonexistent/pij-runner-probe");
+	});
+
 	it("passes anything outside deps/ (cargo run) through untouched", () => {
 		const run = spawnSync(RUNNER, ["/usr/bin/env"], {
 			env: gitEnv({ GIT_DIR: "/nonexistent/pij-runner-probe" }),

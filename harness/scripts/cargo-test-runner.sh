@@ -5,17 +5,26 @@
 #
 #   harness/scripts/cargo-test-runner.sh <binary> [args...]
 #
-# A test binary (cargo puts those under deps/) is refused while GIT_DIR or
-# GIT_WORK_TREE is set, and starts without the rest of the inherited git
-# location, config and namespace variables, so neither the test nor anything
-# it launches (git, pij-rs, a script) can find a repository but its own.
-# Anything else (`cargo run`) is executed untouched.
+# A test binary (cargo writes those straight into <target>/<profile>/deps/) is
+# refused while GIT_DIR or GIT_WORK_TREE is set, and starts without the rest of
+# the inherited git location, config and namespace variables, so neither the
+# test nor anything it launches (git, pij-rs, a script) can find a repository
+# but its own. Only the binary's immediate directory counts: anything else
+# (`cargo run`, a binary under some other path containing a `deps` folder) is
+# executed untouched.
+#
+# A target-specific runner supersedes this one: cargo prefers
+# `[target.<triple>] runner` (or CARGO_TARGET_<TRIPLE>_RUNNER) over
+# `[target.'cfg(all())']`, and then this guard does not run. A custom runner
+# (cross, an emulator) must chain it, for example by exec'ing
+# `cargo-test-runner.sh <binary> [args...]` itself. Listing this script ahead
+# of the custom runner does not work: the binary must be argument one.
 #
 # Cost: none at steady state; builtins and one subshell fork per test binary,
 # then exec (no program launched).
 
-case "$1" in
-*/deps/*) ;;
+case "${1%/*}" in
+deps | */deps) ;;
 *) exec "$@" ;;
 esac
 
