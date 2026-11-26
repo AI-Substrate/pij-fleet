@@ -672,10 +672,21 @@ describe("RustRuntimeSession", () => {
 			expect(Object.keys(caller).sort()).toEqual(Object.keys(wanted).sort());
 			for (const key of Object.keys(wanted)) expect(typeof caller[key]).toBe(typeof wanted[key]);
 			expect(caller.tmuxPane).toBe("%51");
-			// The reply consumed the correlation: the next send is uncorrelated and carries none.
+			// The reply consumed the correlation: the next send is uncorrelated.
 			await runtime.send("pij-from", "again");
 			expect(sends.at(-1)).not.toHaveProperty("in_reply_to");
-			expect(sends.at(-1)).not.toHaveProperty("caller");
+		} finally {
+			runtime.shutdown("quit");
+		}
+	});
+	it("a fresh role send carries caller.cwd, so the daemon finds the project", async () => {
+		const { runtime, sends } = await bootPushedEvent(PUSHED_EVENT_WIRE, new FakePiRuntime());
+		try {
+			await runtime.send("role:pm-001/s05", "please");
+			const sent = sends.at(-1) ?? {};
+			expect(sent).not.toHaveProperty("in_reply_to");
+			expect(sent.to).toMatchObject({ seat: "role:pm-001/s05" });
+			expect((sent.caller as Record<string, unknown> | undefined)?.cwd).toBe(process.cwd());
 		} finally {
 			runtime.shutdown("quit");
 		}

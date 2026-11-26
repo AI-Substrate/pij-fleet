@@ -102,7 +102,7 @@ async function startExtension() {
 								to: {
 									type: "string",
 									description:
-										"Recipient Pij seat ID, or seat@machine for a paired machine (copy a `[pij from …]` sender verbatim)",
+										"Recipient Pij seat ID, or seat@machine for a paired machine (copy a `[pij from …]` sender verbatim), or `role:<id>[/<instance>]` to send to a role's holder in this seat's project",
 								},
 								message: { type: "string", description: "Message body" },
 								fyi: {

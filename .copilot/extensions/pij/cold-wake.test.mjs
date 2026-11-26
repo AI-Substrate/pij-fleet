@@ -129,13 +129,18 @@ for (const [label, pane] of [
 	});
 }
 
-test("a send without in_reply_to carries neither it nor a caller", async () => {
-	const { bridge, sends } = bridgeOver((body) =>
-		accepted({ msg_id: body.msg_id, outcome: "queued", at: 1 }),
+test("a fresh role send carries the seat's folder as caller.cwd, and no in_reply_to", async () => {
+	const { bridge, sends } = bridgeOver(
+		(body) => accepted({ msg_id: body.msg_id, outcome: "queued", at: 1 }),
+		{ id: "pij-copilot", harness_session: "native-1", folder: "/work/repo" },
 	);
-	assert.equal((await bridge.send({ to: "pij-peer", message: "hi" })).ok, true);
+	assert.equal((await bridge.send({ to: "role:pm-001/s05", message: "hi" })).ok, true);
 	assert.equal("in_reply_to" in sends[0], false);
-	assert.equal("caller" in sends[0], false);
+	assert.deepEqual(sends[0].caller, {
+		PIJ_SESSION_ID: "pij-copilot",
+		HARNESS_SESSION_ID: "native-1",
+		cwd: "/work/repo",
+	});
 });
 
 for (const bad of ["", "  ", "two ids"]) {
