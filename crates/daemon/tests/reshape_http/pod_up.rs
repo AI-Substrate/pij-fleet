@@ -321,6 +321,98 @@ async fn no_start_then_each_member_starts_on_its_own_into_the_pod() {
     rig.server.abort();
 }
 
+/// ACC-POD-LATEJOIN-FRESH: `pod plan`, then `up --no-start` and the
+/// documented join `spawn --as ... --pod`. Answers the plan's first turn for
+/// the seeded slot and the first turn the joined seat was given. The role has
+/// one memory note, so its index names it.
+async fn plan_and_join(name: &str, fresh: bool) -> (String, String) {
+    let repo = repo(name);
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    template(&repo);
+    let path = repo.main.join("pods/build/pod-template.dd.json");
+    let mut seeded: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    seeded["sections"][2]["value"][0]["seed"] = json!("amber-slot: start from the agenda.");
+    std::fs::write(&path, serde_json::to_vec_pretty(&seeded).unwrap()).unwrap();
+    let noted = directory(
+        rig.addr,
+        &repo,
+        &[
+            "memory",
+            "add",
+            "notes",
+            "--subject",
+            "planning",
+            "--title",
+            "Leak marker",
+            "--tags",
+            "pod",
+            "--hook",
+            "h",
+            "--body",
+            "remembered-leak-marker\n",
+        ],
+    )
+    .await;
+    assert_eq!(noted["ok"], true, "{noted}");
+    let mut argv = vec!["plan", "pods/build", "--set", "subject=planning"];
+    if fresh {
+        argv.push("--fresh");
+    }
+    let planned = pod(rig.addr, &repo, &argv).await;
+    assert_eq!(planned["ok"], true, "{planned}");
+    let planned = planned["data"]["slots"][0]["first_turn"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    argv[0] = "up";
+    argv.push("--no-start");
+    let up = pod(rig.addr, &repo, &argv).await;
+    assert_eq!(up["ok"], true, "{up}");
+    // The documented join: no --fresh, no --focus, nothing but the slot's
+    // role and instance and the pod.
+    let joined = super::role_start::spawn(
+        rig.addr,
+        &repo,
+        Some(json!({"role": "notes", "instance": "lead", "pod": "build"})),
+    )
+    .await;
+    assert_eq!(joined["ok"], true, "{joined}");
+    assert_eq!(joined["details"]["pod"]["slot"], "lead", "{joined}");
+    let seat = joined["data"]["id"].as_str().unwrap();
+    let given = std::fs::read_to_string(repo.gov.join(format!(
+        ".harness/government/community/roles/notes/first-turns/{seat}.md"
+    )))
+    .unwrap();
+    rig.server.abort();
+    (planned, given)
+}
+
+/// ACC-POD-LATEJOIN-FRESH: a member joining a `--fresh` pod gets the slot's
+/// seed and the fresh placeholder, never the role's memory index; and the
+/// turn the plan showed is the turn it got.
+#[tokio::test]
+async fn a_late_join_into_a_fresh_pod_gets_the_slots_seed_and_no_memory() {
+    let (planned, given) = plan_and_join("pij-pod-join-fresh", true).await;
+    assert!(given.contains("amber-slot"), "{given}");
+    assert!(given.contains("starts fresh"), "{given}");
+    assert!(!given.contains("remembered-leak-marker"), "{given}");
+    assert!(!given.contains("INDEX.md"), "{given}");
+    assert_eq!(given, planned, "the planned turn is the delivered one");
+}
+
+/// ACC-POD-LATEJOIN-FRESH: a member joining a pod that is not fresh gets the
+/// role's memory index, with the slot's seed, as the plan showed.
+#[tokio::test]
+async fn a_late_join_into_a_pod_that_is_not_fresh_gets_the_memory_index() {
+    let (planned, given) = plan_and_join("pij-pod-join-index", false).await;
+    assert!(given.contains("amber-slot"), "{given}");
+    assert!(given.contains("INDEX.md"), "{given}");
+    assert!(!given.contains("starts fresh"), "{given}");
+    assert_eq!(given, planned, "the planned turn is the delivered one");
+}
+
 async fn closed_alone(addr: SocketAddr, seat: &str) -> Value {
     reqwest::Client::new()
         .post(format!("http://{addr}/v1/close"))
@@ -582,6 +674,10 @@ async fn session_history_reads_the_event_log_per_seat_and_per_member() {
     let members = pod(rig.addr, &repo, &["sessions", "build", "--limit", "1"]).await;
     assert_eq!(members["ok"], true, "{members}");
     assert_eq!(members["data"]["sessions"][0]["slot"], "lead");
+    // ACC-POD-SESSIONS-PROJECT: the same project `pod show` names.
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    assert!(members["data"]["project"].is_string(), "{members}");
+    assert_eq!(members["data"]["project"], shown["data"]["project"]);
     assert_eq!(
         members["data"]["sessions"][0]["sessions"]
             .as_array()

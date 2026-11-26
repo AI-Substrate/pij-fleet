@@ -602,11 +602,13 @@ async fn handle(
                 )
                 .await
                 {
-                    Ok(mut data) => {
+                    Ok(data) => {
                         // Nothing to remember, or its note is written: ready.
-                        if call.stop {
-                            data["stopped"] = stop_process(&state, &expected).await;
-                        }
+                        let data = if call.stop {
+                            with_stop(data, stop_process(&state, &expected).await)
+                        } else {
+                            data
+                        };
                         envelope(StatusCode::OK, &Envelope::ok(command, data))
                     }
                     Err(refused) => refused.into_response(),
@@ -698,6 +700,24 @@ fn not_stopped(command: &str, seat: &SeatId, why: &str, told: Value) -> Response
 
 /// `close --stop` left the seat open and running (PRD 007 req-12).
 pub const E_NOT_STOPPED: &str = "E-RS-NOT-STOPPED";
+
+/// A close receipt with `close --stop`'s outcome (ACC-CLOSE-RECEIPT): a
+/// process it stopped is no longer said to keep running, and no pane is named
+/// to kill. A process it did not stop keeps the close's own note.
+pub(super) fn with_stop(mut data: Value, stopped: Value) -> Value {
+    if stopped["stopped"] == true {
+        data["process"] = match stopped["pid"].as_u64() {
+            Some(pid) => format!("pij close retired the seat and stopped its process {pid}."),
+            None => "pij close retired the seat and stopped its process.".to_string(),
+        }
+        .into();
+        if let Some(data) = data.as_object_mut() {
+            data.remove("kill_pane");
+        }
+    }
+    data["stopped"] = stopped;
+    data
+}
 
 /// SIGTERM to `seat`'s recorded process, only while its pid has the recorded
 /// start (the liveness port checks again). A POLICY: the seat's ready answer
@@ -973,6 +993,33 @@ mod tests {
             judge_pane(None, SeatProcess::Unknown, Some(eel())),
             PaneNow::Other(Some(eel()))
         );
+    }
+
+    /// ACC-CLOSE-RECEIPT: a stopped process is never said to keep running nor
+    /// given a pane to kill; one not stopped keeps the close's own note.
+    #[test]
+    fn a_stopped_close_names_no_kill_and_an_unstopped_one_keeps_its_note() {
+        let closed = || {
+            json!({
+                "process": process_note(Some("%61"), &PaneNow::Own),
+                "kill_pane": "%61",
+            })
+        };
+        let stopped = with_stop(closed(), json!({"stopped": true, "pid": 42}));
+        let note = stopped["process"].as_str().unwrap();
+        assert!(!note.contains("keeps running"), "{stopped}");
+        assert!(!note.contains("kill-pane"), "{stopped}");
+        assert!(note.contains("stopped its process 42"), "{stopped}");
+        assert_eq!(stopped.get("kill_pane"), None, "{stopped}");
+        assert_eq!(stopped["stopped"]["stopped"], true);
+
+        let left = with_stop(
+            closed(),
+            json!({"stopped": false, "pid": 42, "why": "its pid no longer has the recorded start time"}),
+        );
+        assert_eq!(left["process"], closed()["process"], "{left}");
+        assert_eq!(left["kill_pane"], "%61", "{left}");
+        assert_eq!(left["stopped"]["stopped"], false);
     }
 
     #[test]

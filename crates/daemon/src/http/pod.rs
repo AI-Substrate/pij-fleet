@@ -31,7 +31,7 @@ use super::governance::GovernanceRequest;
 use super::identity::{CallerContext, Resolved, resolve_seat};
 use super::types::{AsRole, SpawnRequest};
 use super::{AppState, ExistingSeatPolicy, envelope};
-use crate::community::first_turn::{self, Creator};
+use crate::community::first_turn;
 use crate::community::layout::RolePaths;
 use crate::community::pod::{self, PodPaths, SlotPlan, Template, Warning};
 use crate::community::pod_templates::{self, Shipped};
@@ -406,26 +406,17 @@ async fn plan(
         .slots
         .iter()
         .map(|slot| {
-            let sets = pod::slot_sets(slot, &filled);
-            let pairs: Vec<(String, String)> = sets
-                .iter()
-                .filter_map(|set| set.split_once('='))
-                .map(|(name, value)| (name.to_string(), value.to_string()))
-                .collect();
+            // The same inputs up and a late join give the slot's spawn
+            // (#346 R1-10, ACC-POD-LATEJOIN-FRESH).
+            let turn = pod::SlotTurn::new(slot, &filled, subject.clone(), call.fresh);
             let started = first_turn::start(
                 &worktree,
                 &slot.role,
                 &slot.instance,
-                &pairs,
-                &Creator {
-                    seat: actor.to_string(),
-                    // The same focus up gives the slot's spawn (#346 R1-10).
-                    focus: slot.seed.clone(),
-                    packet: None,
-                    subject: subject.clone(),
-                    fresh: call.fresh,
-                },
+                &turn.pairs(),
+                &turn.creator(actor.as_str(), None),
             );
+            let sets = turn.sets;
             let (harness, model, first_turn) = match started {
                 Ok(start) => (
                     start.default_seat["harness"].as_str().map(str::to_string),
@@ -813,6 +804,21 @@ pub fn spawn_retry(address: &str, harness: &str, actor: &str) -> String {
     format!("pij spawn --as role:{address} --harness {harness} --parent {actor}")
 }
 
+/// The `--as` a slot's spawn carries: its role and instance and the
+/// [`pod::SlotTurn`] plan built.
+fn slot_as_role(slot: &pod::Slot, turn: pod::SlotTurn) -> AsRole {
+    AsRole {
+        role: slot.role.clone(),
+        instance: slot.instance.clone(),
+        set: turn.sets,
+        focus: turn.focus,
+        packet: None,
+        subject: turn.subject,
+        fresh: turn.fresh,
+        pod: None,
+    }
+}
+
 /// Start one slot through the spawn path `pij spawn --as` takes: its seat id
 /// and the spawn's warnings, or why it did not start.
 async fn start_slot(
@@ -851,16 +857,15 @@ async fn start_slot(
         trust_folder: false,
         spawn_id: None,
         alt: None,
-        as_role: Some(AsRole {
-            role: plan.slot.role.clone(),
-            instance: plan.slot.instance.clone(),
-            set: plan.sets.clone(),
-            focus: plan.slot.seed.clone(),
-            packet: None,
-            subject: planned.subject.clone(),
-            fresh: planned.fresh,
-            pod: None,
-        }),
+        as_role: Some(slot_as_role(
+            &plan.slot,
+            pod::SlotTurn::new(
+                &plan.slot,
+                &planned.filled,
+                planned.subject.clone(),
+                planned.fresh,
+            ),
+        )),
     };
     let response = super::launch_seat(
         state,
@@ -1580,7 +1585,7 @@ async fn sessions(state: &AppState, call: &Call, caller: &CallerContext) -> Resu
         history["slot"] = member["slot"].clone();
         members.push(history);
     }
-    Ok(json!({"pod": pod_name, "sessions": members}))
+    Ok(json!({"pod": pod_name, "project": opened.record.project, "sessions": members}))
 }
 
 /// The event kinds `pod activity` reads for a member, in one indexed query.
@@ -2052,6 +2057,35 @@ pub(super) fn recorded(worktree: &Path, project: &str, pod_name: &str) -> Result
             format!("pod {pod_name}'s record is not JSON: {error}"),
         )
     })
+}
+
+/// The first turn a member joining the pod `document` records is built from
+/// (ACC-POD-LATEJOIN-FRESH): the template slot its role and instance fill and
+/// that slot's [`pod::SlotTurn`], exactly as `plan` and `up` build it. A role
+/// that fills no slot, or a template that cannot be read, gets no slot and
+/// the pod's subject and fresh setting alone.
+pub(super) fn joining_turn(
+    repo: &Path,
+    document: &Value,
+    role_id: &str,
+    instance: &str,
+) -> (Option<pod::Slot>, pod::SlotTurn) {
+    let slot = template_of(repo, document).ok().and_then(|template| {
+        template
+            .slots
+            .into_iter()
+            .find(|slot| slot.role == role_id && slot.instance == instance)
+    });
+    let turn = match &slot {
+        Some(slot) => pod::SlotTurn::recorded(slot, document),
+        None => pod::SlotTurn {
+            sets: Vec::new(),
+            focus: None,
+            subject: pod::recorded_subject(document),
+            fresh: pod::recorded_fresh(document),
+        },
+    };
+    (slot, turn)
 }
 
 /// `pij spawn --as role:<id> --pod <pod>` (req-04): record the started seat

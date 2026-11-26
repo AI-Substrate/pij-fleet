@@ -638,10 +638,21 @@ async fn proceed(
         )
         .await
         {
-            Ok(mut data) => {
+            Ok(data) => {
                 if stop {
-                    data["stopped"] = super::lifecycle::stop_process(state, held).await;
-                    return ("closed and stopped".to_string(), Some(data));
+                    let data = super::lifecycle::with_stop(
+                        data,
+                        super::lifecycle::stop_process(state, held).await,
+                    );
+                    let outcome = if data["stopped"]["stopped"] == true {
+                        "closed and stopped".to_string()
+                    } else {
+                        format!(
+                            "closed; its process was not stopped: {}",
+                            data["stopped"]["why"].as_str().unwrap_or("unknown")
+                        )
+                    };
+                    return (outcome, Some(data));
                 }
                 return ("closed".to_string(), Some(data));
             }
