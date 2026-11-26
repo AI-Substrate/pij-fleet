@@ -1139,8 +1139,51 @@ enum DoctorAction {
     Hooks,
 }
 
+/// The fix for a flag conflict clap would otherwise only name, or `None` to
+/// keep clap's own error.
+fn conflict_fix(error: &clap::Error) -> Option<&'static str> {
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
+    if error.kind() != ErrorKind::ArgumentConflict {
+        return None;
+    }
+    let mut named = Vec::new();
+    for kind in [ContextKind::InvalidArg, ContextKind::PriorArg] {
+        match error.get(kind) {
+            Some(ContextValue::String(arg)) => named.push(arg.as_str()),
+            Some(ContextValue::Strings(args)) => named.extend(args.iter().map(String::as_str)),
+            _ => {}
+        }
+    }
+    let names = |prefix: &str| named.iter().any(|arg| arg.starts_with(prefix));
+    if names("--as ") && names("--role ") {
+        return Some(
+            "--role cannot be used with --as: --as sets the seat role from the role's id. Drop --role: pij-rs spawn --as role:<id>[/<instance>] ...",
+        );
+    }
+    if names("--to ") && names("[RECIPIENT]") {
+        return Some(
+            "--to cannot be used with a positional recipient, so the body has nowhere to go. Give the body as --body <text> or --body-file <path|-> with --to: pij-rs send --to <recipient> --body '<text>'. Or drop --to and give the recipient positionally: pij send <recipient> '<text>'",
+        );
+    }
+    None
+}
+
+/// Parse argv, turning a conflict [`conflict_fix`] knows into its fix (same
+/// kind, same exit code).
+fn parse_cli<I, T>(argv: I) -> Result<Cli, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    use clap::CommandFactory;
+    Cli::try_parse_from(argv).map_err(|error| match conflict_fix(&error) {
+        Some(fix) => clap::Error::raw(error.kind(), format!("{fix}\n")).with_cmd(&Cli::command()),
+        None => error,
+    })
+}
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = parse_cli(std::env::args_os()).unwrap_or_else(|error| error.exit());
     // PRD 009: the bundled docs need no runtime, no client and no daemon.
     if let Command::Docs { args } | Command::AgentsStartHere { args } = &cli.command {
         let verb = match &cli.command {
@@ -7745,5 +7788,73 @@ mod shim_forward_tests {
         ] {
             assert!(Cli::try_parse_from(both).is_err(), "{both:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod conflict_fix_tests {
+    use clap::error::ErrorKind;
+
+    use super::parse_cli;
+
+    fn refused(argv: &[&str]) -> clap::Error {
+        parse_cli(argv)
+            .err()
+            .unwrap_or_else(|| panic!("{argv:?} parsed"))
+    }
+
+    /// A seat role from --role next to --as names the fix, not just the clash;
+    /// the kind and so the exit code stay clap's.
+    #[test]
+    fn spawn_role_with_as_says_to_drop_role() {
+        for argv in [
+            &["pij-rs", "spawn", "--role", "worker", "--as", "role:scribe"][..],
+            &["pij-rs", "spawn", "--as", "role:scribe", "--role", "worker"],
+        ] {
+            let error = refused(argv);
+            assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
+            assert_eq!(error.exit_code(), 2);
+            let text = error.to_string();
+            assert!(text.contains("Drop --role"), "{text}");
+            assert!(
+                text.contains("sets the seat role from the role's id"),
+                "{text}"
+            );
+        }
+    }
+
+    /// `send --to <r> '<body>'` reads the body as a second recipient; the
+    /// error names both ways out.
+    #[test]
+    fn send_to_with_a_positional_names_body_or_positional() {
+        for argv in [
+            &["pij-rs", "send", "--to", "role:scribe", "the notes"][..],
+            &["pij-rs", "send", "the notes", "--to", "role:scribe"],
+        ] {
+            let error = refused(argv);
+            assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
+            assert_eq!(error.exit_code(), 2);
+            let text = error.to_string();
+            assert!(text.contains("--body <text> or --body-file"), "{text}");
+            assert!(text.contains("pij send <recipient> '<text>'"), "{text}");
+        }
+    }
+
+    /// Other conflicts keep clap's own message.
+    #[test]
+    fn other_conflicts_are_clap_s_own() {
+        let text = refused(&[
+            "pij-rs",
+            "send",
+            "--to",
+            "pij-a",
+            "--body",
+            "x",
+            "--body-file",
+            "-",
+        ])
+        .to_string();
+        assert!(text.contains("cannot be used with"), "{text}");
+        assert!(!text.contains("nowhere to go"), "{text}");
     }
 }

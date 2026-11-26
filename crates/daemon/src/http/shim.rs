@@ -342,6 +342,20 @@ pub(crate) fn parse_send(argv: &[String], body_literal: Option<&str>) -> Result<
                     .ok_or_else(|| "--reason needs the text saying why".to_string())?;
                 reason = Some(value.to_string());
             }
+            "to" if argv
+                .iter()
+                .filter(|token| *token == "--to" || token.starts_with("--to="))
+                .count()
+                == 1 =>
+            {
+                return Err(
+                    "`pij send` takes its recipient positionally, so with --to the body has \
+                     nowhere to go. Drop --to: pij send <recipient> '<text>' (or \
+                     --body-file <path|-> for the body). Or keep --to and give the body as \
+                     --body <text> or --body-file: pij-rs send --to <recipient> --body '<text>'"
+                        .to_string(),
+                );
+            }
             "to" => {
                 return Err(
                     "rs cannot serve a broadcast `pij send --to <id> --to <id>`: it fans one \
@@ -1270,5 +1284,22 @@ mod role_flag_tests {
         );
         let empty = parse_send(&argv(&["send", "role:pm", "x", "--limit"]), None);
         assert_eq!(empty.err().as_deref(), Some("--limit needs a value"));
+    }
+
+    /// One `--to` with a body names the positional form and `--body`; two
+    /// stay the broadcast refusal.
+    #[test]
+    fn one_to_names_the_fix_and_two_stay_a_broadcast() {
+        for one in [
+            &["send", "--to", "role:scribe", "the notes"][..],
+            &["send", "--to=role:scribe", "the notes"],
+        ] {
+            let why = parse_send(&argv(one), None).expect_err("refused");
+            assert!(why.contains("pij send <recipient> '<text>'"), "{why}");
+            assert!(why.contains("--body <text>"), "{why}");
+            assert!(!why.contains("broadcast"), "{why}");
+        }
+        let two = parse_send(&argv(&["send", "--to", "a", "--to", "b", "x"]), None);
+        assert!(two.expect_err("refused").contains("broadcast"));
     }
 }

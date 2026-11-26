@@ -272,8 +272,10 @@ impl Planned {
             "deliverables": self.template.deliverables.iter().map(|deliverable| json!({
                 "id": deliverable.id,
                 "owner": deliverable.owner,
+                "owner_slot": deliverable.owner_slot,
                 "stages": deliverable.stages,
                 "write_back": deliverable.write_back,
+                "write_back_slot": deliverable.write_back_slot,
             })).collect::<Vec<_>>(),
             "wiring": wiring_answer(&self.template),
             "procedures": procedures_answer(&self.template, &self.repo),
@@ -441,6 +443,13 @@ async fn plan(
     warnings.extend(pod::procedure_checks(&template, &|procedure| {
         pod::procedure_present(&template, &repo, procedure)
     }));
+    if let Ok(document) = recorded(&worktree, &project, &pod) {
+        warnings.extend(pod::closed_at_down(
+            &pod,
+            pod::records(&document, "members"),
+            &|role| role_type(&worktree, role),
+        ));
+    }
     Ok(Planned {
         shown: if pod_templates::named(given).is_some() {
             template.source.clone()
@@ -601,18 +610,25 @@ async fn up(
         if pod::meta(&opened.document)["state"] == "up" {
             return Err(Refusal::new(
                 E_POD_EXISTS,
-                format!("pod {name} is up; see it with pij pod show {name}"),
+                pod::exists_message(name, true, &member_states(state, &opened.document).await),
             ));
         }
         return revive(state, call, caller, actor, opened).await;
     }
     let planned = plan(state, call, caller, actor).await?;
     if planned.worktree.join(&planned.paths.document).exists() {
+        let (up, members) = match recorded(&planned.worktree, &planned.project, &planned.pod) {
+            Ok(document) => (
+                pod::meta(&document)["state"] == "up",
+                member_states(state, &document).await,
+            ),
+            Err(_) => (false, Vec::new()),
+        };
         return Err(Refusal::new(
             E_POD_EXISTS,
             format!(
-                "pod {} already has a record; see it with pij pod show {}, or name a new one with --name <pod>",
-                planned.pod, planned.pod
+                "{}, or name a new one with --name <pod>",
+                pod::exists_message(&planned.pod, up, &members)
             ),
         ));
     }
@@ -777,6 +793,33 @@ async fn up(
         canary(state, record_of(&planned), actor, asked).await;
     }
     Ok(answer)
+}
+
+/// Each member of the pod `document` as `(seat, slot, state)`, its state read
+/// as `show` reads it.
+async fn member_states(state: &AppState, document: &Value) -> Vec<(String, String, String)> {
+    let mut members = Vec::new();
+    for member in pod::records(document, "members") {
+        let seat = member["seat"].as_str().unwrap_or_default();
+        let row = state
+            .services
+            .registry
+            .get(&SeatId::from(seat))
+            .await
+            .ok()
+            .flatten();
+        let shown = match &row {
+            Some(row) if row.tombstoned_at.is_some() => "closed".to_string(),
+            Some(row) => json!(row.state).as_str().unwrap_or("unknown").to_string(),
+            None => "unknown".to_string(),
+        };
+        members.push((
+            seat.to_string(),
+            member["slot"].as_str().unwrap_or("-").to_string(),
+            shown,
+        ));
+    }
+    members
 }
 
 fn record_of(planned: &Planned) -> Record {
@@ -1148,7 +1191,7 @@ async fn set(
         }
     }
     Ok(
-        json!({"pod": pod_name, "set": {name: value}, "sent": sent, "warnings": warnings, "commit": committed}),
+        json!({"pod": pod_name, "project": opened.record.project, "set": {name: value}, "sent": sent, "warnings": warnings, "commit": committed}),
     )
 }
 
@@ -1385,7 +1428,7 @@ async fn revive(
     )
     .await?;
     Ok(
-        json!({"pod": pod_name, "state": "up", "members": members, "warnings": warnings, "commit": committed}),
+        json!({"pod": pod_name, "project": opened.record.project, "state": "up", "members": members, "warnings": warnings, "commit": committed}),
     )
 }
 
@@ -1464,7 +1507,7 @@ async fn add(
             ));
         }
         return Ok(
-            json!({"pod": pod_name, "added": answer["data"]["id"], "joined": answer["details"]["pod"], "warnings": answer["details"]["warnings"]}),
+            json!({"pod": pod_name, "project": opened.record.project, "added": answer["data"]["id"], "joined": answer["details"]["pod"], "warnings": answer["details"]["warnings"]}),
         );
     }
     let seat = state
@@ -1507,8 +1550,19 @@ async fn add(
         actor.to_string(),
         seat.id.to_string(),
         pod_name.to_string(),
-        pod::member(&slot, seat.id.as_str(), "none asked"),
+        {
+            let mut row = pod::member(&slot, seat.id.as_str(), "none asked");
+            row["added"] = json!("running");
+            row
+        },
     );
+    let warnings: Vec<String> =
+        pod::closed_at_down(pod_name, std::slice::from_ref(&row), &|role| {
+            role_type(&opened.record.worktree, role)
+        })
+        .iter()
+        .map(Warning::line)
+        .collect();
     let line = format!("added {target}, already running, in role {}", slot.role);
     let (committed, _, ()) = mutate(
         state,
@@ -1530,7 +1584,9 @@ async fn add(
         },
     )
     .await?;
-    Ok(json!({"pod": pod_name, "added": target, "role": slot.role, "commit": committed}))
+    Ok(
+        json!({"pod": pod_name, "project": opened.record.project, "added": target, "role": slot.role, "warnings": warnings, "commit": committed}),
+    )
 }
 
 /// `pij pod release <pod> <seat>` (req-08): the seat leaves the pod and keeps
@@ -1566,6 +1622,7 @@ async fn release(
     .await?;
     Ok(json!({
         "pod": pod_name,
+        "project": opened.record.project,
         "released": target,
         "commit": committed,
         "next": format!("{target} keeps running; close it with pij close {target} --stop"),
@@ -1747,6 +1804,7 @@ async fn activity(state: &AppState, call: &Call, caller: &CallerContext) -> Resu
     lines.sort_by_key(|(at, _)| *at);
     Ok(json!({
         "pod": pod_name,
+        "project": opened.record.project,
         "since": since,
         "activity": lines.into_iter().map(|(_, line)| line).collect::<Vec<_>>(),
         "transcripts": transcripts,
@@ -1935,6 +1993,7 @@ async fn stage(
     .await?;
     Ok(json!({
         "pod": pod_name,
+        "project": opened.record.project,
         "deliverable": deliverable_id,
         "stage": stage_name,
         "from": from,

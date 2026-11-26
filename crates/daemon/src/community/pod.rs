@@ -63,12 +63,17 @@ pub struct Consulted {
 pub struct Deliverable {
     /// Its id within the template.
     pub id: String,
-    /// The role that owns it.
+    /// The role that owns it: the role of the slot the template names, else
+    /// the role the template names.
     pub owner: String,
+    /// The slot the template named as owner, when it named one.
+    pub owner_slot: Option<String>,
     /// Its stages, in order; one unnamed stage when the template names none.
     pub stages: Vec<String>,
-    /// The role its stages are written back to.
+    /// The role its stages are written back to, resolved as `owner` is.
     pub write_back: Option<String>,
+    /// The slot the template named for the write-back, when it named one.
+    pub write_back_slot: Option<String>,
     /// The slots each stage needs, where the template says; a stage it does
     /// not name needs every slot (req-16).
     pub needs: Vec<(String, Vec<String>)>,
@@ -169,6 +174,21 @@ fn role_id(source: &str, what: &str, id: &str) -> Result<String, Refusal> {
     RolePaths::new(id)
         .map_err(|_| refuse(source, format!("{what} names role {id:?}, not a role id")))?;
     Ok(id.to_string())
+}
+
+/// A deliverable's owner or write-back as `(role, slot)`: a name that is one
+/// of the template's slots means that slot's role, so renaming a slot's role
+/// on adopt carries its deliverables with it; any other name is a role id.
+fn slot_or_role(
+    source: &str,
+    slots: &[Slot],
+    what: &str,
+    named: &str,
+) -> Result<(String, Option<String>), Refusal> {
+    match slots.iter().find(|slot| slot.id == named) {
+        Some(slot) => Ok((slot.role.clone(), Some(slot.id.clone()))),
+        None => Ok((role_id(source, what, named)?, None)),
+    }
 }
 
 /// Read the template at `path`: a folder holding [`TEMPLATE_FILE`], or that
@@ -329,13 +349,31 @@ pub fn parse(bytes: &[u8], source: &str) -> Result<Template, Refusal> {
             }
             needs.push((stage, slots_needed));
         }
+        let (owner, owner_slot) = slot_or_role(
+            source,
+            &slots,
+            &format!("deliverable {id}"),
+            &text(&row["owner"]),
+        )?;
+        let (write_back, write_back_slot) = match write_back {
+            Some(named) => {
+                let (role, slot) = slot_or_role(
+                    source,
+                    &slots,
+                    &format!("deliverable {id}'s write-back"),
+                    &named,
+                )?;
+                (Some(role), slot)
+            }
+            None => (None, None),
+        };
         deliverables.push(Deliverable {
-            owner: role_id(source, &format!("deliverable {id}"), &text(&row["owner"]))?,
+            owner,
+            owner_slot,
             stages,
             needs,
-            write_back: write_back
-                .map(|role| role_id(source, &format!("deliverable {id}'s write-back"), &role))
-                .transpose()?,
+            write_back,
+            write_back_slot,
             id,
         });
     }
@@ -855,17 +893,21 @@ pub fn checks(
         }
     }
     for deliverable in &template.deliverables {
-        let roles = std::iter::once(("owner", &deliverable.owner)).chain(
+        let roles = std::iter::once(("owner", &deliverable.owner, &deliverable.owner_slot)).chain(
             deliverable
                 .write_back
                 .iter()
-                .map(|role| ("write-back", role)),
+                .map(|role| ("write-back", role, &deliverable.write_back_slot)),
         );
-        for (what, role) in roles {
+        for (what, role, slot) in roles {
             if !exists(role) {
+                let from = slot
+                    .as_ref()
+                    .map(|slot| format!(" (slot {slot}'s role)"))
+                    .unwrap_or_default();
                 warnings.push(Warning {
                     about: format!("deliverable {}", deliverable.id),
-                    text: format!("its {what} role {role} does not exist in this project"),
+                    text: format!("its {what} role {role}{from} does not exist in this project"),
                     fix: format!("pij directory add {role} --type <type> --why <text>"),
                 });
             }
@@ -1159,6 +1201,63 @@ pub fn keeps_open(member: &Value, role_type: Option<&str>) -> bool {
         Some("no") => false,
         _ => role_type == Some("knowledge"),
     }
+}
+
+/// Whether `member` joined through `pod add <pod> <seat>`, already running:
+/// marked so, or (a record from before the mark) its slot is its seat.
+pub fn added_running(member: &Value) -> bool {
+    member["added"] == "running" || (member["seat"].is_string() && member["slot"] == member["seat"])
+}
+
+/// A warning for each member added running that `pod down` would close: one
+/// not keep-open, so the seat's owner learns before down how to keep it.
+/// Message only; down is unchanged.
+pub fn closed_at_down(
+    pod: &str,
+    members: &[Value],
+    role_type: &dyn Fn(&str) -> Option<String>,
+) -> Vec<Warning> {
+    members
+        .iter()
+        .filter(|member| added_running(member))
+        .filter(|member| {
+            !keeps_open(
+                member,
+                role_type(member["role"].as_str().unwrap_or_default()).as_deref(),
+            )
+        })
+        .filter_map(|member| member["seat"].as_str())
+        .map(|seat| Warning {
+            about: format!("member {seat}"),
+            text: format!(
+                "it was added running and is not keep-open, so pij pod down {pod} closes it"
+            ),
+            fix: format!("to keep it running, pij pod release {pod} {seat} before down"),
+        })
+        .collect()
+}
+
+/// E-RS-POD-EXISTS's text: the pod is already up (or has a record), its
+/// members as `(seat, slot, state)`, and where to look.
+pub fn exists_message(pod: &str, up: bool, members: &[(String, String, String)]) -> String {
+    let listed = if members.is_empty() {
+        "no members".to_string()
+    } else {
+        format!(
+            "members {}",
+            members
+                .iter()
+                .map(|(seat, slot, state)| format!("{seat} (slot {slot}, {state})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let what = if up {
+        "is already up"
+    } else {
+        "already has a record"
+    };
+    format!("pod {pod} {what}, {listed}; see it with pij pod show {pod}")
 }
 
 /// Where a pod's work folder stood at `down` (req-14).
@@ -1511,6 +1610,112 @@ mod tests {
             warned[0]
                 .line()
                 .starts_with("slot coder: role coder cannot start")
+        );
+    }
+
+    /// An adopted template whose slot note-taker now runs role scribe: a
+    /// deliverable owned and written back by that slot is checked against
+    /// scribe, never against the slot id read as a role.
+    #[test]
+    fn a_deliverable_named_by_slot_is_checked_against_the_slot_s_role() {
+        let bytes = serde_json::to_vec(&json!({
+            "dd": {"schema": "pij/pod-template"},
+            "sections": [
+                {"name": "meta", "value": {"name": "call", "version": "1"}},
+                {"name": "slots", "value": [
+                    {"id": "note-taker", "role": "scribe"},
+                    {"id": "researcher", "role": "researcher"},
+                ]},
+                {"name": "deliverables", "value": [
+                    {"id": "record", "owner": "note-taker", "write_back": "note-taker"},
+                    {"id": "brief", "owner": "researcher"},
+                ]},
+            ],
+        }))
+        .unwrap();
+        let template = parse(&bytes, "pods/call").unwrap();
+        let record = &template.deliverables[0];
+        assert_eq!(
+            (record.owner.as_str(), record.owner_slot.as_deref()),
+            ("scribe", Some("note-taker"))
+        );
+        assert_eq!(record.write_back.as_deref(), Some("scribe"));
+        assert_eq!(
+            template.deliverables[1].owner_slot.as_deref(),
+            Some("researcher")
+        );
+
+        let roles = ["scribe", "researcher"];
+        let quiet = checks(&template, &[], &|_| true, &|role| roles.contains(&role));
+        assert!(quiet.is_empty(), "{quiet:?}");
+
+        let warned = checks(&template, &[], &|_| true, &|role| role == "researcher");
+        let lines: Vec<String> = warned.iter().map(Warning::line).collect();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(
+            lines[0].contains("its owner role scribe (slot note-taker's role) does not exist"),
+            "{lines:?}"
+        );
+        assert!(lines[1].contains("write-back role scribe"), "{lines:?}");
+        assert!(warned[0].fix.starts_with("pij directory add scribe"));
+        assert!(
+            !lines.iter().any(|line| line.contains("role note-taker")),
+            "{lines:?}"
+        );
+
+        let recorded = document(&template, &[], &NewPod::default());
+        assert_eq!(rows(&recorded, "deliverables")[0]["owner"], "scribe");
+    }
+
+    /// Item 5: a seat added running that is not keep-open is named as closed
+    /// at down with the release fix; a keep-open one (marked, or a knowledge
+    /// role) and a slot member are not.
+    #[test]
+    fn an_added_running_seat_is_warned_closed_at_down_unless_keep_open() {
+        let members = [
+            json!({"slot": "pij-a", "seat": "pij-a", "role": "scribe", "added": "running"}),
+            json!({"slot": "pij-b", "seat": "pij-b", "role": "scribe"}),
+            json!({"slot": "pij-c", "seat": "pij-c", "role": "scribe", "added": "running", "keep_open": "yes"}),
+            json!({"slot": "pij-d", "seat": "pij-d", "role": "archive", "added": "running"}),
+            json!({"slot": "researcher", "seat": "pij-e", "role": "researcher"}),
+        ];
+        let kind = |role: &str| (role == "archive").then(|| "knowledge".to_string());
+        let lines: Vec<String> = closed_at_down("call", &members, &kind)
+            .iter()
+            .map(Warning::line)
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "member pij-a: it was added running and is not keep-open, so pij pod down call closes it. Fix: to keep it running, pij pod release call pij-a before down",
+                "member pij-b: it was added running and is not keep-open, so pij pod down call closes it. Fix: to keep it running, pij pod release call pij-b before down",
+            ]
+        );
+    }
+
+    /// Item 6: E-RS-POD-EXISTS says the pod is up, lists its members and
+    /// points at show.
+    #[test]
+    fn the_exists_message_lists_members_and_points_at_show() {
+        let members = [
+            (
+                "pij-a".to_string(),
+                "scribe".to_string(),
+                "idle".to_string(),
+            ),
+            (
+                "pij-b".to_string(),
+                "researcher".to_string(),
+                "closed".to_string(),
+            ),
+        ];
+        assert_eq!(
+            exists_message("call", true, &members),
+            "pod call is already up, members pij-a (slot scribe, idle), pij-b (slot researcher, closed); see it with pij pod show call"
+        );
+        assert_eq!(
+            exists_message("call", false, &[]),
+            "pod call already has a record, no members; see it with pij pod show call"
         );
     }
 

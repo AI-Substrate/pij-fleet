@@ -10,7 +10,7 @@ A pod is made from a template: a folder holding `pod-template.dd.json` (schema `
 - `slots`: each a seat the pod starts, in a role (and instance), with its seed (the slot's focus), the parameters it uses, the tools it needs, `keep_open` and `not_model_of` (a slot that should not share another's model).
 - `wiring`: how the slots feed each other.
 - `consulted`: outside roles the pod asks, and whether one must have a live holder `before_up`.
-- `deliverables`: each with an owner role, its stages, what each stage needs (`stage_needs`) and a role it is written back to (`write_back`).
+- `deliverables`: each with an owner role, its stages, what each stage needs (`stage_needs`) and a role it is written back to (`write_back`). An `owner` or `write_back` that names one of the template's slots means that slot's role, so renaming a slot's role when you adopt a template carries its deliverables with it; any other name is a role id.
 - `procedures`: the procedures it names, each its own (`from: template`, under `procedures/` in its folder) or linked from the repo or the pij skill (`from: repo`), used at `up`, as a `run` or at `close`. `pij proc list --template <path>` lists them; `plan` warns about one that is missing.
 
 A pod's record is `community/pods/<pod>/pod.dd.json` (schema `pij/pod`) on the governance branch: its template and that template's version and hash, the filled parameters, members, consulted roles, deliverables and a log. Seat facts stay in pij's database. The template is never written.
@@ -26,7 +26,8 @@ Checks warn and name their fix; none refuses. pij warns about:
 - a consulted role needed before up with no live holder;
 - a slot marked `not_model_of` another that shares its model, or whose model pij cannot tell;
 - a deliverable whose owner or write-back role the project lacks;
-- a slot whose role cannot start.
+- a slot whose role cannot start;
+- when the pod already has a record, each seat added running (`pod add <pod> <seat>`) that is not keep-open: `pod down` closes it, so release it first (`pij pod release <pod> <seat>`) to keep it running. `add <seat>` gives the same warning.
 
 An unknown or missing parameter refuses `E-RS-POD-PARAM`, and a template that does not hold together refuses `E-RS-POD-TEMPLATE`.
 
@@ -34,7 +35,7 @@ An unknown or missing parameter refuses `E-RS-POD-PARAM`, and a template that do
 
     pij pod up <template> [--set <name>=<value>]... [--name <pod>] [--session <tmux>] [--fresh] [--no-start]
 
-`up` commits the record with the warnings in its log, then starts each slot through the same path as `pij-rs spawn --as role:<id>`, parented to you, in `work-folder` when it is set and otherwise in your folder. `--session` places the seats in a named tmux session. A slot that does not start is a warning naming the `spawn --as` command that starts it. A pod that already has a record refuses `E-RS-POD-EXISTS`.
+`up` commits the record with the warnings in its log, then starts each slot through the same path as `pij-rs spawn --as role:<id>`, parented to you, in `work-folder` when it is set and otherwise in your folder. `--session` places the seats in a named tmux session. A slot that does not start is a warning naming the `spawn --as` command that starts it. A pod that already has a record refuses `E-RS-POD-EXISTS`, saying whether it is up and listing each member (seat, slot, state) with `pij pod show <pod>`.
 
 With `--no-start` pij writes the record only; each member then joins on its own:
 
@@ -70,7 +71,7 @@ A context size is read from the last 256 KiB of the transcript and reads `unknow
     pij pod release <pod> <seat>
 
 - `set` records a parameter the template declares and sends it only to the members whose slot uses it.
-- `add role:` starts a new member; `add <seat>` takes in a seat already running, in its role in the project.
+- `add role:` starts a new member; `add <seat>` takes in a seat already running, in its role in the project. `add`, `release`, `set`, `stage`, `activity` and `up <pod>` name the pod's project first, as `sessions` does.
 - `release` takes a member out and leaves it running.
 
 Each change is logged. A seat already in another pod refuses `E-RS-POD-MEMBER`, naming that pod and the `pij pod release` that frees it.

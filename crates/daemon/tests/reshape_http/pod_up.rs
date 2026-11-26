@@ -183,6 +183,23 @@ async fn pod_up_records_starts_each_slot_once_and_logs_its_warnings() {
     )
     .await;
     assert_eq!(again["details"]["code"], "E-RS-POD-EXISTS", "{again}");
+    let refused = again["meta"].to_string();
+    assert!(refused.contains("pod build is already up"), "{again}");
+    let first = members[0]["seat"].as_str().unwrap();
+    let slot = members[0]["slot"].as_str().unwrap();
+    assert!(
+        refused.contains(&format!("{first} (slot {slot}, ")),
+        "{again}"
+    );
+    assert!(refused.contains("pij pod show build"), "{again}");
+    let by_name = pod(rig.addr, &repo, &["up", "build"]).await;
+    assert_eq!(by_name["details"]["code"], "E-RS-POD-EXISTS", "{by_name}");
+    assert!(
+        by_name["meta"]
+            .to_string()
+            .contains(&format!("{first} (slot {slot}, ")),
+        "{by_name}"
+    );
     assert_eq!(super::role_start::launches(&rig.tmux), 2);
     rig.server.abort();
 }
@@ -440,6 +457,7 @@ async fn a_join_reads_the_current_record_through_pod_add_and_for_a_role_with_no_
     assert_eq!(up["ok"], true, "{up}");
     let set = pod(rig.addr, &repo, &["set", "build", "subject=current"]).await;
     assert_eq!(set["ok"], true, "{set}");
+    assert!(set["data"]["project"].is_string(), "{set}");
     let first_turn = |seat: &str| {
         std::fs::read_to_string(repo.gov.join(format!(
             ".harness/government/community/roles/notes/first-turns/{seat}.md"
@@ -453,6 +471,7 @@ async fn a_join_reads_the_current_record_through_pod_add_and_for_a_role_with_no_
     )
     .await;
     assert_eq!(added["ok"], true, "{added}");
+    assert_eq!(added["data"]["project"], set["data"]["project"], "{added}");
     let first = first_turn(added["data"]["added"].as_str().unwrap());
     assert!(first.contains("subject = current"), "{first}");
     assert!(first.contains("starts fresh"), "{first}");
@@ -640,6 +659,7 @@ async fn pod_down_is_close_stop_per_member_spares_keep_open_and_records_the_free
     let again = pod(rig.addr, &repo, &["up", "build"]).await;
     assert_eq!(again["ok"], true, "{again}");
     assert_eq!(again["data"]["members"][0]["outcome"], "running", "{again}");
+    assert!(again["data"]["project"].is_string(), "{again}");
     rig.server.abort();
 }
 
@@ -679,10 +699,49 @@ async fn a_running_seat_joins_and_leaves_a_pod_and_the_template_is_unchanged() {
     assert_eq!(added["ok"], true, "{added}");
     let shown = pod(rig.addr, &repo, &["show", "build"]).await;
     assert_eq!(shown["data"]["members"][0]["seat"], SEAT, "{shown}");
+    // Every answer names the pod's project, so its text never reads "in project -".
+    assert!(shown["data"]["project"].is_string(), "{shown}");
+    assert_eq!(
+        added["data"]["project"], shown["data"]["project"],
+        "{added}"
+    );
+    let release_fix = format!("pij pod release build {SEAT} before down");
+    assert!(
+        added["data"]["warnings"].to_string().contains(&release_fix),
+        "{added}"
+    );
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &["plan", "pods/build", "--set", "subject=planning"],
+    )
+    .await;
+    assert!(
+        planned["data"]["warnings"]
+            .to_string()
+            .contains(&release_fix),
+        "{planned}"
+    );
     let twice = pod(rig.addr, &repo, &["add", "build", SEAT]).await;
     assert_eq!(twice["ok"], false, "{twice}");
     let released = pod(rig.addr, &repo, &["release", "build", SEAT]).await;
     assert_eq!(released["ok"], true, "{released}");
+    assert_eq!(
+        released["data"]["project"], shown["data"]["project"],
+        "{released}"
+    );
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &["plan", "pods/build", "--set", "subject=planning"],
+    )
+    .await;
+    assert!(
+        !planned["data"]["warnings"]
+            .to_string()
+            .contains(&release_fix),
+        "{planned}"
+    );
     let shown = pod(rig.addr, &repo, &["show", "build"]).await;
     assert_eq!(shown["data"]["members"], json!([]), "{shown}");
     let log = shown["data"]["log"].to_string();
@@ -841,6 +900,7 @@ async fn pod_activity_is_open_to_any_seat_and_reads_in_time_order() {
 
     let seen = pod(rig.addr, &repo, &["activity", "build"]).await;
     assert_eq!(seen["ok"], true, "{seen}");
+    assert!(seen["data"]["project"].is_string(), "{seen}");
     let lines: Vec<&str> = seen["data"]["activity"]
         .as_array()
         .unwrap()
@@ -937,6 +997,7 @@ async fn stages_never_wait_on_a_late_member_and_each_is_written_back_as_a_reques
     .await;
     assert_eq!(draft["ok"], true, "{draft}");
     assert_eq!(draft["data"]["from"], json!(["lead"]));
+    assert!(draft["data"]["project"].is_string(), "{draft}");
     assert_eq!(
         draft["data"]["warnings"],
         json!([]),

@@ -14,15 +14,19 @@ pub fn render(data: &Value) -> String {
     }
     let mut lines = Vec::new();
     let pod = text(&data["pod"]);
+    // An answer that names no project says nothing about one, never "-".
+    let project = data["project"]
+        .as_str()
+        .map(|project| format!(" in project {project}"))
+        .unwrap_or_default();
     if let Some(template) = data["template"].as_object() {
         lines.push(format!(
-            "pod {pod} from {} (version {}) in project {}",
+            "pod {pod} from {} (version {}){project}",
             text(&template["source"]),
             text(&template["version"]),
-            text(&data["project"])
         ));
     } else {
-        lines.push(format!("pod {pod} in project {}", text(&data["project"])));
+        lines.push(format!("pod {pod}{project}"));
     }
     if let Some(warnings) = data["warnings"]
         .as_array()
@@ -220,7 +224,7 @@ pub fn render(data: &Value) -> String {
             }
         }
     }
-    for key in ["canary", "started", "writes"] {
+    for key in ["added", "released", "canary", "started", "writes", "next"] {
         if let Some(line) = data[key].as_str() {
             lines.push(format!("{key}: {line}"));
         }
@@ -316,5 +320,18 @@ mod tests {
             plan.contains("  ! slot reviewer: shares a model. Fix: edit"),
             "{plan}"
         );
+    }
+
+    /// `pod add` and the other verbs name their project; an answer without
+    /// one never prints "in project -".
+    #[test]
+    fn the_header_names_the_project_or_leaves_it_out() {
+        let added = render(&json!({"pod": "call", "project": "fleet", "added": "pij-a"}));
+        assert!(added.starts_with("pod call in project fleet\n"), "{added}");
+        assert!(added.contains("added: pij-a"), "{added}");
+        let bare = render(&json!({"pod": "call", "released": "pij-a", "next": "close it"}));
+        assert!(bare.starts_with("pod call\n"), "{bare}");
+        assert!(bare.contains("released: pij-a"), "{bare}");
+        assert!(!bare.contains("in project"), "{bare}");
     }
 }
