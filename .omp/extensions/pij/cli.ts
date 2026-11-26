@@ -57,8 +57,10 @@ const BG_USAGE = `pij bg create --title <text> --command <shell> [--cwd <dir>] [
   Runs <shell> with /bin/sh -c, detached and owned by the daemon, so it outlives your turn; prints the job id, pid and log path.
   It runs in --cwd (relative to yours), else your current directory, under the daemon's umask; stdin is /dev/null.
   stdout and stderr go to a private log (mode 0600): <daemon state dir>/bg/<job>.log.
-  When it ends, pij-bg sends you one turn: [pij bg] OK | FAILED (exit N) | TIMEOUT | KILLED | STOPPED | LOST
-    — <title> (<duration>) · full log: <path>, followed by the log's last lines.
+  When it ends, pij-bg sends you one turn naming the full log's path:
+    [pij bg] OK or FAILED (exit N) — <title> (<duration>), then the log's last lines, if any;
+    [pij bg] TIMEOUT — <title> (killed after <limit>), then the log's last lines, if any;
+    [pij bg] KILLED, STOPPED (an --events source) or LOST — <title>, with no duration or log lines.
   --timeout <dur> (90s, 5m, 1h30m, 2d; a bare number is seconds) stops it and reports TIMEOUT.
   --events makes it an event source: the job runs \`pij bg emit <text>\` (PIJ_BG_JOB and PIJ_BG_TOKEN are in
     its env); --min-interval <dur> (default 1m) spaces the wakes, --inline-max <n> (default 5) caps the events
