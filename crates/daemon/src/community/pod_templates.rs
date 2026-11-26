@@ -485,6 +485,12 @@ pub fn exported(name: &str, pod_name: &str, record: &Value, template: Option<&Va
                 }
                 "deliverables" => {
                     for row in rows.iter_mut() {
+                        // A template names roles as written; the record's
+                        // resolved roles stay with the pod.
+                        if let Some(fields) = row.as_object_mut() {
+                            fields.remove("owner_role");
+                            fields.remove("write_back_role");
+                        }
                         if let Some(needs) = row["stage_needs"].as_array_mut() {
                             for need in needs.iter_mut() {
                                 if let Some(named) = need["slots"].as_array_mut() {

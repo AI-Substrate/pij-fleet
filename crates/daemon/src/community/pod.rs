@@ -63,11 +63,13 @@ pub struct Consulted {
 pub struct Deliverable {
     /// Its id within the template.
     pub id: String,
-    /// The role that owns it.
+    /// The role that owns it, as the template names it; [`resolve`] reads it
+    /// against the project's roles and the template's slots.
     pub owner: String,
     /// Its stages, in order; one unnamed stage when the template names none.
     pub stages: Vec<String>,
-    /// The role its stages are written back to.
+    /// The role its stages are written back to, as named; resolved as
+    /// `owner` is.
     pub write_back: Option<String>,
     /// The slots each stage needs, where the template says; a stage it does
     /// not name needs every slot (req-16).
@@ -599,7 +601,14 @@ pub struct NewPod {
 }
 
 /// A new pod's `pij/pod` document, state `up`, with no members yet.
-pub fn document(template: &Template, filled: &[(String, String)], pod: &NewPod) -> Value {
+/// `exists` says whether the project has a role; each deliverable keeps its
+/// owner and write-back as written and the role each resolved to.
+pub fn document(
+    template: &Template,
+    filled: &[(String, String)],
+    pod: &NewPod,
+    exists: &dyn Fn(&str) -> bool,
+) -> Value {
     let mut meta = json!({
         "pod": pod.pod,
         "template": template.source,
@@ -626,9 +635,15 @@ pub fn document(template: &Template, filled: &[(String, String)], pod: &NewPod) 
             {"name": "members", "value": []},
             {"name": "consulted", "value": template.consulted.iter().map(|role| json!({"role": role.role, "before_up": if role.before_up { "yes" } else { "no" }})).collect::<Vec<_>>()},
             {"name": "deliverables", "value": template.deliverables.iter().map(|deliverable| {
-                let mut row = json!({"id": deliverable.id, "owner": deliverable.owner, "stages": deliverable.stages});
+                let mut row = json!({
+                    "id": deliverable.id,
+                    "owner": deliverable.owner,
+                    "owner_role": resolve(&template.slots, &deliverable.owner, exists).role,
+                    "stages": deliverable.stages,
+                });
                 if let Some(role) = &deliverable.write_back {
                     row["write_back"] = json!(role);
+                    row["write_back_role"] = json!(resolve(&template.slots, role, exists).role);
                 }
                 if !deliverable.needs.is_empty() {
                     row["stage_needs"] = json!(deliverable.needs.iter().map(|(stage, slots)| json!({"stage": stage, "slots": slots})).collect::<Vec<_>>());
@@ -855,23 +870,102 @@ pub fn checks(
         }
     }
     for deliverable in &template.deliverables {
-        let roles = std::iter::once(("owner", &deliverable.owner)).chain(
+        let named = std::iter::once(("owner", "owner", &deliverable.owner)).chain(
             deliverable
                 .write_back
                 .iter()
-                .map(|role| ("write-back", role)),
+                .map(|role| ("write-back", "write_back", role)),
         );
-        for (what, role) in roles {
-            if !exists(role) {
+        for (what, field, named) in named {
+            let resolved = resolve(&template.slots, named, exists);
+            if let Some(slot_role) = &resolved.shadowed {
                 warnings.push(Warning {
                     about: format!("deliverable {}", deliverable.id),
-                    text: format!("its {what} role {role} does not exist in this project"),
-                    fix: format!("pij directory add {role} --type <type> --why <text>"),
+                    text: format!(
+                        "its {what} {named} is role {named} and also the name of slot {named}, which runs role {slot_role}; role {named} is used"
+                    ),
+                    fix: format!(
+                        "rename slot {named}, or set {field} to the role id you mean ({named} or {slot_role})"
+                    ),
+                });
+            }
+            if !exists(&resolved.role) {
+                let from = resolved
+                    .slot
+                    .as_ref()
+                    .map(|slot| format!(" (slot {slot}'s role)"))
+                    .unwrap_or_default();
+                warnings.push(Warning {
+                    about: format!("deliverable {}", deliverable.id),
+                    text: format!(
+                        "its {what} role {}{from} does not exist in this project",
+                        resolved.role
+                    ),
+                    fix: format!(
+                        "pij directory add {} --type <type> --why <text>",
+                        resolved.role
+                    ),
                 });
             }
         }
     }
     warnings
+}
+
+/// A deliverable's owner or write-back name, read against the project.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Resolved {
+    /// The role it means.
+    pub role: String,
+    /// The slot it was read through, when no role has the name.
+    pub slot: Option<String>,
+    /// The role of a slot of the same name that the existing role shadows.
+    pub shadowed: Option<String>,
+}
+
+/// Resolve `named` (PRD 008 req-17, req-20: a role id): a role the project
+/// has is always that role; only a name no role has, that is one of the
+/// template's slots, means that slot's role (a slot renamed to a new role on
+/// adopt); anything else stays the role id, which `checks` reports missing.
+pub fn resolve(slots: &[Slot], named: &str, exists: &dyn Fn(&str) -> bool) -> Resolved {
+    let slot = slots.iter().find(|slot| slot.id == named);
+    if exists(named) {
+        return Resolved {
+            role: named.to_string(),
+            slot: None,
+            shadowed: slot
+                .filter(|slot| slot.role != named)
+                .map(|slot| slot.role.clone()),
+        };
+    }
+    match slot {
+        Some(slot) => Resolved {
+            role: slot.role.clone(),
+            slot: Some(slot.id.clone()),
+            shadowed: None,
+        },
+        None => Resolved {
+            role: named.to_string(),
+            slot: None,
+            shadowed: None,
+        },
+    }
+}
+
+/// The role a pod record's deliverable `field` (`owner` or `write_back`)
+/// means now: the name as written when the project has that role (so a role
+/// made after up is used), else the role recorded at up.
+pub fn recorded_role(row: &Value, field: &str, exists: &dyn Fn(&str) -> bool) -> Option<String> {
+    let written = row[field].as_str()?;
+    if exists(written) {
+        return Some(written.to_string());
+    }
+    Some(
+        row[format!("{field}_role")]
+            .as_str()
+            .unwrap_or(written)
+            .to_string(),
+    )
 }
 
 /// The canary message a slot's seat is sent after it starts (req-19).
@@ -1159,6 +1253,63 @@ pub fn keeps_open(member: &Value, role_type: Option<&str>) -> bool {
         Some("no") => false,
         _ => role_type == Some("knowledge"),
     }
+}
+
+/// Whether `member` joined through `pod add <pod> <seat>`, already running:
+/// marked so, or (a record from before the mark) its slot is its seat.
+pub fn added_running(member: &Value) -> bool {
+    member["added"] == "running" || (member["seat"].is_string() && member["slot"] == member["seat"])
+}
+
+/// A warning for each member added running that `pod down` would close: one
+/// not keep-open, so the seat's owner learns before down how to keep it.
+/// Message only; down is unchanged.
+pub fn closed_at_down(
+    pod: &str,
+    members: &[Value],
+    role_type: &dyn Fn(&str) -> Option<String>,
+) -> Vec<Warning> {
+    members
+        .iter()
+        .filter(|member| added_running(member))
+        .filter(|member| {
+            !keeps_open(
+                member,
+                role_type(member["role"].as_str().unwrap_or_default()).as_deref(),
+            )
+        })
+        .filter_map(|member| member["seat"].as_str())
+        .map(|seat| Warning {
+            about: format!("member {seat}"),
+            text: format!(
+                "it was added running and is not keep-open, so pij pod down {pod} closes it"
+            ),
+            fix: format!("to keep it running, pij pod release {pod} {seat} before down"),
+        })
+        .collect()
+}
+
+/// E-RS-POD-EXISTS's text: the pod is already up (or has a record), its
+/// members as `(seat, slot, state)`, and where to look.
+pub fn exists_message(pod: &str, up: bool, members: &[(String, String, String)]) -> String {
+    let listed = if members.is_empty() {
+        "no members".to_string()
+    } else {
+        format!(
+            "members {}",
+            members
+                .iter()
+                .map(|(seat, slot, state)| format!("{seat} (slot {slot}, {state})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let what = if up {
+        "is already up"
+    } else {
+        "already has a record"
+    };
+    format!("pod {pod} {what}, {listed}; see it with pij pod show {pod}")
 }
 
 /// Where a pod's work folder stood at `down` (req-14).
@@ -1451,7 +1602,12 @@ mod tests {
             at: "2026-11-25T00:00:00.000Z".into(),
             ..NewPod::default()
         };
-        let document = document(&template, &[("subject".into(), "acme".into())], &pod);
+        let document = document(
+            &template,
+            &[("subject".into(), "acme".into())],
+            &pod,
+            &|_| true,
+        );
         let meta = section(&document, "meta").unwrap();
         assert_eq!(meta["template"], "pods/build");
         assert_eq!(meta["template_hash"], template.hash);
@@ -1511,6 +1667,160 @@ mod tests {
             warned[0]
                 .line()
                 .starts_with("slot coder: role coder cannot start")
+        );
+    }
+
+    fn call_template(slot: &str, slot_role: &str, named: &str) -> Template {
+        parse(
+            &serde_json::to_vec(&json!({
+                "dd": {"schema": "pij/pod-template"},
+                "sections": [
+                    {"name": "meta", "value": {"name": "call", "version": "1"}},
+                    {"name": "slots", "value": [{"id": slot, "role": slot_role}]},
+                    {"name": "deliverables", "value": [{"id": "record", "owner": named, "write_back": named}]},
+                ],
+            }))
+            .unwrap(),
+            "pods/call",
+        )
+        .unwrap()
+    }
+
+    fn lines(template: &Template, roles: &[&str]) -> Vec<String> {
+        checks(template, &[], &|_| true, &|role| roles.contains(&role))
+            .iter()
+            .map(Warning::line)
+            .collect()
+    }
+
+    /// An adopted template whose slot note-taker now runs role scribe, with
+    /// no role note-taker: owner and write-back resolve through the slot.
+    #[test]
+    fn a_name_no_role_has_resolves_through_its_slot() {
+        let template = call_template("note-taker", "scribe", "note-taker");
+        assert_eq!(
+            template.deliverables[0].owner, "note-taker",
+            "parse keeps it as written"
+        );
+        assert!(lines(&template, &["scribe"]).is_empty());
+        let missing = lines(&template, &[]);
+        assert_eq!(missing.len(), 2, "{missing:?}");
+        assert!(
+            missing[0].contains("its owner role scribe (slot note-taker's role) does not exist"),
+            "{missing:?}"
+        );
+        assert!(missing[1].contains("write-back role scribe"), "{missing:?}");
+        let recorded = document(&template, &[], &NewPod::default(), &|role| role == "scribe");
+        let row = &rows(&recorded, "deliverables")[0];
+        assert_eq!(
+            (&row["owner"], &row["owner_role"]),
+            (&json!("note-taker"), &json!("scribe"))
+        );
+        assert_eq!(row["write_back_role"], "scribe");
+        // A role note-taker made after up is used from then on.
+        assert_eq!(
+            recorded_role(row, "owner", &|role| role == "scribe").as_deref(),
+            Some("scribe")
+        );
+        assert_eq!(
+            recorded_role(row, "owner", &|_| true).as_deref(),
+            Some("note-taker")
+        );
+    }
+
+    /// B364-R1-01: roles pm and scribe exist and slot pm runs scribe; pm
+    /// means role pm, and plan names the collision with its fix.
+    #[test]
+    fn an_existing_role_wins_over_a_slot_of_the_same_name_with_a_warning() {
+        let template = call_template("pm", "scribe", "pm");
+        let resolved = resolve(&template.slots, "pm", &|_| true);
+        assert_eq!(
+            (resolved.role.as_str(), resolved.shadowed.as_deref()),
+            ("pm", Some("scribe"))
+        );
+        let warned = lines(&template, &["pm", "scribe"]);
+        assert_eq!(warned.len(), 2, "{warned:?}");
+        assert!(
+            warned[0].contains("its owner pm is role pm and also the name of slot pm, which runs role scribe; role pm is used"),
+            "{warned:?}"
+        );
+        assert!(
+            warned[0]
+                .contains("rename slot pm, or set owner to the role id you mean (pm or scribe)"),
+            "{warned:?}"
+        );
+        assert!(
+            warned[1].contains("set write_back to the role id"),
+            "{warned:?}"
+        );
+        let recorded = document(&template, &[], &NewPod::default(), &|_| true);
+        assert_eq!(rows(&recorded, "deliverables")[0]["write_back_role"], "pm");
+        // A slot whose role is its own name shadows nothing.
+        assert!(lines(&call_template("pm", "pm", "pm"), &["pm"]).is_empty());
+    }
+
+    /// A name that is neither a role nor a slot warns as before.
+    #[test]
+    fn a_name_that_is_neither_a_role_nor_a_slot_warns_missing() {
+        let warned = lines(
+            &call_template("note-taker", "scribe", "keeper"),
+            &["scribe"],
+        );
+        assert_eq!(warned.len(), 2, "{warned:?}");
+        assert!(warned[0].ends_with(
+            "its owner role keeper does not exist in this project. Fix: pij directory add keeper --type <type> --why <text>"
+        ), "{warned:?}");
+    }
+
+    /// Item 5: a seat added running that is not keep-open is named as closed
+    /// at down with the release fix; a keep-open one (marked, or a knowledge
+    /// role) and a slot member are not.
+    #[test]
+    fn an_added_running_seat_is_warned_closed_at_down_unless_keep_open() {
+        let members = [
+            json!({"slot": "pij-a", "seat": "pij-a", "role": "scribe", "added": "running"}),
+            json!({"slot": "pij-b", "seat": "pij-b", "role": "scribe"}),
+            json!({"slot": "pij-c", "seat": "pij-c", "role": "scribe", "added": "running", "keep_open": "yes"}),
+            json!({"slot": "pij-d", "seat": "pij-d", "role": "archive", "added": "running"}),
+            json!({"slot": "researcher", "seat": "pij-e", "role": "researcher"}),
+        ];
+        let kind = |role: &str| (role == "archive").then(|| "knowledge".to_string());
+        let lines: Vec<String> = closed_at_down("call", &members, &kind)
+            .iter()
+            .map(Warning::line)
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "member pij-a: it was added running and is not keep-open, so pij pod down call closes it. Fix: to keep it running, pij pod release call pij-a before down",
+                "member pij-b: it was added running and is not keep-open, so pij pod down call closes it. Fix: to keep it running, pij pod release call pij-b before down",
+            ]
+        );
+    }
+
+    /// Item 6: E-RS-POD-EXISTS says the pod is up, lists its members and
+    /// points at show.
+    #[test]
+    fn the_exists_message_lists_members_and_points_at_show() {
+        let members = [
+            (
+                "pij-a".to_string(),
+                "scribe".to_string(),
+                "idle".to_string(),
+            ),
+            (
+                "pij-b".to_string(),
+                "researcher".to_string(),
+                "closed".to_string(),
+            ),
+        ];
+        assert_eq!(
+            exists_message("call", true, &members),
+            "pod call is already up, members pij-a (slot scribe, idle), pij-b (slot researcher, closed); see it with pij pod show call"
+        );
+        assert_eq!(
+            exists_message("call", false, &[]),
+            "pod call already has a record, no members; see it with pij pod show call"
         );
     }
 
