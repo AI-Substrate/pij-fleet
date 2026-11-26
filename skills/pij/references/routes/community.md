@@ -49,7 +49,7 @@ Keep the fleet small but expert. Small contexts are cheaper and sharper, and an 
 ## Prime: stand up a pod
 - **Plan, then up.** `pij pod plan '<template>' --set '<name>=<value>'` prints every slot and every warning with its fix and writes nothing; a template is a folder at any path or `shipped:<name>` (`pij pod templates`: build, live-call; `pij pod adopt '<name>' --why '<text>'` copies one the repo owns). `pij pod up` (same flags) starts each slot, asks a slot naming tools to confirm them (`pij pod confirm`), and still starts on a warning.
 - **Down.** `pij pod down '<pod>'` runs the template's close procedure first and closes nothing if it stops (`--skip-close-procedure` goes on), then is `close --stop` per member. The view suggests saving a shape made twice (`pij pod export '<pod>' --as-template '<path>' --why '<text>'`).
-- **Full**: `pij docs get pods`, and `pij pod --help`.
+- **Full**: `pij docs get pods`, `pij pod --help`; the whole arc: `pij docs get prime-journey`.
 
 ## PM: staff a workstream's steps
 

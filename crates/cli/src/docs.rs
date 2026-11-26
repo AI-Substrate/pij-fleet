@@ -175,6 +175,11 @@ The opening text for a seat of this type, as pij ships it (version {}). A repo m
         type_path(def),
         seed_path(def),
     );
+    if def.id == "prime" {
+        body.push_str(
+            "\nA prime's path from an empty repo to pods: `pij docs get prime-journey`.\n",
+        );
+    }
     Page {
         id: types::docs_page(&def.id),
         body,
@@ -214,6 +219,7 @@ pub fn pages() -> &'static [Page] {
         pages.extend(types::all().iter().map(type_page));
         pages.push(file_page!("building-a-role", "docs/cli/building-a-role.md"));
         pages.push(file_page!("pods", "docs/cli/pods.md"));
+        pages.push(file_page!("prime-journey", "docs/cli/prime-journey.md"));
         pages
     })
 }
@@ -612,6 +618,7 @@ mod tests {
             "types",
             "building-a-role",
             "pods",
+            "prime-journey",
         ] {
             assert!(page(id).is_some(), "{id}");
         }
