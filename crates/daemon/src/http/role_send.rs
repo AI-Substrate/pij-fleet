@@ -135,18 +135,17 @@ pub const ROLE_SEND_PROJECT_ROUTE: &str = "name one with `pij send <to> --projec
 async fn send(state: &AppState, call: RoleSendCall<'_>, address: RoleAddress) -> Response {
     let command = call.command;
     let caller = call.caller.cloned().unwrap_or_default();
-    let (project, repo) =
-        match super::directory::project_and_repo_routed(
-            state,
-            &caller,
-            call.project.clone(),
-            ROLE_SEND_PROJECT_ROUTE,
-        )
-        .await
-        {
-            Ok(found) => found,
-            Err(refusal) => return refused(command, &refusal),
-        };
+    let (project, repo) = match super::directory::project_and_repo_routed(
+        state,
+        &caller,
+        call.project.clone(),
+        ROLE_SEND_PROJECT_ROUTE,
+    )
+    .await
+    {
+        Ok(found) => found,
+        Err(refusal) => return refused(command, &refusal),
+    };
     let now_ms = match system_time_ms() {
         Ok(now) => now,
         Err(error) => return send_failure(command, error),
