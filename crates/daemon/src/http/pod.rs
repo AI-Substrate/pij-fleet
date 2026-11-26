@@ -1315,9 +1315,9 @@ async fn close_stop(
     match answer_of(response).await {
         Ok(answer) if answer["ok"] == true => {
             if answer["data"]["held"].is_string() {
-                "held for its memory turn; closed and stopped once its note is written, else left running and the prime told".to_string()
+                "held for its memory turn; closed and sent SIGTERM once its note is written, else left running and the prime told".to_string()
             } else if answer["data"]["stopped"]["stopped"] == true {
-                "closed and stopped".to_string()
+                "closed; SIGTERM sent, exit not confirmed".to_string()
             } else {
                 "closed".to_string()
             }

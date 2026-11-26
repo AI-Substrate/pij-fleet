@@ -645,7 +645,7 @@ async fn proceed(
                         super::lifecycle::stop_process(state, held).await,
                     );
                     let outcome = if data["stopped"]["stopped"] == true {
-                        "closed and stopped".to_string()
+                        "closed; SIGTERM sent, exit not confirmed".to_string()
                     } else {
                         format!(
                             "closed; its process was not stopped: {}",

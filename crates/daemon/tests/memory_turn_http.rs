@@ -12,7 +12,7 @@ use pij_core::delivery::delivery_kind;
 use pij_core::model::{
     Event, Harness, Msg, PaneProcess, ProcIdentity, SeatDescriptor, SeatId, SystemState,
 };
-use pij_core::ports::{Queue, Registry};
+use pij_core::ports::{LivenessPort, Queue, Registry};
 use pij_daemon::events::EventBus;
 use pij_daemon::http::{HttpConfig, router_with_config};
 use pij_store::Assignment;
@@ -1506,7 +1506,10 @@ async fn close_stop_closes_and_stops_a_holder_once_its_note_is_written() {
     note_written(&rig, "holder", "pm-001", now_ms()).await;
     let turn = turn_event(&rig, "holder").await;
     assert_eq!(turn["ended"], "note-written", "{turn}");
-    assert_eq!(turn["then"], "closed and stopped", "{turn}");
+    assert_eq!(
+        turn["then"], "closed; SIGTERM sent, exit not confirmed",
+        "{turn}"
+    );
     assert_eq!(turn["closed"]["stopped"]["stopped"], true, "{turn}");
     assert!(tombstoned(&rig, "holder").await);
     assert_eq!(
@@ -1719,6 +1722,133 @@ async fn close_stop_of_a_seat_with_no_open_role_closes_and_stops_without_a_turn(
             .unwrap()
             .is_none()
     );
+    rig.server.abort();
+}
+
+/// Production liveness for one real child; the fixture's other seats keep
+/// their fakes.
+struct RealFor {
+    pid: u32,
+    real: pij_harnesses::proc::ProcLiveness,
+    fake: FakeLiveness,
+}
+
+#[async_trait::async_trait]
+impl LivenessPort for RealFor {
+    async fn proc_start(&self, pid: u32) -> pij_core::error::Result<Option<u64>> {
+        if pid == self.pid {
+            self.real.proc_start(pid).await
+        } else {
+            self.fake.proc_start(pid).await
+        }
+    }
+
+    async fn terminate(&self, proc: ProcIdentity) -> pij_core::error::Result<bool> {
+        if proc.pid == self.pid {
+            self.real.terminate(proc).await
+        } else {
+            self.fake.terminate(proc).await
+        }
+    }
+}
+
+/// Kills the child this test started, by its own pid, if the test fails
+/// before releasing it.
+struct Reap(std::process::Child);
+
+impl Drop for Reap {
+    fn drop(&mut self) {
+        if matches!(self.0.try_wait(), Ok(None)) {
+            let _ = self.0.kill();
+        }
+        let _ = self.0.wait();
+    }
+}
+
+/// B359-R1-01 (the reviewer's witness, ported): `close --stop` reports a
+/// delivered SIGTERM, never an exit it did not observe. A real child handles
+/// SIGTERM and holds its exit until its stdin closes; while `try_wait` says it
+/// is alive, the receipt says the exit is not confirmed and keeps the pane to
+/// kill. Then the child is released and reaped.
+#[tokio::test]
+async fn pr359_receipt_does_not_claim_exit_during_graceful_shutdown() {
+    use std::io::{BufRead, BufReader};
+    let mut child = Reap(
+        std::process::Command::new("/bin/sh")
+            .args([
+                "-c",
+                "trap 'read _; exit 0' TERM; echo ready; while :; do sleep 1 & wait $!; done",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("child"),
+    );
+    let mut ready = String::new();
+    BufReader::new(child.0.stdout.take().unwrap())
+        .read_line(&mut ready)
+        .unwrap();
+    assert_eq!(ready.trim(), "ready", "the trap is set");
+    let pid = child.0.id();
+    let real = pij_harnesses::proc::ProcLiveness::new();
+    let proc_start = real.proc_start(pid).await.unwrap().expect("child start");
+    let fake = FakeLiveness::new()
+        .with_proc(ProcIdentity {
+            pid: 920_001,
+            proc_start: 7,
+        })
+        .with_proc(ProcIdentity {
+            pid: 920_003,
+            proc_start: 7,
+        });
+    let rig = rig_with(Duration::from_secs(30), &[], move |services| {
+        services.liveness = Arc::new(RealFor { pid, real, fake });
+        services.tmux = Arc::new(
+            FakeTmux::new()
+                .with_pane_process(
+                    "%prime",
+                    PaneProcess {
+                        pid: 920_001,
+                        cwd: "/abs/tree".to_string(),
+                    },
+                )
+                .with_pane_process(
+                    "%9002",
+                    PaneProcess {
+                        pid,
+                        cwd: "/abs/tree".to_string(),
+                    },
+                ),
+        );
+    })
+    .await;
+    let mut holder = rig.registry.get(&"holder".into()).await.unwrap().unwrap();
+    holder.proc = Some(ProcIdentity { pid, proc_start });
+    holder.pane = Some("%9002".to_string());
+    rig.registry.put(holder).await.unwrap();
+
+    let closed = post(rig.addr, "/v1/close", close_stop("holder", "prime")).await;
+    assert_eq!(closed["ok"], true, "{closed}");
+    assert_eq!(closed["data"]["stopped"]["stopped"], true, "{closed}");
+    assert!(
+        matches!(child.0.try_wait(), Ok(None)),
+        "the child is still shutting down: {closed}"
+    );
+    let note = closed["data"]["process"].as_str().unwrap();
+    assert!(
+        note.contains("sent SIGTERM") && note.contains("exit not confirmed"),
+        "a receipt must not claim an exit while the child runs: {closed}"
+    );
+    assert!(!note.contains("stopped its process"), "{closed}");
+    assert_eq!(
+        closed["data"]["stopped"]["exit_confirmed"], false,
+        "{closed}"
+    );
+    assert_eq!(closed["data"]["kill_pane"], "%9002", "{closed}");
+
+    drop(child.0.stdin.take());
+    let status = child.0.wait().unwrap();
+    assert!(status.success(), "released, it exits: {status:?}");
     rig.server.abort();
 }
 

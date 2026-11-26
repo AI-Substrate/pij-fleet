@@ -200,7 +200,7 @@ fn from_pod(as_role: &mut AsRole, pod: &str, turn: crate::community::pod::SlotTu
     if let Some(seed) = turn.focus {
         if as_role.focus.as_ref().is_some_and(|focus| *focus != seed) {
             warnings.push(format!(
-                "--focus: this member's slot in pod {pod} has its own seed, which this member gets instead"
+                "--focus: this member's slot in pod {pod} has its own seed, which this member gets instead; drop --focus, or change the slot's seed in the pod's template between runs"
             ));
         }
         as_role.focus = Some(seed);
@@ -212,7 +212,7 @@ fn from_pod(as_role: &mut AsRole, pod: &str, turn: crate::community::pod::SlotTu
             .is_some_and(|given| *given != subject)
         {
             warnings.push(format!(
-                "--subject: pod {pod} is about {subject}, which this member uses"
+                "--subject: pod {pod} is about {subject}, which this member uses; change it for every member with pij pod set {pod} subject=<value>"
             ));
         }
         as_role.subject = Some(subject);
