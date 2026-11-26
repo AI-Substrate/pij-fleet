@@ -141,6 +141,42 @@ async fn an_add_missing_several_fields_gets_one_refusal_naming_each_flag() {
         assert!(said.contains(flag), "{flag}: {said}");
     }
 
+    // Review B363-R1-01: a packet given but invalid joins the same refusal.
+    let empty_packet = [
+        "add",
+        "probe",
+        "--type",
+        "knowledge",
+        "--title",
+        "t",
+        "--holders",
+        "one",
+        "--rule",
+        "r",
+        "--packet",
+        "",
+        "--why",
+        "w",
+    ];
+    let both = directory(addr, &repo, &empty_packet).await;
+    assert_eq!(both["details"]["code"], "E-RS-TYPE-FIELD", "{both}");
+    let said = meta(&both);
+    for flag in [
+        "--keeps <value>",
+        "--packet <text> or --brief <path>",
+        "pij directory add --help",
+    ] {
+        assert!(said.contains(flag), "{flag}: {said}");
+    }
+    let mut kept = empty_packet.to_vec();
+    kept.extend(["--keeps", "docs/area.md"]);
+    let packet_only = directory(addr, &repo, &kept).await;
+    assert_eq!(packet_only["details"]["code"], "E-RS-ARG", "{packet_only}");
+    assert!(
+        !meta(&packet_only).contains("missing or invalid"),
+        "one gap keeps its own refusal: {packet_only}"
+    );
+
     let one = added(
         addr,
         &repo,

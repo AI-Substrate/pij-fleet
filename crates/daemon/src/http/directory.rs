@@ -1061,6 +1061,15 @@ fn retired_kind(reason: Option<&str>) -> &str {
     }
 }
 
+/// Every problem an add refuses a role for before writing, in the order it
+/// always met them: the type's, then an invalid standing packet (review
+/// B363-R1-01), so one refusal names them all.
+fn add_problems(id: &str, document: &Value) -> Vec<Problem> {
+    let mut problems = types::role_problems(id, document, true, Verb::Add);
+    problems.extend(role::packet_problem(document, id));
+    problems
+}
+
 async fn add(
     state: &AppState,
     actor: &str,
@@ -1167,7 +1176,7 @@ async fn add(
             flag: "--why <text>".to_string(),
             refusal,
         }];
-        problems.extend(types::role_problems(id, document, true, Verb::Add));
+        problems.extend(add_problems(id, document));
         return Err(
             types::combine(id, problems, role::schema_gaps(document), Verb::Add)
                 .expect("--why is a problem"),
@@ -1192,7 +1201,7 @@ async fn add(
         }
         if let Some(refusal) = types::combine(
             &id,
-            types::role_problems(&id, &document, true, Verb::Add),
+            add_problems(&id, &document),
             role::schema_gaps(&document),
             Verb::Add,
         ) {

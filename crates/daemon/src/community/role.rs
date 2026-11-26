@@ -675,6 +675,18 @@ pub fn stamp(
     Ok(document)
 }
 
+/// A standing packet that is given but invalid (an empty inline text, or
+/// both text and brief), as a problem for the add's one refusal (review
+/// B363-R1-01): the same check [`stamp`] runs, with the flag that fixes it.
+pub fn packet_problem(document: &Value, id: &str) -> Option<super::types::Problem> {
+    check_packet(document, id)
+        .err()
+        .map(|refusal| super::types::Problem {
+            flag: "--packet <text> or --brief <path>".to_string(),
+            refusal,
+        })
+}
+
 /// The pairing the schema cannot express (ddocs has no union type): an inline
 /// packet carries `text` and no `brief`; a brief packet carries `brief` and no
 /// `text`. A missing `standing_packet` is left for ddocs to name.

@@ -1484,7 +1484,8 @@ the standing governance worktree's `.harness/government`, found as
 missing or getting wrong more than one field is refused once, naming each with
 the flag that gives it (`--why`, `--type`, the fields the type requires such as
 `--keeps`, a `--type-change`, and the schema's `--title`, `--holders`, `--rule`,
-`--packet`/`--brief`), and pointing at `pij directory add --help`
+`--packet`/`--brief`, and a packet given but invalid, such as an empty
+`--packet`), and pointing at `pij directory add --help`
 (OSK-DIRECTORY-ADD-SERIAL). Its code is the one the first of them always got:
 `E-RS-ARG` for a missing `--why`, else the type's (`E-RS-TYPE-MISSING`,
 `-UNKNOWN`, `-FIELD`, `-RULE`). One problem alone keeps its own refusal word for
