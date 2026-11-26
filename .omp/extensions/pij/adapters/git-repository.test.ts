@@ -3,8 +3,8 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../../../../harness/driver/git-env.js";
 import { removeTemporaryTree } from "../../../../harness/test-utils.js";
-
 import { GitRepositoryAdapter } from "./git-repository.js";
 
 const roots: string[] = [];
@@ -18,6 +18,7 @@ function tempRoot(): string {
 function git(args: readonly string[]): string {
 	return execFileSync("git", args, {
 		encoding: "utf8",
+		env: gitEnv({}, { ownIdentity: true }),
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 }

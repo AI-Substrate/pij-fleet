@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../driver/git-env.js";
 import {
 	contractCommit,
 	passDir,
@@ -113,7 +114,10 @@ describe("the contract's commit, read without launching git (F250)", () => {
 		execFileSync("/usr/bin/git", args, {
 			cwd,
 			encoding: "utf8",
-			env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+			env: gitEnv(
+				{ GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+				{ ownIdentity: true },
+			),
 		}).trim();
 
 	it("names HEAD in a checkout, a linked worktree, and after the refs are packed", async () => {

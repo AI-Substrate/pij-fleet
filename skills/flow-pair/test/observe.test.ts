@@ -8,8 +8,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../../../harness/driver/git-env.js";
 import { removeTemporaryTree } from "../../../harness/test-utils.js";
 import { nodeObserveDeps, Observe, type ObserveDeps } from "../lib/observe.js";
+
+const GIT_ENV = gitEnv({}, { ownIdentity: true });
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
@@ -17,15 +20,15 @@ import { nodeObserveDeps, Observe, type ObserveDeps } from "../lib/observe.js";
 function makeGitFixture(root: string): { repoDir: string } {
 	const repoDir = join(root, "repo");
 	mkdirSync(repoDir, { recursive: true });
-	execSync("git init", { cwd: repoDir, encoding: "utf8" });
-	execSync("git config user.email ci@test.com", { cwd: repoDir });
-	execSync("git config user.name CI", { cwd: repoDir });
+	execSync("git init", { env: GIT_ENV, cwd: repoDir, encoding: "utf8" });
+	execSync("git config user.email ci@test.com", { env: GIT_ENV, cwd: repoDir });
+	execSync("git config user.name CI", { env: GIT_ENV, cwd: repoDir });
 	writeFileSync(join(repoDir, "README.md"), "# Test\n");
-	execSync("git add README.md", { cwd: repoDir });
-	execSync("git commit -m init", { cwd: repoDir });
+	execSync("git add README.md", { env: GIT_ENV, cwd: repoDir });
+	execSync("git commit -m init", { env: GIT_ENV, cwd: repoDir });
 	// Staged change — appears in git diff HEAD AND git status --porcelain
 	writeFileSync(join(repoDir, "src.ts"), "export const x = 1;\n");
-	execSync("git add src.ts", { cwd: repoDir });
+	execSync("git add src.ts", { env: GIT_ENV, cwd: repoDir });
 	// Untracked file — ONLY in git status --porcelain, NOT in git diff HEAD --name-only
 	writeFileSync(join(repoDir, "untracked.ts"), "export const y = 2;\n");
 	return { repoDir };
@@ -210,18 +213,18 @@ describe("Observe — flow-state guard AC-13 (T002)", () => {
 	function makeForbiddenFixture(filename: string, opts?: { untracked?: boolean }): string {
 		const repoDir = join(tmpRoot, "repo");
 		mkdirSync(repoDir, { recursive: true });
-		execSync("git init", { cwd: repoDir, encoding: "utf8" });
-		execSync("git config user.email ci@test.com", { cwd: repoDir });
-		execSync("git config user.name CI", { cwd: repoDir });
+		execSync("git init", { env: GIT_ENV, cwd: repoDir, encoding: "utf8" });
+		execSync("git config user.email ci@test.com", { env: GIT_ENV, cwd: repoDir });
+		execSync("git config user.name CI", { env: GIT_ENV, cwd: repoDir });
 		writeFileSync(join(repoDir, "README.md"), "# Test\n");
-		execSync("git add README.md", { cwd: repoDir });
-		execSync("git commit -m init", { cwd: repoDir });
+		execSync("git add README.md", { env: GIT_ENV, cwd: repoDir });
+		execSync("git commit -m init", { env: GIT_ENV, cwd: repoDir });
 		// Create the forbidden file — possibly nested
 		const target = join(repoDir, filename);
 		mkdirSync(dirname(target), { recursive: true });
 		writeFileSync(target, "forbidden content\n");
 		if (!opts?.untracked) {
-			execSync(`git add "${filename}"`, { cwd: repoDir });
+			execSync(`git add "${filename}"`, { env: GIT_ENV, cwd: repoDir });
 		}
 		return repoDir;
 	}

@@ -68,12 +68,9 @@ impl Drop for Repo {
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
+    let mut command = pij_testkit::git_env::git(dir);
+    let output = pij_testkit::git_env::scrub_identity(&mut command)
         .args(args)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_INDEX_FILE")
         .output()
         .expect("git");
     assert!(

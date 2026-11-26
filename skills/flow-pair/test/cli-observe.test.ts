@@ -8,7 +8,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../../../harness/driver/git-env.js";
 import { LedgerWriter, nodeLedgerDeps } from "../lib/ledger.js";
+
+const GIT_ENV = gitEnv({}, { ownIdentity: true });
 
 const CLI_PATH = join(process.cwd(), "skills/flow-pair/lib/cli.ts");
 
@@ -25,14 +28,14 @@ describe("flow-pair observe — CLI subprocess (T006)", () => {
 
 		// Set up real git fixture
 		mkdirSync(repoDir, { recursive: true });
-		execSync("git init", { cwd: repoDir, encoding: "utf8" });
-		execSync("git config user.email ci@test.com", { cwd: repoDir });
-		execSync("git config user.name CI", { cwd: repoDir });
+		execSync("git init", { env: GIT_ENV, cwd: repoDir, encoding: "utf8" });
+		execSync("git config user.email ci@test.com", { env: GIT_ENV, cwd: repoDir });
+		execSync("git config user.name CI", { env: GIT_ENV, cwd: repoDir });
 		writeFileSync(join(repoDir, "README.md"), "# Test\n");
-		execSync("git add README.md", { cwd: repoDir });
-		execSync("git commit -m init", { cwd: repoDir });
+		execSync("git add README.md", { env: GIT_ENV, cwd: repoDir });
+		execSync("git commit -m init", { env: GIT_ENV, cwd: repoDir });
 		writeFileSync(join(repoDir, "src.ts"), "export const x = 1;\n");
-		execSync("git add src.ts", { cwd: repoDir });
+		execSync("git add src.ts", { env: GIT_ENV, cwd: repoDir });
 
 		// Set up ledger with a real run (createRun scaffolds diffs/ subdir)
 		const writer = new LedgerWriter(ledgerRoot, nodeLedgerDeps());

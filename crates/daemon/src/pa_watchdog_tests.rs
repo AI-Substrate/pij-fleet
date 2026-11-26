@@ -34,9 +34,8 @@ impl Repos {
         std::fs::create_dir_all(root.join("main")).unwrap();
         std::fs::create_dir_all(root.join("elsewhere")).unwrap();
         let git = |dir: &Path, args: &[&str]| {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(dir)
+            let mut command = pij_testkit::git_env::git(dir);
+            let status = pij_testkit::git_env::scrub_identity(&mut command)
                 .args(args)
                 .env("GIT_AUTHOR_NAME", "t")
                 .env("GIT_AUTHOR_EMAIL", "t@t")
@@ -3721,9 +3720,7 @@ async fn a_recreated_worktree_is_placed_in_its_new_repository_at_once() {
     let repos = Repos::new();
     let other = Repos::new();
     let git = |dir: &str, args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(dir)
+        let output = pij_testkit::git_env::git(Path::new(dir))
             .args(args)
             .output()
             .expect("git runs");

@@ -46,9 +46,9 @@ impl Drop for RepoFixture {
 }
 
 fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git")
+    let mut command = pij_testkit::git_env::git(root);
+    let output = pij_testkit::git_env::scrub_identity(&mut command)
         .args(args)
-        .current_dir(root)
         .output()
         .expect("git");
     assert!(

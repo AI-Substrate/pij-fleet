@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../driver/git-env.js";
 
 // F226: the one deploy build, driven with a fake cargo in temporary
 // directories. Never the real target, the installed pij-rs or the daemon.
@@ -57,7 +58,7 @@ const git = (repo: string, ...args: string[]) =>
 	spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
 		cwd: repo,
 		encoding: "utf8",
-		env: { ...process.env, ...HERMETIC_GIT },
+		env: gitEnv(HERMETIC_GIT, { ownIdentity: true }),
 	});
 
 /** A checkout with the paths the stamp names; `marker` makes its commit its own. */
@@ -135,8 +136,7 @@ function fixture(): Fixture {
 		log,
 		commit,
 		env: {
-			...process.env,
-			...HERMETIC_GIT,
+			...gitEnv(HERMETIC_GIT),
 			PATH: `${bin}:${process.env.PATH}`,
 			CARGO_TARGET_DIR: target,
 			PIJ_SHARED_TARGET: undefined,

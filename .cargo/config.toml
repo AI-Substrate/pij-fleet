@@ -16,3 +16,10 @@ jobs = 4
 # Reaches every process cargo runs, test binaries included: libtest's env
 # form of `--test-threads`.
 RUST_TEST_THREADS = { value = "4", force = false }
+
+# Every test binary cargo runs starts through this runner (incident #354): it
+# refuses while GIT_DIR or GIT_WORK_TREE is set and clears the rest of the
+# inherited git location and config variables. Anything outside deps/ (`cargo
+# run`) passes through untouched. Relative to this file's parent directory.
+[target.'cfg(all())']
+runner = "harness/scripts/cargo-test-runner.sh"

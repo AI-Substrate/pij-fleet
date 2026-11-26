@@ -1,5 +1,13 @@
 import { delimiter, join } from "node:path";
 import { defineConfig } from "vitest/config";
+import { inheritedGitDirRefusal, scrubGitEnvInPlace } from "./harness/driver/git-env.js";
+
+// Incident #354: refuse a polluted shell, and clear the rest of the inherited
+// git variables before any worker forks, so every worker and every process a
+// test launches (git, pij-rs, just, a script) inherits a clean environment.
+const gitRefusal = inheritedGitDirRefusal(process.env, "vitest");
+if (gitRefusal !== undefined) throw new Error(gitRefusal);
+scrubGitEnvInPlace(process.env);
 
 const NODE_SQLITE_SHIM = "\0node-sqlite-shim";
 

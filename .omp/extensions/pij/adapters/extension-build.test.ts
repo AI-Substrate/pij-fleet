@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../../../../harness/driver/git-env.js";
 import { removeTemporaryTree } from "../../../../harness/test-utils.js";
 import { computeExtensionBuildIdentity } from "./extension-build.js";
 
@@ -43,6 +44,7 @@ function extensionTree(directory: string, reverse = false): string {
 function git(directory: string, ...args: string[]): string {
 	return execFileSync("git", ["-C", directory, ...args], {
 		encoding: "utf8",
+		env: gitEnv({}, { ownIdentity: true }),
 		stdio: ["ignore", "pipe", "pipe"],
 	}).trim();
 }

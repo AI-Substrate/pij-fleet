@@ -7,8 +7,11 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { gitEnv } from "../../../harness/driver/git-env.js";
 import { removeTemporaryTree } from "../../../harness/test-utils.js";
 import { deriveRepoId, type GitDeps } from "../lib/identity.js";
+
+const GIT_ENV = gitEnv({}, { ownIdentity: true });
 
 describe("deriveRepoId", () => {
 	let tmpDir: string;
@@ -22,27 +25,23 @@ describe("deriveRepoId", () => {
 	});
 
 	it("derives host-owner-repo from HTTPS remote", () => {
-		execSync("git init", { cwd: tmpDir });
-		execSync("git remote add origin https://github.com/foo/bar.git", {
-			cwd: tmpDir,
-		});
+		execSync("git init", { env: GIT_ENV, cwd: tmpDir });
+		execSync("git remote add origin https://github.com/foo/bar.git", { env: GIT_ENV, cwd: tmpDir });
 		const result = deriveRepoId(tmpDir);
 		expect(result.ok).toBe(true);
 		expect(result.repoId).toBe("github.com-foo-bar");
 	});
 
 	it("derives host-owner-repo from SSH remote", () => {
-		execSync("git init", { cwd: tmpDir });
-		execSync("git remote add origin git@github.com:foo/bar.git", {
-			cwd: tmpDir,
-		});
+		execSync("git init", { env: GIT_ENV, cwd: tmpDir });
+		execSync("git remote add origin git@github.com:foo/bar.git", { env: GIT_ENV, cwd: tmpDir });
 		const result = deriveRepoId(tmpDir);
 		expect(result.ok).toBe(true);
 		expect(result.repoId).toBe("github.com-foo-bar");
 	});
 
 	it("falls back to basename-hash when git has no remote", () => {
-		execSync("git init", { cwd: tmpDir });
+		execSync("git init", { env: GIT_ENV, cwd: tmpDir });
 		// No remote added
 		const result = deriveRepoId(tmpDir);
 		expect(result.ok).toBe(true);
@@ -58,8 +57,9 @@ describe("deriveRepoId", () => {
 	});
 
 	it("is stable across repeated calls", () => {
-		execSync("git init", { cwd: tmpDir });
+		execSync("git init", { env: GIT_ENV, cwd: tmpDir });
 		execSync("git remote add origin https://github.com/myorg/myrepo.git", {
+			env: GIT_ENV,
 			cwd: tmpDir,
 		});
 		const r1 = deriveRepoId(tmpDir);

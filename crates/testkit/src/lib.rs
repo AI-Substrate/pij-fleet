@@ -11,6 +11,7 @@
 //!   with the value, so no suite ever shares state by accident.
 //! * [`golden`] — byte-goldens: the parity tripwire's mechanism, proven
 //!   against captured bytes rather than a live, time-varying binary.
+//! * [`git_env`] — the git environment a test never inherits (incident #354).
 //! * [`exec`] — a ten-line executor, so core's tests await without a runtime.
 //! * [`arch`] — the architecture drift gate.
 //! * [`toolchain`] — the pin assert, stage 1 of `pij-gate`.
@@ -31,6 +32,7 @@ pub mod exec;
 pub mod fakes;
 pub mod fixtures;
 pub mod fresh_store;
+pub mod git_env;
 pub mod golden;
 pub mod lockfile;
 pub mod time;

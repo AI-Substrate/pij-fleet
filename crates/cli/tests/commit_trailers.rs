@@ -22,10 +22,9 @@ fn run_cli(dir: &Path, addr: &str, seat: Option<&str>, args: &[&str]) -> Output 
         .env_remove("HARNESS_SESSION_ID")
         .env_remove("COPILOT_AGENT_SESSION_ID")
         .env_remove("CODEX_THREAD_ID")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
         .args(["--state-dir", dir.to_str().unwrap(), "--addr", addr])
         .args(args);
+    pij_testkit::git_env::scrub(&mut command);
     if let Some(seat) = seat {
         command.env("PIJ_SESSION_ID", seat);
     }
@@ -37,12 +36,9 @@ async fn shipped_commit_trailers_uses_authoritative_identity_and_keeps_stdout_cl
     let dir = fresh_dir("pij-commit-trailers");
     std::fs::create_dir_all(dir.join("home/.claude")).unwrap();
     std::fs::create_dir_all(dir.join("home/.config")).unwrap();
-    let git = Command::new("git")
-        .current_dir(&dir)
+    let git = pij_testkit::git_env::git(&dir)
         .env("HOME", dir.join("home"))
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
         .args(["init", "--initial-branch=no-plan"])
         .output()
         .unwrap();

@@ -46,9 +46,8 @@ struct World {
 }
 
 fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
+    let mut command = pij_testkit::git_env::git(dir);
+    let output = pij_testkit::git_env::scrub_identity(&mut command)
         .args(args)
         .env("GIT_AUTHOR_NAME", "t")
         .env("GIT_AUTHOR_EMAIL", "t@t")
@@ -215,9 +214,7 @@ impl World {
 
 impl Drop for World {
     fn drop(&mut self) {
-        let _ = Command::new("git")
-            .arg("-C")
-            .arg(&self.repo)
+        let _ = pij_testkit::git_env::git(&self.repo)
             .args(["worktree", "remove", "--force"])
             .arg(&self.worktree)
             .output();

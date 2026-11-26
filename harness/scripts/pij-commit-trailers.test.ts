@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-
+import { gitEnv } from "../driver/git-env.js";
 import { type AttributionContext, scanBranch, scanCommit } from "./pij-commit-trailers.js";
 
 const context: AttributionContext = {
@@ -108,13 +108,15 @@ describe("pij-commit-trailers", () => {
 			execFileSync("git", args, {
 				cwd: root,
 				encoding: "utf8",
-				env: {
-					...process.env,
-					GIT_AUTHOR_NAME: "Human",
-					GIT_AUTHOR_EMAIL: "human@example.test",
-					GIT_COMMITTER_NAME: "Human",
-					GIT_COMMITTER_EMAIL: "human@example.test",
-				},
+				env: gitEnv(
+					{
+						GIT_AUTHOR_NAME: "Human",
+						GIT_AUTHOR_EMAIL: "human@example.test",
+						GIT_COMMITTER_NAME: "Human",
+						GIT_COMMITTER_EMAIL: "human@example.test",
+					},
+					{ ownIdentity: true },
+				),
 			});
 		try {
 			git(["init", "--quiet", "--initial-branch=main"]);
