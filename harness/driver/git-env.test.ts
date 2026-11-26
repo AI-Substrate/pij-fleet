@@ -56,7 +56,7 @@ describe("gitEnv (incident #354)", () => {
 		const scratch = join(root, "scratch");
 		mkdirSync(decoy);
 		mkdirSync(scratch);
-		const clean = gitEnv();
+		const clean = gitEnv({}, { ownIdentity: true });
 		git(decoy, ["init", "-q", "-b", "main"], clean);
 		git(
 			decoy,
@@ -90,5 +90,39 @@ describe("gitEnv (incident #354)", () => {
 
 		expect(changed(before, snapshot(join(decoy, ".git")))).toEqual([]);
 		expect(existsSync(join(scratch, ".git", "config"))).toBe(true);
+	});
+
+	it("lets a fixture that sets its own identity win over an inherited GIT_AUTHOR_*/GIT_COMMITTER_*", () => {
+		const scratch = mkdtempSync(join(tmpdir(), "pij-git-env-identity-"));
+		roots.push(scratch);
+		const inherited = {
+			...process.env,
+			GIT_AUTHOR_NAME: "inherited author",
+			GIT_AUTHOR_EMAIL: "author@inherited.invalid",
+			GIT_AUTHOR_DATE: "2001-02-03T04:05:06Z",
+			GIT_COMMITTER_NAME: "inherited committer",
+			GIT_COMMITTER_EMAIL: "committer@inherited.invalid",
+			GIT_COMMITTER_DATE: "2001-02-03T04:05:06Z",
+		};
+		const env = gitEnv({}, { base: inherited, ownIdentity: true });
+		for (const args of [
+			["init", "-q", "-b", "main"],
+			["config", "user.name", "pij test"],
+			["config", "user.email", "pij@example.invalid"],
+			["commit", "-q", "--allow-empty", "-m", "fixture"],
+		]) {
+			git(scratch, args, env);
+		}
+		const identity = execFileSync(
+			"git",
+			["log", "-1", "--date=format:%Y", "--format=%an <%ae>|%cn <%ce>|%ad|%cd"],
+			{ cwd: scratch, env: gitEnv({}, { ownIdentity: true }), encoding: "utf8" },
+		).trim();
+		const [author, committer, ...years] = identity.split("|");
+		expect([author, committer]).toEqual([
+			"pij test <pij@example.invalid>",
+			"pij test <pij@example.invalid>",
+		]);
+		expect(years).not.toContain("2001");
 	});
 });

@@ -224,7 +224,7 @@ describe("Observe — flow-state guard AC-13 (T002)", () => {
 		mkdirSync(dirname(target), { recursive: true });
 		writeFileSync(target, "forbidden content\n");
 		if (!opts?.untracked) {
-			execSync(`git add "${filename}"`, { cwd: repoDir });
+			execSync(`git add "${filename}"`, { env: GIT_ENV, cwd: repoDir });
 		}
 		return repoDir;
 	}

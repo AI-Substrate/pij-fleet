@@ -85,7 +85,10 @@ function listing(dir: string): string[] {
 }
 
 function git(cwd: string, ...args: string[]): void {
-	const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnv() });
+	const r = spawnSync("git", ["-C", cwd, ...args], {
+		encoding: "utf8",
+		env: gitEnv({}, { ownIdentity: true }),
+	});
 	if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
 }
 

@@ -39,7 +39,8 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "pij-worktree-deps-"));
 	main = join(root, 'main with "quotes"');
 	worktree = join(root, "linked worktree");
-	const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8", env: gitEnv() });
+	const git = (...args: string[]) =>
+		execFileSync("git", args, { encoding: "utf8", env: gitEnv({}, { ownIdentity: true }) });
 	git("init", "--quiet", main);
 	git(
 		"-C",
