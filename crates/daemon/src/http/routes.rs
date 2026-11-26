@@ -185,8 +185,11 @@ async fn try_deliver(
             .map_err(|error| Refusal::new("E-RS-STORE", error.to_string()))?
             .map(|descriptor| descriptor.folder);
         if let Some(folder) = folder
-            && let Ok(found) =
-                super::directory::match_project(projects.clone(), std::path::Path::new(&folder))
+            && let Ok(found) = super::directory::match_project(
+                projects.clone(),
+                std::path::Path::new(&folder),
+                super::directory::NAME_A_PROJECT,
+            )
         {
             slugs.push(found.slug);
         }

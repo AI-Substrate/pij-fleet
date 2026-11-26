@@ -713,10 +713,10 @@ async fn up(
             Err(why) => late.push(Warning {
                 about: format!("slot {}", plan.slot.id),
                 text: format!("it did not start: {why}"),
-                fix: format!(
-                    "pij spawn --as role:{} {} --parent {actor}",
-                    address(&plan.slot),
-                    plan.harness.as_deref().unwrap_or("omp")
+                fix: spawn_retry(
+                    &address(&plan.slot),
+                    plan.harness.as_deref().unwrap_or("omp"),
+                    actor.as_str(),
                 ),
             }),
         }
@@ -804,6 +804,13 @@ fn address(slot: &pod::Slot) -> String {
     } else {
         format!("{}/{}", slot.role, slot.instance)
     }
+}
+
+/// The command that starts a slot `pod up` could not: a spawn in its role,
+/// parented to the pod's opener. Every flag is one `pij spawn` parses (it
+/// once printed the harness bare, which spawn rejects).
+pub fn spawn_retry(address: &str, harness: &str, actor: &str) -> String {
+    format!("pij spawn --as role:{address} --harness {harness} --parent {actor}")
 }
 
 /// Start one slot through the spawn path `pij spawn --as` takes: its seat id

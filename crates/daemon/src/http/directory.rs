@@ -974,7 +974,7 @@ async fn seats_without_a_role(
         .filter(|(seat, _)| !primes.iter().flatten().any(|prime| prime == seat))
         .filter(|(_, folder)| {
             Path::new(folder).is_absolute()
-                && match_project(projects.clone(), Path::new(folder))
+                && match_project(projects.clone(), Path::new(folder), NAME_A_PROJECT)
                     .is_ok_and(|found| found.slug == project)
         })
         .map(|(seat, _)| seat.clone())
@@ -1592,12 +1592,23 @@ async fn show(
     use crate::community::first_turn;
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
     let root = crate::community::root::find(&repo)?;
+    let own_files = match call.get("packet") {
+        Some(_) => state
+            .services
+            .registry
+            .get(actor)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| own_session_files(&row)),
+        None => None,
+    };
     let creator = first_turn::Creator {
         seat: actor.as_str().to_string(),
         focus: call.get("focus"),
         packet: call
             .get("packet")
-            .map(|file| read_packet(caller, &file, &repo))
+            .map(|file| read_packet(caller, &file, &repo, own_files.as_deref()))
             .transpose()?,
         subject: call.get("subject"),
         fresh: call.fresh,
@@ -1640,12 +1651,18 @@ pub(super) fn parameter_sets(sets: &[String]) -> Result<Vec<(String, String)>, R
 
 /// A `--packet <file>` named by the caller: `(the name as given, its text)`.
 /// Review of #345, N5: its text is committed to the governance branch, which
-/// may be public, so the file must sit inside the caller's folder or the
-/// project's repo once links are followed. A BRAKE: it only ever reads less.
+/// may be public, so the file must sit inside the caller's folder, the
+/// project's repo, or `own` (the calling seat's own session files folder,
+/// [`own_session_files`]) once links are followed.
+///
+/// A BRAKE: removing it reads MORE files, never different ones. `own` widens
+/// what passes by exactly one folder, found from pij's record of the calling
+/// seat, never from the path given.
 pub(super) fn read_packet(
     caller: &CallerContext,
     file: &str,
     repo: &Path,
+    own: Option<&Path>,
 ) -> Result<(String, String), Refusal> {
     let path = caller_path(caller, file)?;
     let real = std::fs::canonicalize(&path).map_err(|error| {
@@ -1659,15 +1676,25 @@ pub(super) fn read_packet(
             .is_some_and(|root| real.starts_with(root))
     };
     let folder = caller.cwd.as_deref().map(Path::new);
-    if !inside(folder) && !inside(Some(repo)) {
+    if !inside(folder) && !inside(Some(repo)) && !inside(own) {
+        let mut places: Vec<String> = folder
+            .into_iter()
+            .chain([repo])
+            .chain(own)
+            .map(|place| place.display().to_string())
+            .collect();
+        places.dedup();
         return Err(Refusal::new(
             E_PACKET_OUTSIDE,
             format!(
-                "--packet {}: the file is outside your folder and the project's repo; its text would be committed to the governance branch",
+                "--packet {}: the file is outside your folder, the project's repo and your seat's own session files; its text would be committed to the governance branch",
                 real.display()
             ),
         )
-        .with_next("Copy what the seat needs into a file in your folder or the repo, then pass that"));
+        .with_next(format!(
+            "Copy what the seat needs into a file under one of these, then pass that: {}",
+            places.join(", ")
+        )));
     }
     std::fs::read_to_string(&real)
         .map(|text| (file.to_string(), text))
@@ -1677,6 +1704,36 @@ pub(super) fn read_packet(
                 format!("--packet: cannot read {}: {error}", path.display()),
             )
         })
+}
+
+/// The calling seat's own session files folder, from pij's record of it
+/// (its harness and session id), never from a path pattern. Copilot seats
+/// write their packets to `<session-state>/<session>/files/`.
+pub(super) fn own_session_files(seat: &pij_core::model::SeatDescriptor) -> Option<PathBuf> {
+    session_files(
+        crate::session_roots().copilot_sessions.as_deref(),
+        &seat.harness.to_string(),
+        seat.harness_session.as_deref(),
+    )
+}
+
+/// `<copilot root>/<session>/files` for a Copilot seat with a plain session
+/// id; nothing for any other harness or a session id that could name another
+/// folder.
+pub(super) fn session_files(
+    copilot_root: Option<&Path>,
+    harness: &str,
+    session: Option<&str>,
+) -> Option<PathBuf> {
+    let session = session.filter(|session| {
+        !session.is_empty()
+            && session != &"."
+            && !session.contains(['/', '\\'])
+            && !session.contains("..")
+    })?;
+    (harness == "copilot")
+        .then(|| copilot_root.map(|root| root.join(session).join("files")))
+        .flatten()
 }
 
 /// `directory retype [--apply --why <text>]` (PRD 006 req-07, plan 238): the
@@ -2763,6 +2820,21 @@ pub(crate) async fn project_and_repo(
     caller: &CallerContext,
     named: Option<String>,
 ) -> Result<(String, PathBuf), Refusal> {
+    project_and_repo_routed(state, caller, named, NAME_A_PROJECT).await
+}
+
+/// How most commands name a project when the folder does not find one.
+pub(crate) const NAME_A_PROJECT: &str = "name one with --project <slug>";
+
+/// [`project_and_repo`], with `route` saying how THIS command names a
+/// project in its refusals: a command with no `--project` flag must not
+/// point at one (`spawn --as`, report of #345).
+pub(crate) async fn project_and_repo_routed(
+    state: &AppState,
+    caller: &CallerContext,
+    named: Option<String>,
+    route: &str,
+) -> Result<(String, PathBuf), Refusal> {
     let projects = state
         .services
         .governance
@@ -2785,10 +2857,12 @@ pub(crate) async fn project_and_repo(
             let cwd = cwd.ok_or_else(|| {
                 Refusal::new(
                     "E-RS-ARG",
-                    "name the project with --project <slug>, or call from inside its repo",
+                    format!(
+                        "no folder to find the project from: {route}, or call from inside its repo"
+                    ),
                 )
             })?;
-            match_project(projects, Path::new(cwd))?
+            match_project(projects, Path::new(cwd), route)?
         }
     };
     let repo = project
@@ -2810,6 +2884,7 @@ pub(crate) async fn project_and_repo(
 pub(super) fn match_project(
     projects: Vec<pij_core::orchestration::Project>,
     cwd: &Path,
+    route: &str,
 ) -> Result<pij_core::orchestration::Project, Refusal> {
     let here = canonical(cwd);
     let common = crate::community::root::common_dir(&here);
@@ -2841,16 +2916,19 @@ pub(super) fn match_project(
             );
             Err(Refusal::new(
                 "E-RS-NOT-FOUND",
-                format!("no project records the repository holding {}", here.display()),
+                format!(
+                    "no project records the repository holding {}",
+                    here.display()
+                ),
             )
             .with_next(format!(
-                "Register it: pij project create <name> --repo {main} --prime <seat>; or name a project with --project <slug>."
+                "Register it: pij project create <name> --repo {main} --prime <seat>; or {route}."
             )))
         }
         _ => Err(Refusal::new(
             "E-RS-ARG",
             format!(
-                "several projects share this repository ({}); name one with --project <slug>",
+                "several projects share this repository ({}); {route}",
                 shared
                     .iter()
                     .map(|project| project.slug.as_str())
@@ -2956,6 +3034,81 @@ pub(super) fn refused_as(command: &str, refusal: &Refusal) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Report of #345: a packet in the calling seat's own session files
+    /// folder (pij's record: harness and session) is read; another session's
+    /// folder, and a link out of the own folder, are still refused, and the
+    /// refusal names every folder that would be read.
+    #[test]
+    fn a_packet_in_the_seats_own_session_files_is_read_and_nothing_else_is() {
+        let base = std::env::temp_dir().join(format!("pij-own-packet-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let sessions = base.join("session-state");
+        let repo = base.join("repo");
+        let cwd = base.join("cwd");
+        for dir in [
+            &repo,
+            &cwd,
+            &sessions.join("s1/files"),
+            &sessions.join("s2/files"),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(sessions.join("s1/files/p.md"), "mine\n").unwrap();
+        std::fs::write(sessions.join("s2/files/p.md"), "theirs\n").unwrap();
+        std::fs::write(base.join("outside.md"), "outside\n").unwrap();
+        std::os::unix::fs::symlink(base.join("outside.md"), sessions.join("s1/files/link.md"))
+            .unwrap();
+        let caller = CallerContext {
+            cwd: Some(cwd.display().to_string()),
+            ..CallerContext::default()
+        };
+        let own = session_files(Some(&sessions), "copilot", Some("s1")).unwrap();
+        assert_eq!(own, sessions.join("s1/files"));
+        let mine = sessions.join("s1/files/p.md");
+        let read = read_packet(&caller, mine.to_str().unwrap(), &repo, Some(&own)).unwrap();
+        assert_eq!(read.1, "mine\n");
+        let refused = read_packet(&caller, mine.to_str().unwrap(), &repo, None).unwrap_err();
+        assert_eq!(refused.code, E_PACKET_OUTSIDE, "no record, no folder");
+        let next = refused.next.unwrap();
+        assert!(
+            next.contains(&cwd.display().to_string()) && next.contains(&repo.display().to_string()),
+            "{next}"
+        );
+        for other in [
+            sessions.join("s2/files/p.md"),
+            sessions.join("s1/files/link.md"),
+        ] {
+            let refused =
+                read_packet(&caller, other.to_str().unwrap(), &repo, Some(&own)).unwrap_err();
+            assert_eq!(refused.code, E_PACKET_OUTSIDE, "{}", other.display());
+            assert!(refused.next.unwrap().contains(&own.display().to_string()));
+        }
+        for (harness, session) in [
+            ("omp", Some("s1")),
+            ("copilot", None),
+            ("copilot", Some("")),
+            ("copilot", Some("..")),
+            ("copilot", Some("s1/../s2")),
+            ("copilot", Some(".")),
+        ] {
+            assert_eq!(
+                session_files(Some(&sessions), harness, session),
+                None,
+                "{harness} {session:?}"
+            );
+        }
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// Report of #345: a command's project refusals name the route it
+    /// takes; `spawn --as` has no `--project` flag, so it is never named.
+    #[test]
+    fn a_project_refusal_names_the_callers_route() {
+        let refused = match_project(Vec::new(), Path::new("/"), "ROUTE").unwrap_err();
+        assert_eq!(refused.code, "E-RS-NOT-FOUND");
+        assert!(refused.next.unwrap().ends_with("; or ROUTE."));
+    }
 
     /// F193: the dead-holder line prints one word for how a seat ended, never
     /// `invalid (N chars)`: a supersede and an owner's close with its text

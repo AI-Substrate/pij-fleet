@@ -185,6 +185,71 @@ pub(super) fn launches(tmux: &FakeTmux) -> usize {
         .count()
 }
 
+/// Report of #345: `spawn --as` from a folder no project holds refuses
+/// with a route spawn actually takes (it has no `--project` flag). The
+/// test takes the `--cwd` the hint names, fills its folder, and runs it.
+#[tokio::test]
+async fn spawn_as_from_no_project_names_a_route_that_runs() {
+    let repo = repo("pij-spawn-as-route");
+    let rig = rig(Arc::new(NoHook)).await;
+    let addr = rig.addr;
+    fleet(addr, &repo).await;
+    add_notes(addr, &repo).await;
+    let at = |cwd: &std::path::Path| {
+        json!({
+            "harness": "omp",
+            "cwd": cwd,
+            "session": "work",
+            "no_wait": true,
+            "caller": {"TMUX_PANE": PANE, "cwd": cwd},
+            "as_role": {"role": "notes", "set": ["subject=planning"]},
+        })
+    };
+    let post = |body: Value| async move {
+        reqwest::Client::new()
+            .post(format!("http://{addr}/v1/spawn"))
+            .bearer_auth(KEY)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap()
+    };
+    let refused = post(at(&repo.root)).await;
+    assert_eq!(refused["details"]["code"], "E-RS-NOT-FOUND", "{refused}");
+    let next = refused["details"]["next"].as_str().unwrap();
+    assert!(
+        !next.contains("--project"),
+        "spawn has no --project: {next}"
+    );
+    assert!(
+        next.contains(pij_daemon::http::SPAWN_PROJECT_ROUTE),
+        "{next}"
+    );
+    // FLT-SPAWNAS-PARENT: a caller pij cannot identify is refused before
+    // any launch, so no seat starts parentless; the refusal names no --role.
+    let launched = launches(&rig.tmux);
+    let mut stranger = at(&repo.main);
+    stranger["caller"]["TMUX_PANE"] = json!("%999");
+    let unknown = post(stranger).await;
+    assert_eq!(unknown["ok"], false, "{unknown}");
+    assert_eq!(launches(&rig.tmux), launched, "nothing launched");
+    assert!(!unknown.to_string().contains("--role"), "{unknown}");
+    let (flag, placeholder) = next
+        .split_once("--cwd ")
+        .map(|(_, rest)| ("--cwd", rest.split([' ', ';', '.']).next().unwrap()))
+        .unwrap_or_else(|| panic!("a --cwd route: {next}"));
+    assert_eq!((flag, placeholder), ("--cwd", "<folder>"));
+    let mut body = at(&repo.root);
+    body["cwd"] = json!(repo.main);
+    let ran = post(body).await;
+    assert_eq!(ran["ok"], true, "the hint's route runs: {ran}");
+    assert_eq!(ran["details"]["role"]["project"], "fleet", "{ran}");
+    rig.server.abort();
+}
+
 /// Plan 242 ac-0002 to ac-0006: a spawn with a role launches as a plain
 /// spawn does, then ONE writer commit records its first turn and holding,
 /// then the first turn is queued as the seat's first message. A refusal
@@ -232,6 +297,22 @@ async fn spawn_as_a_role_is_a_plain_spawn_plus_one_commit_and_its_first_turn() {
     .await;
     assert_eq!(started["ok"], true, "{started}");
     assert_eq!(launches(&rig.tmux), 2, "one launch, as a plain spawn");
+    // Findings ACC-SPAWNAS-ROLE-CONFLICT and FLT-SPAWNAS-PARENT: the
+    // receipt gives one seat role, and the caller is the seat's parent.
+    assert_eq!(started["data"]["role"], "worker", "{started}");
+    assert_eq!(
+        started["data"]["role"], started["details"]["role"]["seat_role"],
+        "{started}"
+    );
+    assert_eq!(started["data"]["parent"], SEAT, "{started}");
+    let stored = rig
+        .services
+        .registry
+        .get(&SeatId::from(started["data"]["id"].as_str().unwrap()))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.parent.as_ref().map(|p| p.as_str()), Some(SEAT));
     let seat = started["data"]["id"].as_str().unwrap().to_string();
     let count = git(
         &repo.gov,
