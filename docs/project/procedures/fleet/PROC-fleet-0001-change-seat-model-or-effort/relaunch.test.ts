@@ -313,4 +313,48 @@ describe("PROC-fleet-0001 relaunch.sh", () => {
 		expect(result.stderr).toContain("is not copilot");
 		expect(existsSync(join(out, "tmux.args"))).toBe(false);
 	});
+	it("relaunches from the pane's root process, not pij's recorded pid, which after a /restart is the loader's child", () => {
+		// pij records pid 100 (the child: no --model or --effort, loader environment); the pane's root is pid 300.
+		writeFileSync(
+			join(out, "ps.cmd.100"),
+			"/opt/lib/copilot-darwin-arm64/copilot --no-ask-user --yolo --session-id sess-1\n",
+		);
+		writeFileSync(
+			join(out, "ps.all.100"),
+			"/opt/lib/copilot-darwin-arm64/copilot --no-ask-user --yolo --session-id sess-1 PIJ_SESSION_ID=pij-x COPILOT_LOADER_PID=300 COPILOT_SUPERVISED=1\n",
+		);
+		const root =
+			"node /opt/lib/bin/copilot --yolo --model claude-opus-5.5 --context long_context --effort xhigh --resume=old";
+		writeFileSync(join(out, "ps.cmd.300"), `${root}\n`);
+		writeFileSync(
+			join(out, "ps.all.300"),
+			`${root} PIJ_SESSION_ID=pij-x COPILOT_PROVIDER_TYPE=anthropic COPILOT_PROVIDER_MODEL_ID=claude-opus-5.5\n`,
+		);
+		stub(
+			"ps",
+			`for a in "$@"; do pid=$a; done; case "$1" in -Eww) cat "${out}/ps.all.$pid" ;; *) cat "${out}/ps.cmd.$pid" ;; esac`,
+		);
+		stub(
+			"tmux",
+			`case "$1" in display-message) echo 300 ;; *) printf '%s\\n' "$@" > "${out}/tmux.args" ;; esac`,
+		);
+		const result = relaunch("relaunch", "high");
+		expect(result.stderr).toBe("");
+		expect(result.status).toBe(0);
+		const { args, env } = runPane();
+		expect(args).toEqual([
+			"--yolo",
+			"--model",
+			"claude-opus-5.5",
+			"--context",
+			"long_context",
+			"--effort",
+			"high",
+			"--resume=sess-1",
+			"",
+		]);
+		expect(env).toContain("COPILOT_PROVIDER_TYPE=anthropic\n");
+		expect(env).not.toContain("COPILOT_LOADER_PID");
+		expect(env).not.toContain("COPILOT_SUPERVISED");
+	});
 });
