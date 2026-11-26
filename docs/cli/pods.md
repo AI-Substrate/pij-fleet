@@ -40,6 +40,8 @@ With `--no-start` pij writes the record only; each member then joins on its own:
 
     pij-rs spawn --as role:<id>[/<instance>] --pod <pod>
 
+A joining member gets the first turn `plan` showed for its slot: pij builds it from the pod's record as `up` does, with the slot's seed, the pod's parameters as they stand now, its subject and its `--fresh`. In a fresh pod the role's memory is left out of the join too. A `--set`, `--focus` or `--subject` that differs from the pod's is a warning naming the pod's value; `pij pod set` changes a parameter for every member. A role that fills no slot still gets the pod's subject and `--fresh`.
+
 **The tool canary.** Each started slot that names tools is asked to run `pij pod confirm <pod> --tool <tool>...`. pij waits up to 15 minutes for the answers, records each member's canary as `confirmed` or `degraded` (with the missing tools and the fix), and tells the seat that ran `up` which slots are degraded. A later `confirm` brings a degraded slot back.
 
 **The degraded-slot brake.** pij sends no pod work to a degraded slot: `set` skips it and names it, and a stage that would be written back to it is recorded and not sent. The brake only ever makes pij send less; messages from anyone else still reach the seat.
@@ -55,7 +57,7 @@ Each pod verb prints a short text view; `--json` gives the full answer.
 
 - `show` prints each member's slot, seat, role, type, state, canary and folder; consulted roles with whether they have a live holder; the wiring; each deliverable's owner and write-back role; and degraded slots with their fixes. `--json` adds each member's harness and model, the owner roles' live holders, each deliverable's stages, the log and the pod's state (`closed` once every member that is not keep-open is down).
 - `activity` prints what the pod did, in time order (members' activity, reports, memory notes, launches, closes, the messages they received, their outputs, and their sends to consulted roles), then where each member's current transcript is: its path, not its contents. `--since` takes milliseconds since the epoch or a time like `2026-11-25T04:00:00.000Z`. Any seat may read it.
-- `sessions` prints each member's harness sessions, newest first (20 unless `--limit`): when each began and ended, why it began (`spawn`, `revive`, `compact`, `rebind` or `relaunch`), its harness, model, session id and last context size. `--json` adds each session's transcript path.
+- `sessions` names the pod's project, then prints each member's harness sessions, newest first (20 unless `--limit`): when each began and ended, why it began (`spawn`, `revive`, `compact`, `rebind` or `relaunch`), its harness, model, session id and last context size. `--json` adds each session's transcript path.
 - `pij sessions --history` lists the same for every seat that is not closed, with each transcript path; name a closed seat with `--seat <id>`.
 
 A context size is read from the last 256 KiB of the transcript and reads `unknown` when the transcript is gone or that tail holds no usage figure.

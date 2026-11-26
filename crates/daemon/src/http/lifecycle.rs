@@ -602,11 +602,13 @@ async fn handle(
                 )
                 .await
                 {
-                    Ok(mut data) => {
+                    Ok(data) => {
                         // Nothing to remember, or its note is written: ready.
-                        if call.stop {
-                            data["stopped"] = stop_process(&state, &expected).await;
-                        }
+                        let data = if call.stop {
+                            with_stop(data, stop_process(&state, &expected).await)
+                        } else {
+                            data
+                        };
                         envelope(StatusCode::OK, &Envelope::ok(command, data))
                     }
                     Err(refused) => refused.into_response(),
@@ -698,6 +700,37 @@ fn not_stopped(command: &str, seat: &SeatId, why: &str, told: Value) -> Response
 
 /// `close --stop` left the seat open and running (PRD 007 req-12).
 pub const E_NOT_STOPPED: &str = "E-RS-NOT-STOPPED";
+
+/// A close receipt with `close --stop`'s outcome, saying only what was
+/// observed (ACC-CLOSE-RECEIPT, B359-R1-01). `stopped.stopped` means the
+/// SIGTERM was delivered; nothing waits for the exit, so `exit_confirmed` is
+/// always false. A delivered signal replaces "keeps running" with "exit not
+/// confirmed", and the pane to kill stays, named conditionally. A signal not
+/// delivered keeps the close's own note.
+pub(super) fn with_stop(mut data: Value, mut stopped: Value) -> Value {
+    if stopped["stopped"] == true {
+        let pid = stopped["pid"].as_u64().map_or_else(
+            || "its process".to_string(),
+            |pid| format!("its process {pid}"),
+        );
+        let sent =
+            format!("pij close retired the seat and sent SIGTERM to {pid}; exit not confirmed.");
+        data["process"] = match data["kill_pane"].as_str() {
+            Some(pane) => format!(
+                "{sent} If it is still running in a few seconds, its parent runs: tmux kill-pane -t {pane}"
+            ),
+            None => format!(
+                "{sent} If it is still running in a few seconds, find its pane with `tmux list-panes -a`: pij names no pane it could not check as this seat's."
+            ),
+        }
+        .into();
+    }
+    if let Some(fields) = stopped.as_object_mut() {
+        fields.insert("exit_confirmed".to_string(), Value::Bool(false));
+    }
+    data["stopped"] = stopped;
+    data
+}
 
 /// SIGTERM to `seat`'s recorded process, only while its pid has the recorded
 /// start (the liveness port checks again). A POLICY: the seat's ready answer
@@ -973,6 +1006,53 @@ mod tests {
             judge_pane(None, SeatProcess::Unknown, Some(eel())),
             PaneNow::Other(Some(eel()))
         );
+    }
+
+    /// ACC-CLOSE-RECEIPT, B359-R1-01: a delivered SIGTERM is reported as
+    /// sent with the exit not confirmed, keeping the pane to kill named
+    /// conditionally; a signal not delivered keeps the close's own note.
+    #[test]
+    fn a_close_stop_receipt_reports_the_signal_never_a_confirmed_exit() {
+        let closed = || {
+            json!({
+                "process": process_note(Some("%61"), &PaneNow::Own),
+                "kill_pane": "%61",
+            })
+        };
+        let sent = with_stop(closed(), json!({"stopped": true, "pid": 42}));
+        let note = sent["process"].as_str().unwrap();
+        assert!(!note.contains("keeps running"), "{sent}");
+        assert!(
+            note.contains("sent SIGTERM to its process 42; exit not confirmed"),
+            "{sent}"
+        );
+        assert!(
+            note.ends_with(
+                "If it is still running in a few seconds, its parent runs: tmux kill-pane -t %61"
+            ),
+            "{sent}"
+        );
+        assert_eq!(sent["kill_pane"], "%61", "{sent}");
+        assert_eq!(sent["stopped"]["stopped"], true);
+        assert_eq!(sent["stopped"]["exit_confirmed"], false);
+
+        let gone = with_stop(
+            json!({"process": process_note(Some("%61"), &PaneNow::Gone)}),
+            json!({"stopped": true, "pid": 42}),
+        );
+        let note = gone["process"].as_str().unwrap();
+        assert!(note.contains("exit not confirmed"), "{gone}");
+        assert!(!note.contains("kill-pane"), "{gone}");
+        assert!(!note.contains("keeps running"), "{gone}");
+
+        let left = with_stop(
+            closed(),
+            json!({"stopped": false, "pid": 42, "why": "its pid no longer has the recorded start time"}),
+        );
+        assert_eq!(left["process"], closed()["process"], "{left}");
+        assert_eq!(left["kill_pane"], "%61", "{left}");
+        assert_eq!(left["stopped"]["stopped"], false);
+        assert_eq!(left["stopped"]["exit_confirmed"], false);
     }
 
     #[test]

@@ -699,6 +699,103 @@ pub fn slot_sets(slot: &Slot, filled: &[(String, String)]) -> Vec<String> {
         .collect()
 }
 
+/// What a pod slot's first turn is built from: the slot's filled parameters,
+/// its seed as the focus, and the pod's subject and fresh setting. `pod plan`,
+/// `pod up` and a late join (`spawn --as --pod`, `pod add role:`) all build
+/// from this one value, so the turn a plan shows is the turn a member gets
+/// (ACC-POD-LATEJOIN-FRESH).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotTurn {
+    /// The filled `--set` values the slot uses, as `<name>=<value>`.
+    pub sets: Vec<String>,
+    /// The slot's seed, given as the first turn's focus.
+    pub focus: Option<String>,
+    /// The pod's subject.
+    pub subject: Option<String>,
+    /// The pod's `--fresh`: leave earlier memory out (req-12).
+    pub fresh: bool,
+}
+
+impl SlotTurn {
+    /// The turn for `slot` in a pod filled with `filled`.
+    pub fn new(
+        slot: &Slot,
+        filled: &[(String, String)],
+        subject: Option<String>,
+        fresh: bool,
+    ) -> Self {
+        Self {
+            sets: slot_sets(slot, filled),
+            focus: slot.seed.clone(),
+            subject,
+            fresh,
+        }
+    }
+
+    /// The turn for `slot` in the pod `document` records: its parameters as
+    /// they stand now, its subject and its fresh setting.
+    pub fn recorded(slot: &Slot, document: &Value) -> Self {
+        Self::new(
+            slot,
+            &recorded_parameters(document),
+            recorded_subject(document),
+            recorded_fresh(document),
+        )
+    }
+
+    /// The sets as `(name, value)` pairs, in order.
+    pub fn pairs(&self) -> Vec<(String, String)> {
+        self.sets
+            .iter()
+            .filter_map(|set| set.split_once('='))
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect()
+    }
+
+    /// The first turn's creator part, from `seat`.
+    pub fn creator(
+        &self,
+        seat: &str,
+        packet: Option<(String, String)>,
+    ) -> super::first_turn::Creator {
+        super::first_turn::Creator {
+            seat: seat.to_string(),
+            focus: self.focus.clone(),
+            packet,
+            subject: self.subject.clone(),
+            fresh: self.fresh,
+        }
+    }
+}
+
+/// A pod record's parameters as they stand now, as `(name, value)` pairs.
+pub fn recorded_parameters(document: &Value) -> Vec<(String, String)> {
+    records(document, "parameters")
+        .iter()
+        .filter_map(|row| {
+            Some((
+                row["name"].as_str()?.to_string(),
+                row["value"].as_str()?.to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// A pod record's subject: its `subject` parameter as it stands now, which
+/// `up` read it from, else the one recorded at up.
+pub fn recorded_subject(document: &Value) -> Option<String> {
+    recorded_parameters(document)
+        .into_iter()
+        .find(|(name, _)| name == "subject")
+        .map(|(_, value)| value)
+        .or_else(|| meta(document)["subject"].as_str().map(str::to_string))
+}
+
+/// Whether a pod record was brought up `--fresh`.
+pub fn recorded_fresh(document: &Value) -> bool {
+    meta(document)["fresh"] == "yes"
+}
+
 /// The checks `plan` prints and `up` logs, from facts read before any
 /// launch: `live` says whether a role has a live holder in the project, and
 /// `exists` whether the project has the role. Warnings only (d-12).

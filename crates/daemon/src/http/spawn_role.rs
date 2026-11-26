@@ -10,8 +10,12 @@
 //! then the first turn is queued from its creator, then the role's queue
 //! drains. The seat receives nothing before that commit.
 //!
-//! Cost: in-process reads before the launch; after it, the one writer commit
-//! an assign costs. No loop, poll or timer.
+//! A `--pod` join builds its first turn from the pod's record, as `pod up`
+//! does ([`from_pod`]).
+//!
+//! Cost: in-process reads before the launch (a `--pod` join adds one read of
+//! the pod's template); after it, the one writer commit an assign costs. No
+//! loop, poll, timer or extra launch.
 
 use axum::http::StatusCode;
 use axum::response::Response;
@@ -59,7 +63,7 @@ pub(super) const NO_ROLE: &str = "this seat starts in no role. Start it in one w
 pub(super) async fn prepare(
     state: &AppState,
     request: &mut SpawnRequest,
-    as_role: AsRole,
+    mut as_role: AsRole,
     command_name: &'static str,
 ) -> Result<Prepared, Box<Response>> {
     if request.role.is_some() {
@@ -113,8 +117,13 @@ pub(super) async fn prepare(
         .await
         .map_err(refuse("finding the project from the spawn's folder"))?;
     let root = crate::community::root::find(&repo).map_err(refuse("finding governance"))?;
-    if let Some(pod) = &as_role.pod {
-        super::pod::recorded(&root.worktree, &project, pod).map_err(refuse("finding the pod"))?;
+    let mut joining = Vec::new();
+    if let Some(pod) = as_role.pod.clone() {
+        let document = super::pod::recorded(&root.worktree, &project, &pod)
+            .map_err(refuse("finding the pod"))?;
+        let (_, turn) =
+            super::pod::joining_turn(&repo, &document, &as_role.role, &as_role.instance);
+        joining = from_pod(&mut as_role, &pod, turn);
     }
     let packet = as_role
         .packet
@@ -160,11 +169,56 @@ pub(super) async fn prepare(
         role: as_role.role,
         instance: as_role.instance,
         first_turn: start.first_turn,
-        warnings: start.warnings,
+        warnings: joining.into_iter().chain(start.warnings).collect(),
         role_type: start.role_type,
         why: focus_line,
         pod: as_role.pod,
     })
+}
+
+/// A member joining pod `pod` (`spawn --as --pod`, `pod add role:`) starts
+/// with the first turn the pod planned for its slot (ACC-POD-LATEJOIN-FRESH):
+/// the pod's recorded values replace the caller's for the slot's parameters,
+/// its seed, the subject and fresh. A POLICY: it decides what the first turn
+/// holds. The caller's other parameters and its packet stay; each value of
+/// the caller's the pod overrides is named in a warning.
+fn from_pod(as_role: &mut AsRole, pod: &str, turn: crate::community::pod::SlotTurn) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let recorded = turn.pairs();
+    let mut sets = turn.sets;
+    for set in std::mem::take(&mut as_role.set) {
+        let name = set.split_once('=').map_or(set.as_str(), |(name, _)| name);
+        match recorded.iter().find(|(given, _)| given == name) {
+            None => sets.push(set),
+            Some((_, value)) if set == format!("{name}={value}") => {}
+            Some((_, value)) => warnings.push(format!(
+                "--set {set}: pod {pod} records {name}={value}, which this member uses; change it for every member with pij pod set {pod} {name}=<value>"
+            )),
+        }
+    }
+    as_role.set = sets;
+    if let Some(seed) = turn.focus {
+        if as_role.focus.as_ref().is_some_and(|focus| *focus != seed) {
+            warnings.push(format!(
+                "--focus: this member's slot in pod {pod} has its own seed, which this member gets instead; drop --focus, or change the slot's seed in the pod's template between runs"
+            ));
+        }
+        as_role.focus = Some(seed);
+    }
+    if let Some(subject) = turn.subject {
+        if as_role
+            .subject
+            .as_ref()
+            .is_some_and(|given| *given != subject)
+        {
+            warnings.push(format!(
+                "--subject: pod {pod} is about {subject}, which this member uses; change it for every member with pij pod set {pod} subject=<value>"
+            ));
+        }
+        as_role.subject = Some(subject);
+    }
+    as_role.fresh |= turn.fresh;
+    warnings
 }
 
 /// After the seat's row and before the bind wait: one writer commit records
