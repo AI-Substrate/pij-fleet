@@ -1480,7 +1480,16 @@ Source: [`governance.rs` parser and handlers](../../crates/daemon/src/http/gover
 `<government-root>/community/roles/<id>/role.dd.json` on the `prime-governance`
 branch, with `memory/INDEX.md` and `outputs/` beside it. `<government-root>` is
 the standing governance worktree's `.harness/government`, found as
-`harness/scripts/government-root.sh` finds it. The daemon is the only writer:
+`harness/scripts/government-root.sh` finds it. Before any of this, an add
+missing or getting wrong more than one field is refused once, naming each with
+the flag that gives it (`--why`, `--type`, the fields the type requires such as
+`--keeps`, a `--type-change`, and the schema's `--title`, `--holders`, `--rule`,
+`--packet`/`--brief`), and pointing at `pij directory add --help`
+(OSK-DIRECTORY-ADD-SERIAL). Its code is the one the first of them always got:
+`E-RS-ARG` for a missing `--why`, else the type's (`E-RS-TYPE-MISSING`,
+`-UNKNOWN`, `-FIELD`, `-RULE`). One problem alone keeps its own refusal word for
+word, and schema fields alone are left to ddocs (`E-RS-DDOCS-INVALID`, which
+already lists every gap). The daemon is the only writer:
 
 1. It refuses before writing if any path it is about to write carries an edit it
    did not make (modified, staged or untracked), if that path or a directory

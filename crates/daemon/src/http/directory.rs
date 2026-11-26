@@ -24,6 +24,7 @@ use crate::community::directory::{HoldingReceipt, ReleaseTarget, Retirement, Rol
 use crate::community::layout::{RolePaths, exists};
 use crate::community::role::{self, ListOp, RoleFields, RoleList};
 use crate::community::routes::{self, Overlap, Regenerated};
+use crate::community::types::{self, Problem, Verb};
 use crate::community::writer::{Existing, NewFile, Written};
 use crate::community::{E_NOTHING_TO_WRITE, Refusal, pointer, root};
 use crate::community::{holders, memory};
@@ -1066,15 +1067,9 @@ async fn add(
     caller: &CallerContext,
     call: &Arguments,
 ) -> Result<Value, Refusal> {
-    let why = call
-        .get("why")
-        .filter(|why| !why.trim().is_empty())
-        .ok_or_else(|| {
-            Refusal::new(
-                "E-RS-ARG",
-                "--why <text> is required: it becomes the changelog row",
-            )
-        })?;
+    // A missing --why is listed with the role's other gaps below, in one
+    // refusal (OSK-DIRECTORY-ADD-SERIAL), still under its own code.
+    let why = call.get("why").filter(|why| !why.trim().is_empty());
     // UTC to the millisecond with its zone, like holders rows (F13).
     let date = crate::community::holders::now();
     let batch = call.get("batch");
@@ -1158,6 +1153,27 @@ async fn add(
         }
     };
 
+    // A missing --why refuses first, as it always has, now listing every
+    // other gap of the role with it (OSK-DIRECTORY-ADD-SERIAL). Pure reads.
+    let Some(why) = why else {
+        let refusal = Refusal::new(
+            "E-RS-ARG",
+            "--why <text> is required: it becomes the changelog row",
+        );
+        let Some((id, document)) = documents.first() else {
+            return Err(refusal);
+        };
+        let mut problems = vec![Problem {
+            flag: "--why <text>".to_string(),
+            refusal,
+        }];
+        problems.extend(types::role_problems(id, document, true, Verb::Add));
+        return Err(
+            types::combine(id, problems, role::schema_gaps(document), Verb::Add)
+                .expect("--why is a problem"),
+        );
+    };
+
     // A project with no governance refuses by name before any role check
     // (PRD 001 req-02).
     let (project, repo) = project_and_repo(state, caller, call.get("project")).await?;
@@ -1174,7 +1190,14 @@ async fn add(
                 format!("the batch names role {id:?} twice"),
             ));
         }
-        crate::community::types::check_role(&id, &document, true)?;
+        if let Some(refusal) = types::combine(
+            &id,
+            types::role_problems(&id, &document, true, Verb::Add),
+            role::schema_gaps(&document),
+            Verb::Add,
+        ) {
+            return Err(refusal);
+        }
         kinds.push(
             crate::community::types::of_role(&document)
                 .unwrap_or("none")

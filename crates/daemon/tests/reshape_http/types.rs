@@ -89,6 +89,81 @@ async fn add_names_a_type_and_what_it_requires_or_commits_nothing() {
     server.abort();
 }
 
+/// OSK-DIRECTORY-ADD-SERIAL: an add missing several fields is refused once,
+/// naming each with the flag that gives it, under the code the first one
+/// always got; one missing field keeps its own refusal; nothing is committed.
+#[tokio::test]
+async fn an_add_missing_several_fields_gets_one_refusal_naming_each_flag() {
+    let repo = repo("pij-types-all-gaps");
+    let (addr, server, _fresh) = daemon().await;
+    fleet(addr, &repo).await;
+    let start = head(&repo);
+    let meta = |refused: &Value| refused["meta"].as_str().unwrap().to_string();
+
+    let bare = directory(addr, &repo, &["add", "probe", "--why", "w"]).await;
+    assert_eq!(bare["details"]["code"], "E-RS-TYPE-MISSING", "{bare}");
+    let said = meta(&bare);
+    for flag in [
+        "--type <type>",
+        "--title <text>",
+        "--holders one|many",
+        "--rule <text>",
+        "--packet <text> or --brief <path>",
+        "pij directory add --help",
+    ] {
+        assert!(said.contains(flag), "{flag}: {said}");
+    }
+    assert!(said.contains("5 fields are missing or invalid"), "{said}");
+
+    let unexplained = directory(
+        addr,
+        &repo,
+        &[
+            "add",
+            "probe",
+            "--type",
+            "knowledge",
+            "--title",
+            "t",
+            "--holders",
+            "one",
+        ],
+    )
+    .await;
+    assert_eq!(unexplained["details"]["code"], "E-RS-ARG", "{unexplained}");
+    let said = meta(&unexplained);
+    for flag in [
+        "--why <text>",
+        "--keeps <value>",
+        "--rule <text>",
+        "--packet <text>",
+    ] {
+        assert!(said.contains(flag), "{flag}: {said}");
+    }
+
+    let one = added(
+        addr,
+        &repo,
+        &[
+            "probe",
+            "--type",
+            "knowledge",
+            "--title",
+            "t",
+            "--holders",
+            "one",
+        ],
+    )
+    .await;
+    assert_eq!(one["details"]["code"], "E-RS-TYPE-FIELD", "{one}");
+    assert!(
+        !meta(&one).contains("missing or invalid"),
+        "one gap keeps its own refusal: {one}"
+    );
+    assert_eq!(head(&repo), start, "no refused add committed anything");
+    server.abort();
+}
+
 /// ac-0004, ac-0005: a default rule changes with a reason, a fixed one never,
 /// on add and on edit; changing the type re-checks the recorded changes; a
 /// type suggestion is recorded and shown in the view.
