@@ -272,10 +272,10 @@ impl Planned {
             "deliverables": self.template.deliverables.iter().map(|deliverable| json!({
                 "id": deliverable.id,
                 "owner": deliverable.owner,
-                "owner_slot": deliverable.owner_slot,
+                "owner_role": pod::resolve(&self.template.slots, &deliverable.owner, &|id| role_exists(&self.worktree, id)).role,
                 "stages": deliverable.stages,
                 "write_back": deliverable.write_back,
-                "write_back_slot": deliverable.write_back_slot,
+                "write_back_role": deliverable.write_back.as_ref().map(|named| pod::resolve(&self.template.slots, named, &|id| role_exists(&self.worktree, id)).role),
             })).collect::<Vec<_>>(),
             "wiring": wiring_answer(&self.template),
             "procedures": procedures_answer(&self.template, &self.repo),
@@ -437,8 +437,7 @@ async fn plan(
         })
         .collect::<Vec<_>>();
     let live = live_roles(state, &project).await?;
-    let exists =
-        |id: &str| RolePaths::new(id).is_ok_and(|paths| worktree.join(paths.document).is_file());
+    let exists = |id: &str| role_exists(&worktree, id);
     let mut warnings = pod::checks(&template, &plans, &|role| live.contains(role), &exists);
     warnings.extend(pod::procedure_checks(&template, &|procedure| {
         pod::procedure_present(&template, &repo, procedure)
@@ -650,6 +649,7 @@ async fn up(
             by: actor.to_string(),
             at: at.clone(),
         },
+        &|id| role_exists(&planned.worktree, id),
     );
     for warning in &planned.warnings {
         document = pod::logged(
@@ -793,6 +793,11 @@ async fn up(
         canary(state, record_of(&planned), actor, asked).await;
     }
     Ok(answer)
+}
+
+/// Whether the project whose governance worktree is `worktree` has role `id`.
+fn role_exists(worktree: &Path, id: &str) -> bool {
+    RolePaths::new(id).is_ok_and(|paths| worktree.join(paths.document).is_file())
 }
 
 /// Each member of the pod `document` as `(seat, slot, state)`, its state read
@@ -1903,7 +1908,10 @@ async fn stage(
     // B346-R1-07: the write-back is pij's own dispatch, so a role held by a
     // degraded member of this pod is not sent it (the same one-way brake as
     // set; removing it only sends more). Direct messages are untouched.
-    let degraded_holder = match deliverable["write_back"].as_str() {
+    let write_back_role = pod::recorded_role(&deliverable, "write_back", &|id| {
+        role_exists(&opened.record.worktree, id)
+    });
+    let degraded_holder = match write_back_role.as_deref() {
         None => None,
         Some(role_id) => {
             let holders = holders_of(state, &opened.record.project, role_id).await;
@@ -1920,7 +1928,7 @@ async fn stage(
             "the write-back to role {role_id} was not sent: its holder {seat} is a degraded member of this pod, so pij hands it no pod work; send it yourself once it has its tools: pij send role:{role_id} ..."
         ));
     }
-    let write_back = match deliverable["write_back"].as_str() {
+    let write_back = match write_back_role.as_deref() {
         None => None,
         Some(_) if degraded_holder.is_some() => None,
         Some(role_id) => Some(
@@ -2429,8 +2437,14 @@ async fn show(state: &AppState, call: &Call, caller: &CallerContext) -> Result<V
             pod::records(&document, "stages"),
             pod::records(&document, "members"),
         ));
-        shown["owner_holders"] =
-            json!(holders_of(state, &project, row["owner"].as_str().unwrap_or_default()).await);
+        // The role each name means now: a role made since up is shown.
+        let exists = |id: &str| role_exists(&worktree, id);
+        let owner = pod::recorded_role(row, "owner", &exists).unwrap_or_default();
+        shown["owner_holders"] = json!(holders_of(state, &project, &owner).await);
+        shown["owner_role"] = json!(owner);
+        if let Some(role) = pod::recorded_role(row, "write_back", &exists) {
+            shown["write_back_role"] = json!(role);
+        }
         deliverables.push(shown);
     }
     // req-06: a pod taken down reads closing until every member that is not

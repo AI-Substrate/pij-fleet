@@ -149,12 +149,20 @@ pub fn render(data: &Value) -> String {
     {
         lines.push("deliverables:".to_string());
         for deliverable in deliverables {
+            // The name as the template wrote it, and the role it means when
+            // that differs (a slot's role).
+            let role = |field: &str| {
+                let named = deliverable[field].as_str()?;
+                Some(match deliverable[format!("{field}_role")].as_str() {
+                    Some(role) if role != named => format!("{role} (named {named})"),
+                    _ => named.to_string(),
+                })
+            };
             lines.push(format!(
                 "  {}: owner {}{}",
                 text(&deliverable["id"]),
-                text(&deliverable["owner"]),
-                deliverable["write_back"]
-                    .as_str()
+                role("owner").unwrap_or_else(|| "-".to_string()),
+                role("write_back")
                     .map(|role| format!(", written back to {role}"))
                     .unwrap_or_default()
             ));
@@ -333,5 +341,12 @@ mod tests {
         assert!(bare.starts_with("pod call\n"), "{bare}");
         assert!(bare.contains("released: pij-a"), "{bare}");
         assert!(!bare.contains("in project"), "{bare}");
+        let shown = render(&json!({"pod": "call", "deliverables": [
+            {"id": "record", "owner": "note-taker", "owner_role": "scribe", "write_back": "archive", "write_back_role": "archive"},
+        ]}));
+        assert!(
+            shown.contains("record: owner scribe (named note-taker), written back to archive"),
+            "{shown}"
+        );
     }
 }

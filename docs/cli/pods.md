@@ -10,7 +10,7 @@ A pod is made from a template: a folder holding `pod-template.dd.json` (schema `
 - `slots`: each a seat the pod starts, in a role (and instance), with its seed (the slot's focus), the parameters it uses, the tools it needs, `keep_open` and `not_model_of` (a slot that should not share another's model).
 - `wiring`: how the slots feed each other.
 - `consulted`: outside roles the pod asks, and whether one must have a live holder `before_up`.
-- `deliverables`: each with an owner role, its stages, what each stage needs (`stage_needs`) and a role it is written back to (`write_back`). An `owner` or `write_back` that names one of the template's slots means that slot's role, so renaming a slot's role when you adopt a template carries its deliverables with it; any other name is a role id.
+- `deliverables`: each with an owner role, its stages, what each stage needs (`stage_needs`) and a role it is written back to (`write_back`). `owner` and `write_back` are role ids, and a role the project has is always that role. Only a name no role has that is one of the template's slots means that slot's role, so renaming a slot's role when you adopt a template carries its deliverables with it. When a name is both a role and a slot that runs another role, the role is used and `plan` and `up` warn, naming both: rename the slot, or set the field to the role id you mean. A pod's record keeps each name as written and the role it resolved to; `show` and `stage` use a role of that name made since.
 - `procedures`: the procedures it names, each its own (`from: template`, under `procedures/` in its folder) or linked from the repo or the pij skill (`from: repo`), used at `up`, as a `run` or at `close`. `pij proc list --template <path>` lists them; `plan` warns about one that is missing.
 
 A pod's record is `community/pods/<pod>/pod.dd.json` (schema `pij/pod`) on the governance branch: its template and that template's version and hash, the filled parameters, members, consulted roles, deliverables and a log. Seat facts stay in pij's database. The template is never written.
@@ -25,7 +25,7 @@ Checks warn and name their fix; none refuses. pij warns about:
 
 - a consulted role needed before up with no live holder;
 - a slot marked `not_model_of` another that shares its model, or whose model pij cannot tell;
-- a deliverable whose owner or write-back role the project lacks;
+- a deliverable whose owner or write-back role the project lacks, or whose owner or write-back names both a role and a slot that runs another role;
 - a slot whose role cannot start;
 - when the pod already has a record, each seat added running (`pod add <pod> <seat>`) that is not keep-open: `pod down` closes it, so release it first (`pij pod release <pod> <seat>`) to keep it running. `add <seat>` gives the same warning.
 

@@ -1064,6 +1064,119 @@ async fn stages_never_wait_on_a_late_member_and_each_is_written_back_as_a_reques
     rig.server.abort();
 }
 
+/// B364-R1-01: a deliverable's owner or write-back that is an existing role
+/// means that role, even when a slot has the same name (plan warns, naming
+/// both); a name no role has, that is a slot, means that slot's role. The
+/// record, show and the stage write-back all follow.
+#[tokio::test]
+async fn an_existing_role_wins_over_a_slot_and_a_slot_fills_in_for_a_missing_role() {
+    let repo = repo("pij-pod-resolve");
+    let rig = rig(Arc::new(NoHook)).await;
+    fleet(rig.addr, &repo).await;
+    super::role_start::add_notes(rig.addr, &repo).await;
+    let added = directory(
+        rig.addr,
+        &repo,
+        &[
+            "add",
+            "keeper",
+            "--type",
+            "knowledge",
+            "--title",
+            "Keeper",
+            "--holders",
+            "one",
+            "--keeps",
+            "notes/area.md",
+            "--why",
+            "w",
+        ],
+    )
+    .await;
+    assert_eq!(added["ok"], true, "{added}");
+    template(&repo);
+    let file = repo.main.join("pods/build/pod-template.dd.json");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    document["sections"][2]["value"] = json!([
+        {"id": "lead", "role": "notes", "instance": "lead", "parameters": ["subject"]},
+        {"id": "keeper", "role": "notes", "instance": "k", "parameters": ["subject"]},
+    ]);
+    document["sections"][4]["value"] = json!([
+        {"id": "report", "owner": "keeper", "write_back": "keeper"},
+        {"id": "brief", "owner": "lead", "write_back": "lead"},
+    ]);
+    std::fs::write(&file, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+
+    let planned = pod(
+        rig.addr,
+        &repo,
+        &["plan", "pods/build", "--set", "subject=planning"],
+    )
+    .await;
+    assert_eq!(planned["ok"], true, "{planned}");
+    let warned = planned["data"]["warnings"].to_string();
+    assert!(
+        warned.contains("its owner keeper is role keeper and also the name of slot keeper, which runs role notes; role keeper is used"),
+        "{warned}"
+    );
+    assert!(
+        !warned.contains("role lead"),
+        "lead resolves through its slot: {warned}"
+    );
+    let rows = &planned["data"]["deliverables"];
+    assert_eq!(rows[0]["owner_role"], "keeper", "{planned}");
+    assert_eq!(rows[1]["owner_role"], "notes", "{planned}");
+
+    let up = pod(
+        rig.addr,
+        &repo,
+        &[
+            "up",
+            "pods/build",
+            "--set",
+            "subject=planning",
+            "--no-start",
+        ],
+    )
+    .await;
+    assert_eq!(up["ok"], true, "{up}");
+    let shown = pod(rig.addr, &repo, &["show", "build"]).await;
+    let rows = &shown["data"]["deliverables"];
+    assert_eq!(
+        (&rows[0]["owner"], &rows[0]["owner_role"]),
+        (&json!("keeper"), &json!("keeper")),
+        "{shown}"
+    );
+    assert_eq!(
+        (&rows[1]["owner"], &rows[1]["owner_role"]),
+        (&json!("lead"), &json!("notes")),
+        "{shown}"
+    );
+
+    for (deliverable, role) in [("report", "keeper"), ("brief", "notes")] {
+        let staged = pod(
+            rig.addr,
+            &repo,
+            &[
+                "stage",
+                "build",
+                deliverable,
+                "done",
+                "--output",
+                "out/x.md",
+            ],
+        )
+        .await;
+        assert_eq!(staged["ok"], true, "{staged}");
+        let id = staged["data"]["write_back"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{staged}"));
+        let found = rig.store.role_request(id).await.unwrap().unwrap();
+        assert_eq!(found.role, role, "{deliverable}'s write-back");
+    }
+    rig.server.abort();
+}
+
 // --- #346 review round 1 (B346-R1-01..09): each finding's regression.
 
 async fn no_start(rig: &Rig, repo: &Repo, extra: &[&str]) -> Value {
