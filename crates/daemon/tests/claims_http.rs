@@ -576,6 +576,30 @@ async fn prd_claims_past_an_uppercase_prd_folder_and_every_other_spelling() {
     assert_eq!(claim().await["data"]["formatted"], "094");
 }
 
+/// UMX-CLAIM-PRD-REPO: every claim says which checkout and folder it numbered
+/// from and the highest number there, so a number taken from the wrong repo
+/// shows before it is used.
+#[tokio::test]
+async fn a_claim_says_which_checkout_and_folder_it_read_and_the_highest_there() {
+    let rig = rig("pij-claims-scanned", Vec::new()).await;
+    let claimed = rig
+        .call(CODER, "/v1/claim", &["claim", "prd", "--for", "p"])
+        .await;
+    let repo = rig.main.display().to_string();
+    let line = claimed["data"]["line"].as_str().unwrap();
+    assert!(
+        line.ends_with(&format!(
+            "; read docs/project/prds in {repo:?}: highest prd there 001"
+        )),
+        "{claimed}"
+    );
+    assert_eq!(
+        claimed["data"]["scanned"],
+        json!({"repo": repo, "folders": ["docs/project/prds"], "highest": 1}),
+        "{claimed}"
+    );
+}
+
 /// C29 with mixed-case folders: `workstream` and `roadmap` still share one
 /// counter across `Roadmaps` and `WORKSTREAMS`.
 #[tokio::test]
@@ -921,7 +945,9 @@ async fn a_claim_line_fences_a_hostile_subject() {
         .call(CODER, "/v1/claim", &["claim", "plan", "--for", &long])
         .await;
     let line = claimed["data"]["line"].as_str().unwrap();
-    assert!(line.contains("…\"") && line.len() < 700, "{line}");
+    // The bound is on the fenced claim, not the `read` clause after it.
+    let (fenced, _read) = line.split_once("; read ").unwrap();
+    assert!(fenced.contains("…\"") && fenced.len() < 700, "{line}");
 }
 
 /// F142 (squirrel, #193): a PR's file paths come from GitHub, so a plan

@@ -62,8 +62,16 @@ Kinds: plan, prd, workstream, blueprint and workshop are three digits; migration
 is four; any other lowercase kind is three. roadmap is workstream's old name: it
 claims the same numbers, scanning docs/project/workstreams and
 docs/project/roadmaps alike. The next number is one past the highest
-claimed (open or released) and the highest already in the project's main
-checkout. Any other kind is read from docs/project/<kind>, then
+claimed (open or released) and the highest already in the kind's folders:
+docs/plans and docs/plans/archive for plan, docs/project/prds for prd,
+docs/project/<kind>s for workstream, blueprint and workshop,
+crates/store/migrations for migration. They are read in ONE checkout: the
+repo the project records (`pij project show <slug>`; with none recorded, your
+own folder), as its files are on disk. pij reads no other repo, so a project
+whose docs live in a second repo is numbered without them. A claim's first
+line ends `read <folders> in \"<checkout>\": highest <kind> there <NNN>` (or
+says no folder is there): check it before using the number. Any other kind
+is read from docs/project/<kind>, then
 docs/project/<kind>s (NNN-* files and folders). When neither exists,
 docs/<kind> and docs/<kind>s are read only to warn when they already hold
 the claimed number or above; they never set it. A folder's name matches in

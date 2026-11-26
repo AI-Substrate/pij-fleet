@@ -2559,7 +2559,15 @@ Reading more spellings can only raise the next number, never reuse one. Each cla
 `BEGIN IMMEDIATE` transaction over a unique (project, kind, number) key, so
 concurrent claims get distinct consecutive numbers and projects never interact.
 `data.number`, `data.formatted` (`0033`) and `data.floor` (the checkout's highest)
-come back with the row. An absent folder counts as empty, but a checkout or
+come back with the row. Every claim also says what it read (UMX-CLAIM-PRD-REPO):
+`data.scanned` is `{repo, folders, highest}` (the checkout, the folders found
+there relative to it, and the highest number in them), and `data.line`'s first line ends
+`; read <folders> in "<repo>": highest <kind> there <NNN>` (or `none
+numbered`), or `; read "<repo>": no <folders> there, so only earlier claims set
+the number`. The repo is fenced (a path a caller recorded) and the line stays
+one line. The checkout is the repo the project records, as it is on disk;
+no other repo is read, so a project whose docs live in a second repo is
+numbered without them, and this line is where that shows. An absent folder counts as empty, but a checkout or
 folder that exists and cannot be read refuses `E-RS-CLAIM-SCAN` and claims
 nothing: an unread folder is not an empty one. The checkout cannot see unmerged
 branches, so numbers handed out before claims existed are seeded once with
