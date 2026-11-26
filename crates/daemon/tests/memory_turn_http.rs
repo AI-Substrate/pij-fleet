@@ -1852,6 +1852,68 @@ async fn pr359_receipt_does_not_claim_exit_during_graceful_shutdown() {
     rig.server.abort();
 }
 
+/// Refuses every signal: the port answers `Ok(false)`, as for a pid whose
+/// start changed.
+struct RefusesTermination {
+    inner: Arc<dyn LivenessPort>,
+}
+
+#[async_trait::async_trait]
+impl LivenessPort for RefusesTermination {
+    async fn proc_start(&self, pid: u32) -> pij_core::error::Result<Option<u64>> {
+        self.inner.proc_start(pid).await
+    }
+
+    async fn terminate(&self, _proc: ProcIdentity) -> pij_core::error::Result<bool> {
+        Ok(false)
+    }
+}
+
+/// B359 (the reviewer's witness, ported): a signal not delivered is never
+/// reported as a stop, on the held path or the immediate one; each keeps the
+/// close's own "keeps running" note.
+#[tokio::test]
+async fn a_close_stop_whose_signal_is_not_delivered_never_claims_a_stop() {
+    let rig = rig_with(Duration::from_secs(30), &["holder"], |services| {
+        services.liveness = Arc::new(RefusesTermination {
+            inner: services.liveness.clone(),
+        });
+    })
+    .await;
+    let held = post(rig.addr, "/v1/close", close_stop("holder", "prime")).await;
+    assert_eq!(held["data"]["held"], "memory-turn", "{held}");
+    let prompt = prompt_for(&rig, "holder").await;
+    deliver(&rig, "holder", &prompt).await;
+    note_written(&rig, "holder", "pm-001", now_ms()).await;
+    let turn = turn_event(&rig, "holder").await;
+    assert!(
+        turn["then"]
+            .as_str()
+            .unwrap()
+            .starts_with("closed; its process was not stopped:"),
+        "{turn}"
+    );
+    assert_eq!(turn["closed"]["stopped"]["stopped"], false, "{turn}");
+    assert!(
+        turn["closed"]["process"]
+            .as_str()
+            .unwrap()
+            .contains("keeps running"),
+        "{turn}"
+    );
+    let closed = post(rig.addr, "/v1/close", close_stop("plain", "prime")).await;
+    assert_eq!(closed["ok"], true, "{closed}");
+    assert_eq!(closed["data"]["stopped"]["stopped"], false, "{closed}");
+    assert!(
+        closed["data"]["process"]
+            .as_str()
+            .unwrap()
+            .contains("keeps running"),
+        "{closed}"
+    );
+    rig.server.abort();
+}
+
 /// Close --stop notice fix, T3: without `--stop`, a seat whose roles were
 /// released in this context is still asked about them before its close.
 #[tokio::test]
