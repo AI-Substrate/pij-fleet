@@ -308,10 +308,22 @@ pub fn secret_hit(text: &str) -> Option<SecretHit> {
 /// would read as a secret: a path is checked one segment at a time (#346
 /// review, B346-R1-01).
 pub fn secret_value(value: &str) -> bool {
+    secret_in_value(value).is_some()
+}
+
+/// Where in one `--set` value a secret-looking run sits (`line N`, or `path
+/// segment N` for a path value) and the rule it tripped; never the text.
+pub fn secret_in_value(value: &str) -> Option<(String, SecretKind)> {
     if value.starts_with('/') || value.starts_with("~/") {
-        secret_line(&value.replace('/', "\n")).is_some()
+        value
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .enumerate()
+            .find_map(|(index, segment)| {
+                secret_hit(segment).map(|hit| (format!("path segment {}", index + 1), hit.kind))
+            })
     } else {
-        secret_line(value).is_some()
+        secret_hit(value).map(|hit| (format!("line {}", hit.line), hit.kind))
     }
 }
 
@@ -322,11 +334,15 @@ pub fn secret_value(value: &str) -> bool {
 /// it tripped, never the text.
 fn refuse_secrets(sets: &[(String, String)], creator: &Creator) -> Result<(), Refusal> {
     let next = "Take the secret out and point the seat at where it lives instead; if it is not a secret, reword that line so it no longer matches";
-    if let Some((name, _)) = sets.iter().find(|(_, value)| secret_value(value)) {
+    if let Some((name, (place, kind))) = sets
+        .iter()
+        .find_map(|(name, value)| secret_in_value(value).map(|found| (name, found)))
+    {
         return Err(Refusal::new(
             E_SECRET,
             format!(
-                "part: parameter {name} (--set {name}) looks like a secret (a key, token or password); the first turn is committed to the governance branch"
+                "part: parameter {name} (--set {name}), {place} of that value, looks like a secret: {}; the first turn is committed to the governance branch",
+                kind.describe()
             ),
         )
         .with_next(next));
@@ -816,7 +832,29 @@ mod tests {
         assert!(
             refused
                 .message
-                .starts_with("part: parameter token (--set token)"),
+                .starts_with("part: parameter token (--set token), line 1 of that value"),
+            "{refused}"
+        );
+        // B360-R1-02: a multiline value names the line within it and the rule.
+        let refused = refuse_secrets(
+            &[("brief".into(), format!("first line\n{key}"))],
+            &Creator::default(),
+        )
+        .unwrap_err();
+        assert!(
+            refused.message.starts_with(
+                "part: parameter brief (--set brief), line 2 of that value, looks like a secret: a run of 32"
+            ),
+            "{refused}"
+        );
+        assert!(!refused.message.contains(&key), "never echoes it");
+        let refused = refuse_secrets(
+            &[("dir".into(), format!("/Work/{key}/x"))],
+            &Creator::default(),
+        )
+        .unwrap_err();
+        assert!(
+            refused.message.contains("path segment 2 of that value"),
             "{refused}"
         );
     }

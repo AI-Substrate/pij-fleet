@@ -4946,6 +4946,30 @@ fn parse_as_role(
     })
 }
 
+/// A `directory show` refusal answered for `spawn --as`: directory names a
+/// project with `--project`, which spawn lacks, so its project route becomes
+/// spawn's own (`--cwd`; B360-R1-01). Nothing else in the refusal changes.
+fn spawn_routed(mut refused: Envelope<Value>) -> Envelope<Value> {
+    let route = |text: &str| {
+        text.replace(
+            pij_daemon::http::NAME_A_PROJECT,
+            pij_daemon::http::SPAWN_PROJECT_ROUTE,
+        )
+    };
+    refused.meta = refused.meta.as_deref().map(route);
+    // `emit` prints the daemon's own bytes when it kept them.
+    refused.raw_json = None;
+    if let Some(next) = refused
+        .details
+        .as_mut()
+        .and_then(|details| details.get_mut("next"))
+        && let Some(text) = next.as_str()
+    {
+        *next = Value::String(route(text));
+    }
+    refused
+}
+
 /// With `--as` and no `--harness` (PRD 007 req-06): the role's harness, read
 /// with `pij directory show <role> --first-turn`, which writes nothing and
 /// launches nothing, and refuses as the spawn would. Claude's inbound default
@@ -4978,7 +5002,7 @@ async fn fill_role_harness(
     caller.cwd = Some(request.cwd.clone());
     let shown = pij_cli::governance::governance(client, "directory", &args, &caller).await;
     if !shown.ok {
-        return Err(Box::new(shown));
+        return Err(Box::new(spawn_routed(shown)));
     }
     let harness = shown
         .data

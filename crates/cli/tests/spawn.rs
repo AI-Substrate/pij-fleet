@@ -1445,3 +1445,117 @@ fn a_bounce_mid_spawn_leaves_one_seat_and_its_caller_learns_it() {
     next.shutdown_background();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// B360-R1-01: `spawn --as` from a folder no project holds names a route
+/// spawn takes, whether the role's harness is read first (no `--harness`,
+/// through `directory show`) or given. The printed `--cwd` is then run, from
+/// a registered project's repo, and gets past finding the project.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shipped_cli_spawn_as_project_hint_names_cwd_and_runs() {
+    let dir = fresh_dir("pij-spawn-as-hint-e2e");
+    std::fs::write(dir.join("daemon.key"), "spawn-as-hint-key").unwrap();
+    let config = Config {
+        adapters: Adapters {
+            registry: AdapterChoice::Real,
+            spine: AdapterChoice::Real,
+            queue: AdapterChoice::Real,
+            ..Adapters::default()
+        },
+        store_path: dir.join("pij.sqlite").display().to_string(),
+        ..Config::default()
+    };
+    let mut services = pij_daemon::build_services(&config, &dir.join("pane-signals"))
+        .await
+        .unwrap();
+    let mut seat = SeatDescriptor::new("pij-hint-caller", Harness::Omp, "/abs/tree");
+    seat.pane = Some("%hint-caller".into());
+    seat.proc = Some(ProcIdentity {
+        pid: 75740,
+        proc_start: 4321,
+    });
+    services.registry.put(seat.clone()).await.unwrap();
+    services.liveness = Arc::new(FakeLiveness::new().with_proc(seat.proc.unwrap()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            router_with_config(
+                services,
+                HttpConfig {
+                    auth: pij_daemon::http::AuthRing::local("spawn-as-hint-key".into()),
+                    machine_alias: "hint-test".into(),
+                },
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    let outside = dir.join("outside");
+    let repo = dir.join("repo");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::create_dir_all(repo.join("sub")).unwrap();
+    let env = [("TMUX_PANE", "%hint-caller")];
+    let created = run_cli_with_env(
+        &dir,
+        &addr,
+        &[
+            "project",
+            "create",
+            "hint",
+            "--repo",
+            repo.to_str().unwrap(),
+        ],
+        env,
+    );
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stdout)
+    );
+    for harness in [None, Some("omp")] {
+        let spawn = |cwd: &str| {
+            let mut args = vec![
+                "spawn",
+                "--as",
+                "role:notes",
+                "--session",
+                "work",
+                "--cwd",
+                cwd,
+            ];
+            if let Some(harness) = harness {
+                args.extend(["--harness", harness]);
+            }
+            let out = run_cli_with_env(&dir, &addr, &args, env);
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            )
+        };
+        let refused = spawn(outside.to_str().unwrap());
+        assert!(refused.contains("E-RS-NOT-FOUND"), "{harness:?}: {refused}");
+        assert!(
+            !refused.contains("--project"),
+            "{harness:?}: spawn has no --project: {refused}"
+        );
+        assert!(
+            refused.contains(pij_daemon::http::SPAWN_PROJECT_ROUTE),
+            "{harness:?}: {refused}"
+        );
+        let placeholder = refused
+            .split_once("--cwd ")
+            .and_then(|(_, rest)| rest.split([' ', ';', '.', '"', '\\']).next())
+            .unwrap_or_else(|| panic!("a --cwd route: {refused}"));
+        assert_eq!(placeholder, "<folder>", "{harness:?}");
+        let ran = spawn(repo.join("sub").to_str().unwrap());
+        assert!(!ran.contains("E-RS-NOT-FOUND"), "{harness:?}: {ran}");
+        assert!(
+            !ran.contains("no project records"),
+            "{harness:?}: the route finds the project: {ran}"
+        );
+    }
+    server.abort();
+    let _ = std::fs::remove_dir_all(&dir);
+}

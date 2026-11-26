@@ -32,6 +32,7 @@ mod routes;
 pub(crate) use routes::notify_primes;
 mod shim;
 mod spawn_role;
+pub use directory::NAME_A_PROJECT;
 pub use pod::spawn_retry;
 pub use spawn_role::SPAWN_PROJECT_ROUTE;
 pub mod steer;

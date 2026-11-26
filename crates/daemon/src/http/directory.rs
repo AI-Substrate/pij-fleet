@@ -2824,7 +2824,7 @@ pub(crate) async fn project_and_repo(
 }
 
 /// How most commands name a project when the folder does not find one.
-pub(crate) const NAME_A_PROJECT: &str = "name one with --project <slug>";
+pub const NAME_A_PROJECT: &str = "name one with --project <slug>";
 
 /// [`project_and_repo`], with `route` saying how THIS command names a
 /// project in its refusals: a command with no `--project` flag must not
