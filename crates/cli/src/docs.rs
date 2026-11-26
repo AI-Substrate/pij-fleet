@@ -175,6 +175,11 @@ The opening text for a seat of this type, as pij ships it (version {}). A repo m
         type_path(def),
         seed_path(def),
     );
+    if def.id == "prime" {
+        body.push_str(
+            "\nA prime's path from an empty repo to pods: `pij docs get prime-journey`.\n",
+        );
+    }
     Page {
         id: types::docs_page(&def.id),
         body,
