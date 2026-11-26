@@ -13,9 +13,9 @@
 | title | Take a Copilot or OMP update |
 | area | release |
 | kind | mixed |
-| status | draft |
+| status | current |
 | owner | prime |
-| updated | 2026-11-24 |
+| updated | 2026-11-26 |
 | summary | Take a Copilot CLI or OMP update the governed way: update and run the contract check, decide when seats reload, audit with `just doctor`. |
 | superseded_by | — |
 
@@ -108,7 +108,9 @@ _No entries._
 
 ## Comments
 
-_No entries._
+| date | by | text |
+| --- | --- | --- |
+| 2026-11-26 | pij-solid-ox | Live run owed (PRD 005 req-24): at the next deliberate update, by the prime with the operator (OMP 18.22.2 pending as of 2026-11-26: 18.20.2 installed, and the governed registry resolves 18.22.2). The prime ruled it out of the PR that made the procedures current. Copilot had no update (1.0.117-0 installed, ahead of npm latest 1.0.114). Checked read-only; nothing updated. |
 
 <a id="changelog"></a>
 
@@ -117,3 +119,4 @@ _No entries._
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-24 | pij-intense-herring | First draft (PRD 005 s06). |
+| 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |

@@ -7,8 +7,8 @@
 			"name": "meta",
 			"value": {
 				"title": "PRD 005: procedures",
-				"status": "draft",
-				"updated": "2026-11-23",
+				"status": "accepted",
+				"updated": "2026-11-26",
 				"owner": "pij-intense-herring",
 				"summary": "Repeatable work in pij gets written down as procedures: ddocs with stable ids, steps that are commands which check their own preconditions, and everything the procedure needs stored in its own folder. A seat finds the procedure and follows it, or writes one as it goes, so what one seat learns isn't lost when it closes."
 			}
@@ -335,7 +335,7 @@
 					"state": "in-progress",
 					"done_when": "Each is a current procedure that a fresh seat has run end to end from the procedure alone. A disruptive one (bouncing the daemon) may be rehearsed at a quiet time or on a second daemon.",
 					"source": "pij-ultimate-scallop's recommendations, 2026-11-23; operator, 2026-11-23",
-					"note": "Drafts: PROC-fleet-0001, PROC-daemon-0001, PROC-release-0001. Each needs the operator's yes (proc status current) and one full run; the daemon bounce at a quiet time or after the next rs merge."
+					"note": "All eleven procedures current since 2026-11-26 (the operator's yes, recorded with proc status). Runs: PROC-fleet-0001 ran live on pij-capable-marten on 2026-11-26 (a no-op relaunch, and both primes agreed to it). PROC-daemon-0001 is owed at this PR's deploy, by the prime. PROC-release-0001 is owed at the next deliberate update, by the prime with the operator (OMP 18.22.2 pending as of 2026-11-26; Copilot had none). The daemon bounce runs at a quiet time or after the next rs merge."
 				},
 				{
 					"id": "req-25",
@@ -546,6 +546,11 @@
 					"date": "2026-11-24",
 					"by": "pij-intense-herring",
 					"change": "After the #343 review (pij-sole-tyrannosaurus): PROC-fleet-0001 now keeps req-13 (no environment value on any command line: they pass through a 0600 file the pane reads and deletes; secret-like names are not carried; the effort is allowlisted and checked as an exact word). Run keys must be plain words, each run keeps its own progress file, and checks time out at 300 s."
+				},
+				{
+					"date": "2026-11-26",
+					"by": "pij-solid-ox",
+					"change": "The operator approved PRD 005 and its procedures (2026-11-26 09:13, \"get procedures stuff in as well\"). Document status set to accepted (the pij/prd doc_status enum has no current: draft, review, accepted, retired). All eleven procedures moved to current with `proc status current` (req-21), each changelog citing the ruling. PROC-fleet-0001 now changes a seat's model as well as its effort, with the cache-proxy rule, in the scope the same ruling approved."
 				}
 			]
 		}

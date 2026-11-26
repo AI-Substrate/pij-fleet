@@ -10,8 +10,10 @@ validate-all:
     done
     [ "$bad" = 0 ]
 
+# Valid and rendered: a document edited after its last build fails here, so the step is not found done.
 all-valid:
     #!/bin/sh
     for f in $(git ls-files 'docs/project/*.dd.json'); do
       ddocs validate "$f" | jq -e '.data.counts.error == 0 and .data.counts.warn == 0' >/dev/null || exit 1
+      ddocs build --check "$f" | jq -e '.data.drift == false' >/dev/null || { echo "$f: rendering is stale" >&2; exit 1; }
     done

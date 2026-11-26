@@ -13,9 +13,9 @@
 | title | Fold a ruling into the project docs |
 | area | docs |
 | kind | mixed |
-| status | draft |
+| status | current |
 | owner | docs-system |
-| updated | 2026-11-24 |
+| updated | 2026-11-26 |
 | summary | Fold a ruling into the PRD, blueprint and workstream it changes: find the rows, amend them with changelog rows, validate everything, tell the owner. |
 | superseded_by | — |
 
@@ -118,3 +118,5 @@ _No entries._
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-24 | pij-intense-herring | First draft (PRD 005 s06). |
+| 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |
+| 2026-11-26 | pij-solid-ox | s0003 done check now also fails on a stale rendering (`ddocs build --check`): the live run found it reporting done after a PRD edit that had not been rebuilt. |

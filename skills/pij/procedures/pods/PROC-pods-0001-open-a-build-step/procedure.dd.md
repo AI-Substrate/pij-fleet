@@ -13,9 +13,9 @@
 | title | Open a build pod's step worktree |
 | area | pods |
 | kind | runnable |
-| status | draft |
+| status | current |
 | owner | project-manager |
-| updated | 2026-11-25 |
+| updated | 2026-11-26 |
 | summary | Make the step's branch in its own worktree off the base, then record that folder as the pod's work-folder so `pij pod down` records where the step stands. The shipped build pod names it as its up procedure. |
 | superseded_by | — |
 
@@ -124,3 +124,4 @@ _No entries._
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-25 | pij-multiple-nightingale | First draft (PRD 010 s04). |
+| 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |

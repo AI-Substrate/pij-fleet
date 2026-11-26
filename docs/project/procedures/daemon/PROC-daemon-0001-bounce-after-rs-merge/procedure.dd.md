@@ -13,9 +13,9 @@
 | title | Bounce the daemon after an rs merge |
 | area | daemon |
 | kind | runnable |
-| status | draft |
+| status | current |
 | owner | prime |
-| updated | 2026-11-24 |
+| updated | 2026-11-26 |
 | summary | After an rs merge: bring the main checkout up to date, rebuild and restart the daemon with `just bounce-rs`, and audit with `just doctor`. |
 | superseded_by | — |
 
@@ -110,7 +110,9 @@ _No entries._
 
 ## Comments
 
-_No entries._
+| date | by | text |
+| --- | --- | --- |
+| 2026-11-26 | pij-solid-ox | Live run owed (PRD 005 req-24): the prime runs it at the deploy of the PR that made the procedures current, or at the next rs merge, whichever comes first, with --key &lt;PR number&gt;. |
 
 <a id="changelog"></a>
 
@@ -119,3 +121,4 @@ _No entries._
 | date | by | change |
 | --- | --- | --- |
 | 2026-11-24 | pij-intense-herring | First draft (PRD 005 s06). |
+| 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |

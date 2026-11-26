@@ -1,5 +1,5 @@
 # PROC-fleet-0001's own recipes, run by the procedure runner from the repo root.
-# Inputs: PROC_IN_SEAT, PROC_IN_EFFORT.
+# Inputs: PROC_IN_SEAT, PROC_IN_MODEL, PROC_IN_EFFORT (a model, an effort or both).
 
 seat-is-idle-copilot:
     #!/bin/sh
@@ -13,15 +13,19 @@ seat-is-idle-copilot:
 relaunch:
     @sh "{{justfile_directory()}}/relaunch.sh" relaunch
 
-# The seat's process runs on exactly the effort asked for (an allowlisted word, compared as a fixed string).
-effort-is:
-    @sh "{{justfile_directory()}}/relaunch.sh" effort-is
+# The seat's process runs on exactly the model and effort asked for (each checked, then compared as an exact word),
+# with the cache-proxy environment that model needs.
+flags-are:
+    @sh "{{justfile_directory()}}/relaunch.sh" flags-are
 
 show:
     #!/bin/sh
     pij list --json | jq --arg s "$PROC_IN_SEAT" '.data.seats[] | select(.id == $s) | {state, proc, extension_build}'
+    pid=$(pij list --json | jq -r --arg s "$PROC_IN_SEAT" '.data.seats[] | select(.id == $s) | .proc.pid')
+    echo "cache-proxy environment on the new process:"
+    /bin/ps -Eww -o command= -p "$pid" | tr ' ' '\n' | grep -E '^COPILOT_PROVIDER_(TYPE|MODEL_ID)=' || echo "  none (plain Copilot)"
     pane=$(pij list --json | jq -r --arg s "$PROC_IN_SEAT" '.data.seats[] | select(.id == $s) | .pane')
     tmux capture-pane -p -t "$pane" | tail -1
 
-registered: effort-is
+registered: flags-are
     @pij list --json | jq -e --arg s "$PROC_IN_SEAT" '.data.seats[] | select(.id == $s) | .extension_build != null' >/dev/null
