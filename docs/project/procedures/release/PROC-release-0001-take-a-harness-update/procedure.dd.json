@@ -1,142 +1,140 @@
 {
-  "dd": {
-    "schema": "pij/procedure"
-  },
-  "sections": [
-    {
-      "name": "meta",
-      "value": {
-        "id": "PROC-release-0001",
-        "title": "Take a Copilot or OMP update",
-        "area": "release",
-        "kind": "mixed",
-        "owner": "prime",
-        "status": "current",
-        "updated": "2026-11-26",
-        "summary": "Take a Copilot CLI or OMP update the governed way: update and run the contract check, decide when seats exit and resume onto it, audit with `just doctor`."
-      }
-    },
-    {
-      "name": "who_when",
-      "value": {
-        "who": "The prime, or a seat the operator asks.",
-        "when": "When a new Copilot CLI or OMP version is out, or `just doctor` warns `copilot-sdk`. Run it with `--key <harness>-<version>`."
-      }
-    },
-    {
-      "name": "inputs",
-      "value": [
-        {
-          "name": "harness",
-          "description": "copilot or omp",
-          "required": "yes"
-        }
-      ]
-    },
-    {
-      "name": "preconditions",
-      "value": []
-    },
-    {
-      "name": "steps",
-      "value": [
-        {
-          "id": "s0001",
-          "title": "Update and check the harness",
-          "kind": "run",
-          "done_when": "The update ran and its contract check passed (Copilot: update-copilot says the fleet may reload; OMP: omp-doctor passes).",
-          "run": "update",
-          "inputs": [
-            "harness"
-          ]
-        },
-        {
-          "id": "s0002",
-          "title": "Decide when seats move to the new version",
-          "kind": "decision",
-          "done_when": "The prime picked when seats move to the new version. A seat moves only when it exits and resumes: OMP's /reload keeps the old binary running. Seats mid-turn wait.",
-          "decide": "prime"
-        },
-        {
-          "id": "s0003",
-          "title": "Audit the installed surfaces",
-          "kind": "run",
-          "done_when": "`just doctor` shows no copilot-sdk or OMP warning.",
-          "run": "doctor"
-        }
-      ]
-    },
-    {
-      "name": "commands",
-      "value": []
-    },
-    {
-      "name": "done_when",
-      "value": "The harness is on the new version, its contract check passed, and the prime has said when seats exit and resume onto it."
-    },
-    {
-      "name": "known_limits",
-      "value": [
-        {
-          "id": "l-1",
-          "text": "Seats never update themselves (COPILOT_AUTO_UPDATE=false); a seat's version changes only when it relaunches onto the new binary."
-        }
-      ]
-    },
-    {
-      "name": "mistakes",
-      "value": [
-        {
-          "id": "m-1",
-          "text": "Reloading seats after a failed contract check: the SDK may drop pij_send and the hooks (D-F208-2)."
-        }
-      ]
-    },
-    {
-      "name": "carries_out",
-      "value": []
-    },
-    {
-      "name": "operates",
-      "value": []
-    },
-    {
-      "name": "uses",
-      "value": []
-    },
-    {
-      "name": "side_effects",
-      "value": []
-    },
-    {
-      "name": "comments",
-      "value": [
-        {
-          "date": "2026-11-26",
-          "by": "pij-solid-ox",
-          "text": "Live run owed (PRD 005 req-24): at the next deliberate update, by the prime with the operator (OMP 18.22.2 pending as of 2026-11-26: 18.20.2 installed, and the governed registry resolves 18.22.2). The prime ruled it out of the PR that made the procedures current. Copilot had no update (1.0.117-0 installed, ahead of npm latest 1.0.114). Checked read-only; nothing updated."
-        }
-      ]
-    },
-    {
-      "name": "changelog",
-      "value": [
-        {
-          "date": "2026-11-24",
-          "by": "pij-intense-herring",
-          "change": "First draft (PRD 005 s06)."
-        },
-        {
-          "date": "2026-11-26",
-          "by": "operator",
-          "change": "Status draft → current; approved by operator (2026-11-26 09:13, \"get procedures stuff in as well\": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox."
-        },
-        {
-          "date": "2026-11-26",
-          "by": "pij-existing-elk",
-          "change": "s0002 says seats move to a new version by exiting and resuming, not by /reload, which keeps the old binary (dogfood FLT-RELOAD-NOT-RESTART)."
-        }
-      ]
-    }
-  ]
+	"dd": {
+		"schema": "pij/procedure"
+	},
+	"sections": [
+		{
+			"name": "meta",
+			"value": {
+				"id": "PROC-release-0001",
+				"title": "Take a Copilot or OMP update",
+				"area": "release",
+				"kind": "mixed",
+				"owner": "prime",
+				"status": "current",
+				"updated": "2026-11-26",
+				"summary": "Take a Copilot CLI or OMP update the governed way: update and run the contract check, decide when seats exit and resume onto it, audit with `just doctor`."
+			}
+		},
+		{
+			"name": "who_when",
+			"value": {
+				"who": "The prime, or a seat the operator asks.",
+				"when": "When a new Copilot CLI or OMP version is out, or `just doctor` warns `copilot-sdk`. Run it with `--key <harness>-<version>`."
+			}
+		},
+		{
+			"name": "inputs",
+			"value": [
+				{
+					"name": "harness",
+					"description": "copilot or omp",
+					"required": "yes"
+				}
+			]
+		},
+		{
+			"name": "preconditions",
+			"value": []
+		},
+		{
+			"name": "steps",
+			"value": [
+				{
+					"id": "s0001",
+					"title": "Update and check the harness",
+					"kind": "run",
+					"done_when": "The update ran and its contract check passed (Copilot: update-copilot says the fleet may reload; OMP: omp-doctor passes).",
+					"run": "update",
+					"inputs": ["harness"]
+				},
+				{
+					"id": "s0002",
+					"title": "Decide when seats move to the new version",
+					"kind": "decision",
+					"done_when": "The prime picked when seats move to the new version. A seat moves only when it exits and resumes: OMP's /reload keeps the old binary running. Seats mid-turn wait.",
+					"decide": "prime"
+				},
+				{
+					"id": "s0003",
+					"title": "Audit the installed surfaces",
+					"kind": "run",
+					"done_when": "`just doctor` shows no copilot-sdk or OMP warning.",
+					"run": "doctor"
+				}
+			]
+		},
+		{
+			"name": "commands",
+			"value": []
+		},
+		{
+			"name": "done_when",
+			"value": "The harness is on the new version, its contract check passed, and the prime has said when seats exit and resume onto it."
+		},
+		{
+			"name": "known_limits",
+			"value": [
+				{
+					"id": "l-1",
+					"text": "Seats never update themselves (COPILOT_AUTO_UPDATE=false); a seat's version changes only when it relaunches onto the new binary."
+				}
+			]
+		},
+		{
+			"name": "mistakes",
+			"value": [
+				{
+					"id": "m-1",
+					"text": "Reloading seats after a failed contract check: the SDK may drop pij_send and the hooks (D-F208-2)."
+				}
+			]
+		},
+		{
+			"name": "carries_out",
+			"value": []
+		},
+		{
+			"name": "operates",
+			"value": []
+		},
+		{
+			"name": "uses",
+			"value": []
+		},
+		{
+			"name": "side_effects",
+			"value": []
+		},
+		{
+			"name": "comments",
+			"value": [
+				{
+					"date": "2026-11-26",
+					"by": "pij-solid-ox",
+					"text": "Live run owed (PRD 005 req-24): at the next deliberate update, by the prime with the operator (OMP 18.22.2 pending as of 2026-11-26: 18.20.2 installed, and the governed registry resolves 18.22.2). The prime ruled it out of the PR that made the procedures current. Copilot had no update (1.0.117-0 installed, ahead of npm latest 1.0.114). Checked read-only; nothing updated."
+				}
+			]
+		},
+		{
+			"name": "changelog",
+			"value": [
+				{
+					"date": "2026-11-24",
+					"by": "pij-intense-herring",
+					"change": "First draft (PRD 005 s06)."
+				},
+				{
+					"date": "2026-11-26",
+					"by": "operator",
+					"change": "Status draft → current; approved by operator (2026-11-26 09:13, \"get procedures stuff in as well\": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox."
+				},
+				{
+					"date": "2026-11-26",
+					"by": "pij-existing-elk",
+					"change": "s0002 says seats move to a new version by exiting and resuming, not by /reload, which keeps the old binary (dogfood FLT-RELOAD-NOT-RESTART)."
+				}
+			]
+		}
+	]
 }
