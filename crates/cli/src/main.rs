@@ -316,7 +316,9 @@ enum Command {
         /// daemon reads the role, fills its parameters and sends the seat its
         /// first turn; the role's harness, model and effort apply unless a
         /// flag gives them. Preview the first turn with
-        /// `pij directory show <id> --first-turn`.
+        /// `pij directory show <id> --first-turn`. Excludes --role: the seat
+        /// role (pm, worker, pa) comes from the role's id. You become the
+        /// seat's parent unless --parent names another.
         #[arg(
             long = "as",
             value_name = "role:<id>[/<instance>]",
@@ -360,6 +362,7 @@ enum Command {
         #[arg(long)]
         parent: Option<String>,
         /// Stamp the child's role from above (pm, worker, pa); you become its parent.
+        /// Not with --as, which stamps it from the role's id.
         #[arg(long)]
         role: Option<String>,
         /// Configure Claude to accept cross-session inbound messages.
@@ -4943,6 +4946,30 @@ fn parse_as_role(
     })
 }
 
+/// A `directory show` refusal answered for `spawn --as`: directory names a
+/// project with `--project`, which spawn lacks, so its project route becomes
+/// spawn's own (`--cwd`; B360-R1-01). Nothing else in the refusal changes.
+fn spawn_routed(mut refused: Envelope<Value>) -> Envelope<Value> {
+    let route = |text: &str| {
+        text.replace(
+            pij_daemon::http::NAME_A_PROJECT,
+            pij_daemon::http::SPAWN_PROJECT_ROUTE,
+        )
+    };
+    refused.meta = refused.meta.as_deref().map(route);
+    // `emit` prints the daemon's own bytes when it kept them.
+    refused.raw_json = None;
+    if let Some(next) = refused
+        .details
+        .as_mut()
+        .and_then(|details| details.get_mut("next"))
+        && let Some(text) = next.as_str()
+    {
+        *next = Value::String(route(text));
+    }
+    refused
+}
+
 /// With `--as` and no `--harness` (PRD 007 req-06): the role's harness, read
 /// with `pij directory show <role> --first-turn`, which writes nothing and
 /// launches nothing, and refuses as the spawn would. Claude's inbound default
@@ -4975,7 +5002,7 @@ async fn fill_role_harness(
     caller.cwd = Some(request.cwd.clone());
     let shown = pij_cli::governance::governance(client, "directory", &args, &caller).await;
     if !shown.ok {
-        return Err(Box::new(shown));
+        return Err(Box::new(spawn_routed(shown)));
     }
     let harness = shown
         .data
@@ -7257,6 +7284,55 @@ PEC notice";
             request.accept_inbound,
             "plan 116: Claude seats accept inbound by default with no flags"
         );
+    }
+
+    /// Report of #345: the route `spawn --as`'s project refusal names is a
+    /// flag `spawn --as` parses (it once named `--project`, which it has not).
+    #[test]
+    fn spawn_as_project_route_parses_as_a_spawn_flag() {
+        let route = pij_daemon::http::SPAWN_PROJECT_ROUTE;
+        let flags: Vec<&str> = route
+            .split_whitespace()
+            .filter(|word| word.starts_with("--"))
+            .collect();
+        assert_eq!(flags, ["--cwd"], "{route}");
+        let parsed = Cli::try_parse_from([
+            "pij-rs",
+            "spawn",
+            "--as",
+            "role:notes",
+            flags[0],
+            "/abs/tree",
+        ])
+        .expect("the hint's flag parses");
+        let Command::Spawn { cwd, .. } = parsed.command else {
+            panic!("a spawn");
+        };
+        assert_eq!(cwd.as_deref(), Some(std::path::Path::new("/abs/tree")));
+    }
+
+    /// Dogfood sweep of spawn --as hints: the command `pod up` prints for a
+    /// slot it could not start parses as a spawn (it printed the harness
+    /// bare, as a positional spawn rejects).
+    #[test]
+    fn pod_up_retry_command_parses_as_a_spawn() {
+        let command = pij_daemon::http::spawn_retry("notes/s1", "omp", "pij-a");
+        let argv: Vec<&str> = std::iter::once("pij-rs")
+            .chain(command.split_whitespace().skip(1))
+            .collect();
+        let parsed = Cli::try_parse_from(argv).expect("the retry parses");
+        let Command::Spawn {
+            as_role,
+            harness,
+            parent,
+            ..
+        } = parsed.command
+        else {
+            panic!("a spawn");
+        };
+        assert_eq!(as_role.as_deref(), Some("role:notes/s1"));
+        assert_eq!(harness, Some(Harness::Omp));
+        assert_eq!(parent.as_deref(), Some("pij-a"));
     }
 
     #[test]

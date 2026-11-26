@@ -32,6 +32,9 @@ mod routes;
 pub(crate) use routes::notify_primes;
 mod shim;
 mod spawn_role;
+pub use directory::NAME_A_PROJECT;
+pub use pod::spawn_retry;
+pub use spawn_role::SPAWN_PROJECT_ROUTE;
 pub mod steer;
 mod turn_end;
 mod types;
@@ -1880,7 +1883,7 @@ async fn launch_owned(
             .map(|_| descriptor.clone())
             .map_err(|error| error.to_string()),
     };
-    let descriptor = match written {
+    let mut descriptor = match written {
         Ok(written) => written,
         Err(write_error) => {
             // No row was written, so nothing can bind: the pane goes.
@@ -1909,7 +1912,15 @@ async fn launch_owned(
     // brake: the commit's result decides whether the spawn survives.
     let details = match starting {
         Some(prepared) => match spawn_role::commit(state, prepared, &descriptor).await {
-            Ok(receipt) => Some(receipt),
+            Ok(receipt) => {
+                // The assign stamped the seat role on the row; the receipt's
+                // `data` is this snapshot, so it carries the same answer as
+                // `details.role.seat_role` (finding ACC-SPAWNAS-ROLE-CONFLICT).
+                if let Some(seat_role) = receipt["role"]["seat_role"].as_str() {
+                    descriptor.role = Some(seat_role.to_string());
+                }
+                Some(receipt)
+            }
             Err(refusal) => {
                 let mut refusal = refusal;
                 refusal.message = match roll_back(state, &pane.id, watch, Some(&descriptor.id))

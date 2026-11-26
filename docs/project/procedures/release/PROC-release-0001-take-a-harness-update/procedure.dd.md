@@ -16,7 +16,7 @@
 | status | current |
 | owner | prime |
 | updated | 2026-11-26 |
-| summary | Take a Copilot CLI or OMP update the governed way: update and run the contract check, decide when seats reload, audit with `just doctor`. |
+| summary | Take a Copilot CLI or OMP update the governed way: update and run the contract check, decide when seats exit and resume onto it, audit with `just doctor`. |
 | superseded_by | — |
 
 <a id="who-when"></a>
@@ -49,7 +49,7 @@ _No entries._
 | id | title | kind | run | decide | follow | inputs | pre | requires | done | done_when | who | changes_access | proven_in_practice | note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | s0001 | Update and check the harness | run | update | — | — | harness | — | — | — | The update ran and its contract check passed (Copilot: update-copilot says the fleet may reload; OMP: omp-doctor passes). | — | — | — | — |
-| s0002 | Decide when seats reload | decision | — | prime | — | — | — | — | — | The prime picked when seats reload onto the new version; seats mid-turn wait. | — | — | — | — |
+| s0002 | Decide when seats move to the new version | decision | — | prime | — | — | — | — | — | The prime picked when seats move to the new version. A seat moves only when it exits and resumes: OMP's /reload keeps the old binary running. Seats mid-turn wait. | — | — | — | — |
 | s0003 | Audit the installed surfaces | run | doctor | — | — | — | — | — | — | `just doctor` shows no copilot-sdk or OMP warning. | — | — | — | — |
 
 <a id="commands"></a>
@@ -62,7 +62,7 @@ _No entries._
 
 ## Done when
 
-The harness is on the new version, its contract check passed, and the prime has said when seats reload.
+The harness is on the new version, its contract check passed, and the prime has said when seats exit and resume onto it.
 
 <a id="known-limits"></a>
 
@@ -120,3 +120,4 @@ _No entries._
 | --- | --- | --- |
 | 2026-11-24 | pij-intense-herring | First draft (PRD 005 s06). |
 | 2026-11-26 | operator | Status draft → current; approved by operator (2026-11-26 09:13, "get procedures stuff in as well": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox. |
+| 2026-11-26 | pij-existing-elk | s0002 says seats move to a new version by exiting and resuming, not by /reload, which keeps the old binary (dogfood FLT-RELOAD-NOT-RESTART). |

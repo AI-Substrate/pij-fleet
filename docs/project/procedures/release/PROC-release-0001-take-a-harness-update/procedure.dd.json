@@ -13,7 +13,7 @@
 				"owner": "prime",
 				"status": "current",
 				"updated": "2026-11-26",
-				"summary": "Take a Copilot CLI or OMP update the governed way: update and run the contract check, decide when seats reload, audit with `just doctor`."
+				"summary": "Take a Copilot CLI or OMP update the governed way: update and run the contract check, decide when seats exit and resume onto it, audit with `just doctor`."
 			}
 		},
 		{
@@ -50,9 +50,9 @@
 				},
 				{
 					"id": "s0002",
-					"title": "Decide when seats reload",
+					"title": "Decide when seats move to the new version",
 					"kind": "decision",
-					"done_when": "The prime picked when seats reload onto the new version; seats mid-turn wait.",
+					"done_when": "The prime picked when seats move to the new version. A seat moves only when it exits and resumes: OMP's /reload keeps the old binary running. Seats mid-turn wait.",
 					"decide": "prime"
 				},
 				{
@@ -70,7 +70,7 @@
 		},
 		{
 			"name": "done_when",
-			"value": "The harness is on the new version, its contract check passed, and the prime has said when seats reload."
+			"value": "The harness is on the new version, its contract check passed, and the prime has said when seats exit and resume onto it."
 		},
 		{
 			"name": "known_limits",
@@ -128,6 +128,11 @@
 					"date": "2026-11-26",
 					"by": "operator",
 					"change": "Status draft → current; approved by operator (2026-11-26 09:13, \"get procedures stuff in as well\": approves PRD 005 and its procedures (prime packet procedures-current)); recorded by pij-solid-ox."
+				},
+				{
+					"date": "2026-11-26",
+					"by": "pij-existing-elk",
+					"change": "s0002 says seats move to a new version by exiting and resuming, not by /reload, which keeps the old binary (dogfood FLT-RELOAD-NOT-RESTART)."
 				}
 			]
 		}

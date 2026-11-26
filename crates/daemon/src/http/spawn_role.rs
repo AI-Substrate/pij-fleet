@@ -18,7 +18,7 @@ use axum::response::Response;
 use pij_core::model::{Envelope, ErrorKind, SeatDescriptor, SeatId};
 use serde_json::{Value, json};
 
-use super::directory::{parameter_sets, project_and_repo, read_packet};
+use super::directory::{own_session_files, parameter_sets, project_and_repo_routed, read_packet};
 use super::identity::{self, CallerContext};
 use super::routes::Trigger;
 use super::types::{AsRole, SpawnRequest};
@@ -43,6 +43,11 @@ pub(super) struct Prepared {
 
 /// The warning a spawn with no role carries (PRD 007 req-07): it launches as
 /// before and says how to start one in a role.
+/// How `spawn --as` names a project: by the folder it runs in. spawn has no
+/// `--project` flag, so its refusals never point at one (report of #345).
+pub const SPAWN_PROJECT_ROUTE: &str =
+    "spawn it from a folder in the project's repo: --cwd <folder>";
+
 pub(super) const NO_ROLE: &str = "this seat starts in no role. Start it in one with `pij spawn ... --as role:<id>`; a role that does not exist yet is added first with `pij directory add <id> --type <type> --why <text> ...` (`pij directory --help`)";
 
 /// Read the role, fill its parameters and build its first turn, before any
@@ -86,16 +91,25 @@ pub(super) async fn prepare(
     )
     .await
     {
-        identity::Resolved::Seat(seat, _) => seat.id,
+        identity::Resolved::Seat(seat, _) => seat,
         identity::Resolved::Refusal(response) => return Err(Box::new(response)),
     };
+    let own_files = own_session_files(&creator);
+    let creator = creator.id;
+    // Finding FLT-SPAWNAS-PARENT: a seat started in a role is parented to
+    // the seat that started it, as `pod up` does, unless --parent names one.
+    // A POLICY: it decides the parent. A caller pij cannot identify was
+    // refused above, before any launch, so there is no parentless case.
+    if request.parent.is_none() {
+        request.parent = Some(creator.clone());
+    }
     let folder = CallerContext {
         cwd: Some(request.cwd.clone()),
         ..CallerContext::default()
     };
     let refuse =
         |step: &'static str| move |refusal: Refusal| step_refused(command_name, step, &refusal);
-    let (project, repo) = project_and_repo(state, &folder, None)
+    let (project, repo) = project_and_repo_routed(state, &folder, None, SPAWN_PROJECT_ROUTE)
         .await
         .map_err(refuse("finding the project from the spawn's folder"))?;
     let root = crate::community::root::find(&repo).map_err(refuse("finding governance"))?;
@@ -105,7 +119,7 @@ pub(super) async fn prepare(
     let packet = as_role
         .packet
         .as_deref()
-        .map(|file| read_packet(&caller, file, &repo))
+        .map(|file| read_packet(&caller, file, &repo, own_files.as_deref()))
         .transpose()
         .map_err(refuse("reading --packet"))?;
     let sets = parameter_sets(&as_role.set).map_err(refuse("filling the role's parameters"))?;

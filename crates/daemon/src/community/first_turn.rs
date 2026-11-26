@@ -202,12 +202,50 @@ fn strings(value: Option<&Value>) -> Vec<String> {
 /// A creator's text that looks like a secret (review of #345, N5).
 pub const E_SECRET: &str = "E-RS-FIRST-TURN-SECRET";
 
+/// Which rule a secret-looking line tripped: named in the refusal so the
+/// caller can find it without the text being repeated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SecretKind {
+    /// A name holding KEY, TOKEN, SECRET or PASSWORD given a value.
+    Assigned,
+    /// A long run of key characters.
+    Run,
+}
+
+impl SecretKind {
+    fn describe(self) -> &'static str {
+        match self {
+            Self::Assigned => {
+                "a name holding KEY, TOKEN, SECRET or PASSWORD followed by = or : and a value of 8 or more characters"
+            }
+            Self::Run => {
+                "a run of 32 or more characters (letters, digits, + / _ -) mixing upper case, lower case and digits"
+            }
+        }
+    }
+}
+
+/// Where in a text a secret-looking value sits: its 1-based line, and the
+/// rule it tripped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SecretHit {
+    /// 1-based line within the text scanned.
+    pub line: usize,
+    /// The rule it tripped.
+    pub kind: SecretKind,
+}
+
 /// The 1-based line of `text` that looks like a secret: a name holding KEY,
 /// TOKEN, SECRET or PASSWORD followed by `=` or `:` and a value of eight or
 /// more characters, or a run of 32 or more key characters mixing upper case,
 /// lower case and digits. A seat id, a commit hash or a UUID has no upper
 /// case, so it never matches.
 pub fn secret_line(text: &str) -> Option<usize> {
+    secret_hit(text).map(|hit| hit.line)
+}
+
+/// [`secret_line`], with the rule the line tripped.
+pub fn secret_hit(text: &str) -> Option<SecretHit> {
     const NAMES: [&str; 4] = ["KEY", "TOKEN", "SECRET", "PASSWORD"];
     let assigned = |line: &str| {
         let upper = line.to_ascii_uppercase();
@@ -229,18 +267,40 @@ pub fn secret_line(text: &str) -> Option<usize> {
             })
         })
     };
+    let keyish = |word: &str| {
+        word.len() >= 32
+            && word.chars().any(|ch| ch.is_ascii_uppercase())
+            && word.chars().any(|ch| ch.is_ascii_lowercase())
+            && word.chars().any(|ch| ch.is_ascii_digit())
+    };
+    // The run counts `/` as a key character (base64 uses it), so a whole
+    // absolute path with one capital letter would read as a secret. A word
+    // that starts with `/` (an absolute or `~/` path) is checked one segment
+    // at a time, as #346 does for a `--set` value. A BRAKE narrowed: a key
+    // still trips when any 32-character run between slashes looks like one.
     let run = |line: &str| {
         line.split(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '_' | '-')))
             .any(|word| {
-                word.len() >= 32
-                    && word.chars().any(|ch| ch.is_ascii_uppercase())
-                    && word.chars().any(|ch| ch.is_ascii_lowercase())
-                    && word.chars().any(|ch| ch.is_ascii_digit())
+                if word.starts_with('/') {
+                    word.split('/').any(keyish)
+                } else {
+                    keyish(word)
+                }
             })
     };
-    text.lines()
-        .position(|line| assigned(line) || run(line))
-        .map(|index| index + 1)
+    text.lines().enumerate().find_map(|(index, line)| {
+        let kind = if assigned(line) {
+            SecretKind::Assigned
+        } else if run(line) {
+            SecretKind::Run
+        } else {
+            return None;
+        };
+        Some(SecretHit {
+            line: index + 1,
+            kind,
+        })
+    })
 }
 
 /// Whether one `--set` value looks like a secret. The long-run check counts
@@ -248,43 +308,63 @@ pub fn secret_line(text: &str) -> Option<usize> {
 /// would read as a secret: a path is checked one segment at a time (#346
 /// review, B346-R1-01).
 pub fn secret_value(value: &str) -> bool {
+    secret_in_value(value).is_some()
+}
+
+/// Where in one `--set` value a secret-looking run sits (`line N`, or `path
+/// segment N` for a path value) and the rule it tripped; never the text.
+pub fn secret_in_value(value: &str) -> Option<(String, SecretKind)> {
     if value.starts_with('/') || value.starts_with("~/") {
-        secret_line(&value.replace('/', "\n")).is_some()
+        value
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .enumerate()
+            .find_map(|(index, segment)| {
+                secret_hit(segment).map(|hit| (format!("path segment {}", index + 1), hit.kind))
+            })
     } else {
-        secret_line(value).is_some()
+        secret_hit(value).map(|hit| (format!("line {}", hit.line), hit.kind))
     }
 }
 
 /// Refuse a first turn whose creator text looks like a secret: the parts
 /// the creator adds (`--set` values, `--focus`, `--packet`) are committed to
 /// the governance branch, which may be public. A BRAKE: it only ever commits
-/// less. The refusal names where, never the text.
+/// less. The refusal names the part, the line WITHIN that part and the rule
+/// it tripped, never the text.
 fn refuse_secrets(sets: &[(String, String)], creator: &Creator) -> Result<(), Refusal> {
-    if let Some((name, _)) = sets.iter().find(|(_, value)| secret_value(value)) {
+    let next = "Take the secret out and point the seat at where it lives instead; if it is not a secret, reword that line so it no longer matches";
+    if let Some((name, (place, kind))) = sets
+        .iter()
+        .find_map(|(name, value)| secret_in_value(value).map(|found| (name, found)))
+    {
         return Err(Refusal::new(
             E_SECRET,
             format!(
-                "--set {name} looks like a secret (a key, token or password); the first turn is committed to the governance branch"
+                "part: parameter {name} (--set {name}), {place} of that value, looks like a secret: {}; the first turn is committed to the governance branch",
+                kind.describe()
             ),
         )
-        .with_next("Take the secret out and point the seat at where it lives instead"));
+        .with_next(next));
     }
     let mut parts: Vec<(String, &str)> = Vec::new();
     if let Some(focus) = &creator.focus {
-        parts.push(("--focus".to_string(), focus));
+        parts.push(("focus (--focus)".to_string(), focus));
     }
     if let Some((file, text)) = &creator.packet {
-        parts.push((format!("--packet {file}"), text));
+        parts.push((format!("packet {file} (--packet)"), text));
     }
-    for (source, text) in parts {
-        if let Some(line) = secret_line(text) {
+    for (part, text) in parts {
+        if let Some(hit) = secret_hit(text) {
             return Err(Refusal::new(
                 E_SECRET,
                 format!(
-                    "{source}, line {line}, looks like a secret (a key, token or password); the first turn is committed to the governance branch"
+                    "part: {part}, line {} of that part (not of the whole first turn), looks like a secret: {}; the first turn is committed to the governance branch",
+                    hit.line,
+                    hit.kind.describe()
                 ),
             )
-            .with_next("Take the secret out and point the seat at where it lives instead"));
+            .with_next(next));
         }
     }
     Ok(())
@@ -709,8 +789,109 @@ mod tests {
         };
         let refused = refuse_secrets(&[], &creator).unwrap_err();
         assert_eq!(refused.code, E_SECRET);
-        assert!(refused.message.starts_with("--focus, line 2"), "{refused}");
+        assert!(
+            refused
+                .message
+                .starts_with("part: focus (--focus), line 2 of that part"),
+            "{refused}"
+        );
         assert!(!refused.message.contains("abcdefgh12"), "never echoes it");
+    }
+
+    /// Report of #345: a packet's refusal names the part, the line within it
+    /// and the rule tripped, never the text; a parameter names itself.
+    #[test]
+    fn a_secret_refusal_names_the_part_its_line_and_the_rule() {
+        let key = format!("aB3{}", "xY7".repeat(11));
+        let creator = Creator {
+            seat: "pij-a".into(),
+            packet: Some(("notes.md".into(), format!("# Notes\n\nsee {key} here\n"))),
+            ..Creator::default()
+        };
+        let refused = refuse_secrets(&[], &creator).unwrap_err();
+        assert!(
+            refused.message.starts_with(
+                "part: packet notes.md (--packet), line 3 of that part (not of the whole first turn), looks like a secret: a run of 32"
+            ),
+            "{refused}"
+        );
+        assert!(!refused.message.contains(&key), "never echoes it");
+        let assigned = Creator {
+            seat: "pij-a".into(),
+            packet: Some(("p.md".into(), "x\npassword: abcdefgh12".into())),
+            ..Creator::default()
+        };
+        let refused = refuse_secrets(&[], &assigned).unwrap_err();
+        assert!(
+            refused.message.contains("line 2 of that part")
+                && refused.message.contains("a name holding KEY"),
+            "{refused}"
+        );
+        let refused =
+            refuse_secrets(&[("token".into(), key.clone())], &Creator::default()).unwrap_err();
+        assert!(
+            refused
+                .message
+                .starts_with("part: parameter token (--set token), line 1 of that value"),
+            "{refused}"
+        );
+        // B360-R1-02: a multiline value names the line within it and the rule.
+        let refused = refuse_secrets(
+            &[("brief".into(), format!("first line\n{key}"))],
+            &Creator::default(),
+        )
+        .unwrap_err();
+        assert!(
+            refused.message.starts_with(
+                "part: parameter brief (--set brief), line 2 of that value, looks like a secret: a run of 32"
+            ),
+            "{refused}"
+        );
+        assert!(!refused.message.contains(&key), "never echoes it");
+        let refused = refuse_secrets(
+            &[("dir".into(), format!("/Work/{key}/x"))],
+            &Creator::default(),
+        )
+        .unwrap_err();
+        assert!(
+            refused.message.contains("path segment 2 of that value"),
+            "{refused}"
+        );
+    }
+
+    /// Report of #345: an absolute path in a packet or focus (capitals and
+    /// digits, 32+ characters with its slashes) and a GitHub noreply address
+    /// are not secrets. The brake still catches real-shaped keys: a bare
+    /// token, a base64 key with slashes, and a key held in one path segment.
+    /// Every key here is a generated dummy.
+    #[test]
+    fn paths_and_noreply_addresses_pass_and_key_shapes_still_refuse() {
+        for clean in [
+            "- Fresh clone at /Users/Someone/Work/team-work/rules-s1, on a branch off main",
+            "see ~/Work/Projects/Unimatrix2/main/docs/plans/042-rules/plan.md",
+            "Co-authored-by: Bot <198982749+Copilot@users.noreply.github.com>",
+            "email 41898282+github-actions[bot]@users.noreply.github.com",
+        ] {
+            assert_eq!(secret_line(clean), None, "{clean}");
+        }
+        let token = format!("ghp_{}", "Ab1".repeat(12));
+        let base64 = format!(
+            "{}/{}/{}",
+            "wJa1rX".repeat(2),
+            "K7mDe".repeat(2),
+            "bP9xR".repeat(3)
+        );
+        let segment = format!("/tmp/{}/x", "aB3dE5fG".repeat(5));
+        for (name, secret) in [("token", token), ("base64", base64), ("segment", segment)] {
+            assert_eq!(
+                secret_hit(&format!("ok\n{secret}")),
+                Some(SecretHit {
+                    line: 2,
+                    kind: SecretKind::Run
+                }),
+                "{name}"
+            );
+        }
     }
 
     /// #346 review B346-R1-01: a `--set` path with capital letters is not a
