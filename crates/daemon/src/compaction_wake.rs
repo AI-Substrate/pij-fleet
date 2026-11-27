@@ -16,10 +16,11 @@
 //!    [`COMPACT_DELIVERY_BOUND_MS`], then settled `undelivered`;
 //! 3. it has started anything since the delivery (an own event other than
 //!    `seat.activity` idle, or a message pushed to it): settled `resumed`;
-//! 4. the delivery is under [`COMPACT_SETTLE_MS`] old, the seat isn't idle, or
+//! 4. it holds nothing (no open role holding, no open claim): settled
+//!    `holds-nothing` right away, without waiting out [`COMPACT_SETTLE_MS`],
+//!    `idle`, or queue drain (plan 258);
+//! 5. the delivery is under [`COMPACT_SETTLE_MS`] old, the seat isn't idle, or
 //!    something is queued for it: wait;
-//! 5. it holds nothing (no open role holding, no open claim): settled
-//!    `holds-nothing`;
 //! 6. otherwise it is marked `woken` FIRST (refused, and left pending, if a
 //!    newer compact of the seat was recorded since the round read its rows),
 //!    then sent one normal message from
@@ -29,9 +30,11 @@
 //! A read that fails (delivery, events, queue, holdings, claims) leaves the
 //! row pending for the next round; it never settles one.
 //!
-//! Each pending row costs two indexed reads per round (its delivery outcome,
-//! and the seat's events since it); only a settled-age, idle row with nothing
-//! queued costs one queue peek and the two holdings reads more.
+//! Each delivered pending row costs four indexed reads per round (its delivery
+//! outcome, the seat's events since it, and the two holdings/claims reads); a
+//! seat holding nothing settles on the first round after delivery instead of
+//! waiting five rounds, and only a settled-age, idle holder costs one queue
+//! peek more.
 
 use pij_core::compaction_wake::{
     COMPACT_DELIVERY_BOUND_MS, COMPACT_SETTLE_MS, COMPACTION_WAKE_KIND, COMPACTION_WAKE_REASON,
@@ -185,26 +188,10 @@ async fn step(
             return wait(true);
         }
     }
-    if now_ms.saturating_sub(delivered_at) < COMPACT_SETTLE_MS || seat.state != SystemState::Idle {
-        return wait(true);
-    }
-    match services
-        .queue
-        .peek(&[delivery_kind(&seat.id), control_kind(&seat.id)])
-        .await
-    {
-        Ok(None) => {}
-        Ok(Some(_)) => return wait(true),
-        Err(cause) => {
-            eprintln!(
-                "pa watchdog: compaction wake: queue of {}: {cause}",
-                seat.id
-            );
-            return wait(true);
-        }
-    }
     // A failed read is never "holds nothing" (review of #167, F001): the row
-    // waits for the next round.
+    // waits for the next round. Checked before the settle wait (plan 258) so a
+    // seat holding no open role or claim settles `holds-nothing` on the first
+    // round after delivery instead of waiting out COMPACT_SETTLE_MS.
     let mut held: Vec<String> = match try_holdings_of(services, &seat.id).await {
         Ok(holdings) => holdings
             .iter()
@@ -235,12 +222,32 @@ async fn step(
             return wait(true);
         }
     }
+    if held.is_empty() {
+        return Read {
+            step: Step::Settle(Settled::HoldsNothing),
+            delivered: true,
+        };
+    }
+    if now_ms.saturating_sub(delivered_at) < COMPACT_SETTLE_MS || seat.state != SystemState::Idle {
+        return wait(true);
+    }
+    match services
+        .queue
+        .peek(&[delivery_kind(&seat.id), control_kind(&seat.id)])
+        .await
+    {
+        Ok(None) => {}
+        Ok(Some(_)) => return wait(true),
+        Err(cause) => {
+            eprintln!(
+                "pa watchdog: compaction wake: queue of {}: {cause}",
+                seat.id
+            );
+            return wait(true);
+        }
+    }
     Read {
-        step: if held.is_empty() {
-            Step::Settle(Settled::HoldsNothing)
-        } else {
-            Step::Wake(held)
-        },
+        step: Step::Wake(held),
         delivered: true,
     }
 }

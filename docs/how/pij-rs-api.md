@@ -2939,12 +2939,12 @@ A compaction can end a seat's turn with nothing queued, and nothing wakes it (F1
 - **What it sends.** The row is marked `woken` **before** anything is sent, so a restart or an overlapping round never sends twice. The mark is refused, and the row left pending with nothing sent, if a newer compact of the same seat has been recorded since the round read its rows; the older row can still wake if that one is given up. `woken` means the one attempt was made, not that it was delivered: a failed or refused send is not retried. Its outcome is in the audit event's `delivery`. Then `pij-bg` sends the seat one normal message (`compaction-wake:<seat>:<compact msg_id>`): `resume: you hold <holdings and claims>; re-read your handover and continue, or tell your parent if you're blocked.` Its live parent gets an FYI (`compaction-wake-fyi:<seat>:<compact msg_id>`) naming the seat and what it holds. A cold seat is woken and audited with reason `pa-watchdog: compaction left a holder idle`. Each wake appends `watchdog.compaction-wake` on the seat with `compact`, `msg_id`, `held`, `delivery`, `cold_check` and `parent`.
 - **When it doesn't.** A row is settled without a message as:
   - `resumed`: the seat started a turn, reported, or was sent a message after the compact;
-  - `holds-nothing`;
+  - `holds-nothing`: the seat holds no open role holding or open claim once the compact is delivered (settled on the first round after delivery, without waiting out `COMPACT_SETTLE_MS`, `idle`, or queue drain);
   - `gone`: the seat is tombstoned;
   - `undelivered`: the compact was never delivered within an hour (for example, its caller was dropped after the row was written);
   - `superseded`: a newer compact of the same seat was delivered.
 
-  While the seat is inside the settle bound, not idle, or has something queued, the row waits. Once per compaction: a new compact is a new row.
+  While a holder is inside the settle bound, not idle, or has something queued, the row waits. Once per compaction: a new compact is a new row.
 - **Cost.** No new timer, poll or launch. Per round, one read of the pending rows (a partial index, empty in steady state). Each pending row costs two indexed reads per round: its delivery outcome by message id, and the seat's events after it. A row past the settle bound with the seat idle adds one queue peek and two holdings reads (the open-holdings query and the `claims_open_by_seat` index). The row is written once when recorded and once when settled, and the wake sends one message plus one FYI. A row is **pending**, and costs reads, only from its compact until it settles: usually one settle bound, at most an hour for a compact that never lands (one read per round). Settled rows stay as history, one per compaction, outside the pending index.
 
 ## Idle holders (plan 224)
