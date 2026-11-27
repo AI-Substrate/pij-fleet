@@ -17,7 +17,9 @@ providers:
         contextWindow: 1000000
         maxTokens: 128000
         compat:
-          forceAdaptiveThinking: true
+          # Copilot's /v1/messages honours cache_control ttl:"1h"; with
+          # providers.cacheRetention: long, OMP sends it only when this is set.
+          supportsLongCacheRetention: true
     modelOverrides:
       claude-opus-5:
         name: Claude Opus 5 1M (Copilot)
@@ -25,7 +27,7 @@ providers:
         contextWindow: 1000000
         maxTokens: 64000
         compat:
-          forceAdaptiveThinking: true
+          supportsLongCacheRetention: true
       # OMP 18.16 discovery caps the base Copilot selector at the default
       # billing tier (200K prompt + 128K out = 328K) and puts 1M on a synthesized
       # claude-opus-5.5-1m selector that requests the same Copilot model id.
@@ -34,6 +36,13 @@ providers:
         name: Claude Opus 5.5 1M (Copilot)
         contextWindow: 1000000
         maxTokens: 128000
+        compat:
+          supportsLongCacheRetention: true
+      # OMP synthesizes this 1M selector from claude-opus-5.5; compat does not
+      # inherit, so it needs its own flag or it stays on the 5-minute cache.
+      claude-opus-5.5-1m:
+        compat:
+          supportsLongCacheRetention: true
       gemini-3.6-flash:
         name: Gemini 3.6 Flash 1M (Copilot)
         reasoning: true
