@@ -33,6 +33,7 @@ pub async fn governance(
         "claims" => "/v1/claims",
         "delivered" => "/v1/delivered",
         "requests" => "/v1/requests",
+        "send-file" | "file" => "/v1/files",
         _ => {
             let mut error = Envelope::refused(
                 format!("pij {family}"),

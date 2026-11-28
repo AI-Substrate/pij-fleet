@@ -16,8 +16,9 @@ use super::tests::{config, spawn, test_services};
 use super::{Endpoint, RouteAuth};
 
 /// The ONLY (method, path) pairs a peer key may call.
-const PEER_ROUTES: [(&str, &str); 3] = [
+const PEER_ROUTES: [(&str, &str); 4] = [
     ("POST", "/v1/send"),
+    ("POST", "/v1/files/inbound"),
     ("GET", "/v1/seats"),
     ("GET", "/v1/events"),
 ];

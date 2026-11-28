@@ -323,6 +323,8 @@ describe("explicit generation forcing", () => {
 			"pod",
 			"project",
 			"requests",
+			"send-file",
+			"file",
 		];
 		const native = RS_ROUTE_TABLE.filter(
 			(row) => "nativeCommand" in row && community.includes(row.verb),

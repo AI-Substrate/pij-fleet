@@ -37,11 +37,12 @@ daemon accepts no remote calls and refuses any non-loopback bind.
 ## What a paired machine may do
 
 A peer key authenticates **as that machine's alias**, so every inbound call is
-attributed to a named machine. It reaches exactly three routes:
+attributed to a named machine. It reaches exactly four routes:
 
 | Route | Why |
 |---|---|
 | `POST /v1/send` | deliver a message to a seat on this machine |
+| `POST /v1/files/inbound` | stream one file (≤ 50 MiB) to a seat on this machine (`pij send-file seat@machine`, `pij docs get files`) |
 | `GET /v1/seats?scope=local` | read this machine's roster |
 | `GET /v1/events?scope=local` | follow this machine's events |
 
@@ -203,7 +204,7 @@ never bypass it. They are read once, at boot.
   That refusal is **terminal**: the message is not queued or retried. Resend it
   once both ends hold the new key.
 - **Suspect a leak:** rotate that pair's key. Every pair has its own key, so a
-  leaked key exposes one pair, and only the three federation routes.
+  leaked key exposes one pair, and only the four federation routes.
 
 Sources: [`pairing.rs`](../../crates/daemon/src/pairing.rs) (file),
 [`http/auth.rs`](../../crates/daemon/src/http/auth.rs) (key → alias),

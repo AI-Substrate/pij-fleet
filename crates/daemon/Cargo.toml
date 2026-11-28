@@ -18,6 +18,8 @@ hyper-util = { workspace = true }
 getrandom = { workspace = true }
 globset = { workspace = true }
 hostname = { workspace = true }
+# `pij send-file`: statvfs for the disk floor and O_NOFOLLOW on every file it creates.
+nix = { workspace = true }
 pij-core = { workspace = true }
 # Wired at wave-1 composition: the real LivenessPort adapter (u-liveness).
 pij-harnesses = { workspace = true }

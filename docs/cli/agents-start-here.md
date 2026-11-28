@@ -38,6 +38,7 @@ The fleet's rules and decisions, the role directory and role memory live on the 
 | message a seat | `pij send <seat> "<text>"` |
 | message whoever holds a role | `pij send role:<id> "<text>"` |
 | tell a seat something it need not act on | `pij send <seat> --fyi "<text>"` |
+| hand a seat a file, here or on a paired machine | `pij send-file <seat>[@<machine>] <path>`; see `pij docs get files` |
 | find the procedure for a repeatable job | `pij proc` |
 | read a page bundled with this pij | `pij docs list`, then `pij docs get <page>` or `pij docs get <page>#<heading>` |
 | learn one verb | `pij <verb> --help` |

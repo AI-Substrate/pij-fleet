@@ -15,6 +15,7 @@ pub mod decisions;
 mod directory;
 mod double_seat;
 mod exposure;
+mod files;
 mod fyi;
 pub mod governance;
 mod identity;
@@ -84,6 +85,7 @@ use crate::{BUILD, Services};
 pub use auth::{AuthRing, AuthRingError};
 pub use client::{PeerCallError, PeerEndpoint, get_from_peer, post_to_peer, stream_from_peer};
 pub use exposure::{BindRefusal, Exposure, RemoteListener, boot_banner, check_bind};
+pub use files::prune as files_prune;
 pub use identity::{CallerContext, IdentityQuery, IdentityRequest, Phonehome};
 pub use turn_end::{TURN_END, TurnEndRequest};
 pub use types::{
@@ -267,13 +269,18 @@ enum Endpoint {
     /// The `pij` block that ends a seat's reply, handed over by its harness at
     /// turn end (plan 226). See `turn_end.rs`.
     TurnEnd,
+    /// `pij send-file` and `pij file list|accept|decline`: argv plus caller.
+    Files,
+    /// A paired machine's daemon streaming one file to a seat here
+    /// (`pij send-file <seat>@<machine>`). The fourth peer route.
+    FilesInbound,
     /// `pij bg emit`'s hook. Authenticated by its own per-job token (plan 163),
     /// so it is mounted OUTSIDE the bearer layer: see [`Self::auth`].
     BackgroundEmit,
 }
 
 impl Endpoint {
-    const ALL: [Self; 64] = [
+    const ALL: [Self; 66] = [
         Self::Health,
         Self::Register,
         Self::Spawn,
@@ -337,6 +344,8 @@ impl Endpoint {
         Self::Requests,
         Self::TurnEnd,
         Self::SeatAuthError,
+        Self::Files,
+        Self::FilesInbound,
         Self::BackgroundEmit,
     ];
 
@@ -400,6 +409,8 @@ impl Endpoint {
             Self::Requests => "/v1/requests",
             Self::TurnEnd => "/v1/turn-end",
             Self::SeatAuthError => "/v1/seat/auth-error",
+            Self::Files => "/v1/files",
+            Self::FilesInbound => files::INBOUND_PATH,
             Self::BackgroundEmit => background::EMIT_PATH,
             // PLAN 119 — a DISTINCT, VERSIONED path for shim-originated calls, never
             // an overload of `/v1/send` / `/v1/inbox`. Those structs tolerate
@@ -461,6 +472,8 @@ impl Endpoint {
             | Self::Requests
             | Self::TurnEnd
             | Self::SeatAuthError
+            | Self::Files
+            | Self::FilesInbound
             | Self::BackgroundEmit => Method::POST,
             Self::ShimSend | Self::ShimCompactSelf | Self::ShimInbox | Self::ShimInboxAck => {
                 Method::POST
@@ -495,7 +508,7 @@ impl Endpoint {
     /// through this daemon into every machine it is paired with.
     fn peer_access(self, method: &Method) -> PeerAccess {
         match (self, method) {
-            (Self::Send, &Method::POST) => PeerAccess::Allowed,
+            (Self::Send | Self::FilesInbound, &Method::POST) => PeerAccess::Allowed,
             (Self::Seats | Self::Events, &Method::GET) => PeerAccess::LocalScopeOnly,
             _ => PeerAccess::Refused,
         }
@@ -558,7 +571,8 @@ fn peer_scope_refusal(alias: &str, request: &axum::extract::Request) -> Option<R
         ErrorKind::Auth,
         format!(
             "{PEER_SCOPE_CODE}: paired machine `{alias}` may call only POST /v1/send, \
-             GET /v1/seats?scope=local and GET /v1/events?scope=local; {} {} is refused",
+             POST /v1/files/inbound, GET /v1/seats?scope=local and GET /v1/events?scope=local; \
+             {} {} is refused",
             request.method(),
             request.uri().path()
         ),
@@ -721,6 +735,8 @@ fn router_with_optional_federation(
                     | Endpoint::Requests
                     | Endpoint::TurnEnd
                     | Endpoint::SeatAuthError
+                    | Endpoint::Files
+                    | Endpoint::FilesInbound
                     | Endpoint::BackgroundEmit
             ) {
                 Method::POST
@@ -805,6 +821,8 @@ fn router_with_optional_federation(
             Endpoint::Requests => router.route(endpoint.path(), post(requests::handle)),
             Endpoint::TurnEnd => router.route(endpoint.path(), post(turn_end::handle)),
             Endpoint::SeatAuthError => router.route(endpoint.path(), post(auth_error::handle)),
+            Endpoint::Files => router.route(endpoint.path(), post(files::handle)),
+            Endpoint::FilesInbound => router.route(endpoint.path(), post(files::inbound)),
             Endpoint::ShimSend => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimCompactSelf => router.route(endpoint.path(), post(shim::shim_send)),
             Endpoint::ShimInbox => router.route(endpoint.path(), post(shim::shim_inbox)),
@@ -5229,6 +5247,14 @@ fn is_spawn_id(key: &str) -> bool {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     })
+}
+
+/// Milliseconds since the epoch, for the composition root.
+///
+/// # Errors
+/// A clock before the epoch.
+pub fn now_ms() -> Result<u64> {
+    system_time_ms()
 }
 
 pub(crate) fn system_time_ms() -> Result<u64> {

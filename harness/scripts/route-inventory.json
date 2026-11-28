@@ -656,6 +656,21 @@
 		},
 		{
 			"method": "POST",
+			"path": "/v1/files",
+			"authority": "seat-authority",
+			"class": "send-as",
+			"grants_by": ["seat", "recipient"],
+			"guard": ["R"],
+			"note": "pij send-file and pij file list|accept|decline: the sender, or the recipient the file was sent to, resolved by the caller ladder; accept and decline refuse every other seat with the same words as an unknown code."
+		},
+		{
+			"method": "POST",
+			"path": "/v1/files/inbound",
+			"authority": "machine-public",
+			"reason": "A paired machine's daemon streams one file to a seat here (pij send-file seat@machine). Peer key only (a local key is refused); the sender seat is the peer's to name, as on /v1/send, and the machine is stamped from the key."
+		},
+		{
+			"method": "POST",
 			"path": "/v1/seat/auth-error",
 			"authority": "seat-authority",
 			"class": "controls",

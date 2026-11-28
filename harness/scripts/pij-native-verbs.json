@@ -8,11 +8,13 @@
 		"delivered",
 		"directory",
 		"docs",
+		"file",
 		"output",
 		"outputs",
 		"pod",
 		"project",
-		"requests"
+		"requests",
+		"send-file"
 	],
 	"global_value_flags": ["--addr", "--state-dir"],
 	"send_value_flags": [

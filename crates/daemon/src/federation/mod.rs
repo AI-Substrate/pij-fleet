@@ -229,7 +229,7 @@ const PEER_REASON_MAX_CHARS: usize = 200;
 /// A peer's reason as this machine shows it: control characters dropped, so
 /// peer text cannot drive a local terminal, and at most
 /// [`PEER_REASON_MAX_CHARS`] characters, an ellipsis marking a cut.
-fn peer_reason(theirs: &str) -> String {
+pub(crate) fn peer_reason(theirs: &str) -> String {
     let mut kept = theirs.chars().filter(|c| !c.is_control());
     let mut shown: String = kept.by_ref().take(PEER_REASON_MAX_CHARS).collect();
     if kept.next().is_some() {
@@ -284,6 +284,16 @@ impl FederationService {
     /// machine can be served at all.
     pub fn peer_aliases(&self) -> impl Iterator<Item = &str> {
         self.peers.aliases()
+    }
+
+    /// The configured endpoint and key for one peer alias (`pij send-file`).
+    pub(crate) fn endpoint(&self, alias: &str) -> Option<&PeerEndpoint> {
+        self.peers.peers.get(alias)
+    }
+
+    /// This machine's own alias.
+    pub(crate) fn local_alias(&self) -> &str {
+        &self.local_alias
     }
 
     /// Validate peer definitions and build the remote-send and fan-in service.

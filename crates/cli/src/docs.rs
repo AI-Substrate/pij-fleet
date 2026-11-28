@@ -218,6 +218,7 @@ pub fn pages() -> &'static [Page] {
         ];
         pages.extend(types::all().iter().map(type_page));
         pages.push(file_page!("building-a-role", "docs/cli/building-a-role.md"));
+        pages.push(file_page!("files", "docs/cli/files.md"));
         pages.push(file_page!("pods", "docs/cli/pods.md"));
         pages.push(file_page!("prime-journey", "docs/cli/prime-journey.md"));
         pages

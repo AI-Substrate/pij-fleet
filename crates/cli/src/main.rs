@@ -773,6 +773,18 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Hand a file (up to 50 MiB) to a seat here or on a paired machine.
+    #[command(disable_help_flag = true)]
+    SendFile {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Files sent to you: `list`, `accept <code> --to <path>`, `decline <code>`.
+    #[command(disable_help_flag = true)]
+    File {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// The start page for an agent new to pij, bundled in this binary
     /// (PRD 009, plan 235). No daemon.
     #[command(disable_help_flag = true)]
@@ -1606,6 +1618,13 @@ async fn run(cli: Cli) -> ExitCode {
         print!("{}", pij_core::claims::HELP);
         return ExitCode::SUCCESS;
     }
+    if let Command::SendFile { args } | Command::File { args } = &cli.command
+        && (pij_core::directory::wants_help(args)
+            || matches!(&cli.command, Command::File { args } if args.is_empty()))
+    {
+        print!("{}", pij_core::files::HELP);
+        return ExitCode::SUCCESS;
+    }
     if let Command::Requests { args } = &cli.command
         && pij_core::directory::wants_help(args)
     {
@@ -2430,6 +2449,8 @@ async fn run(cli: Cli) -> ExitCode {
         Command::Docs { .. } | Command::AgentsStartHere { .. } => {
             unreachable!("docs returned before the runtime")
         }
+        Command::SendFile { args } => files_verb(&client, "send-file", &args, cli.json).await,
+        Command::File { args } => files_verb(&client, "file", &args, cli.json).await,
         Command::Requests { args } => {
             let as_json = cli.json || args.iter().any(|arg| arg == "--json");
             let response =
@@ -3537,6 +3558,70 @@ fn emit<T: serde::Serialize>(envelope: &Envelope<T>, json: bool) -> ExitCode {
         println!("{}", render(envelope, json));
     }
     ExitCode::from(exit_code(envelope))
+}
+
+async fn files_verb(client: &DaemonClient, family: &str, args: &[String], json: bool) -> ExitCode {
+    let as_json = json || args.iter().any(|arg| arg == "--json");
+    let response = pij_cli::governance::governance(client, family, args, &caller_context()).await;
+    match response.data.as_ref().filter(|_| response.ok && !as_json) {
+        Some(data) => {
+            println!("{}", render_files(&response.command, data));
+            ExitCode::SUCCESS
+        }
+        None => emit(&response, as_json),
+    }
+}
+
+/// `pij send-file` and `pij file` for a human. Names and notes are fenced:
+/// the sender chose them.
+fn render_files(command: &str, data: &Value) -> String {
+    use pij_core::files::human_size;
+    use pij_core::render;
+    let text = |key: &str| data[key].as_str().unwrap_or_default();
+    let name = render::fenced(text("name"), pij_core::files::NAME_MAX_BYTES);
+    let size = data["size"].as_u64().unwrap_or_default();
+    match command {
+        "pij send-file" => format!(
+            "sent {name} ({}) to {}; code {}. It waits there until accepted or declined, at most 24 h.",
+            human_size(size),
+            render::fenced(text("to"), 200),
+            text("code")
+        ),
+        "pij file accept" => format!(
+            "saved {name} ({}, sha256 {} checked) from {} to {}; the stored copy is deleted.",
+            human_size(size),
+            text("sha256"),
+            render::fenced(text("from"), 200),
+            text("saved_to")
+        ),
+        "pij file decline" => format!(
+            "declined {name} from {}; deleted unsaved.",
+            render::fenced(text("from"), 200)
+        ),
+        _ => {
+            let rows = data["files"].as_array().cloned().unwrap_or_default();
+            let mut out = format!(
+                "{} file{} waiting for {}",
+                rows.len(),
+                if rows.len() == 1 { "" } else { "s" },
+                render::seat(text("seat"))
+            );
+            for row in rows {
+                let age_min = row["age_ms"].as_u64().unwrap_or_default() / 60_000;
+                let _ = write!(
+                    out,
+                    "\n  {}  {}  {}  from {}  {}h{:02}m ago",
+                    row["code"].as_str().unwrap_or_default(),
+                    render::fenced(row["name"].as_str().unwrap_or_default(), 80),
+                    human_size(row["size"].as_u64().unwrap_or_default()),
+                    render::fenced(row["from"].as_str().unwrap_or_default(), 200),
+                    age_min / 60,
+                    age_min % 60
+                );
+            }
+            out
+        }
+    }
 }
 
 /// `pij requests` and `pij requests withdraw` for a human (plan 212, F59).
@@ -5517,6 +5602,8 @@ impl Command {
             Command::Claims { .. } => "pij claims",
             Command::Delivered { .. } => "pij delivered",
             Command::Requests { .. } => "pij requests",
+            Command::SendFile { .. } => "pij send-file",
+            Command::File { .. } => "pij file",
             Command::Docs { .. } => "pij docs",
             Command::AgentsStartHere { .. } => "pij agents-start-here",
             Command::List { .. } => "pij list",
@@ -6785,6 +6872,9 @@ PEC notice";
                 "claims",
                 "delivered",
                 "requests",
+                // Files through the daemons (Jordan, 2026-11-28).
+                "send-file",
+                "file",
                 // PRD 009 (plan 235): the bundled docs, no daemon.
                 "agents-start-here",
                 "docs",
