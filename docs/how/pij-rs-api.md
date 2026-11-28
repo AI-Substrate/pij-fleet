@@ -1410,6 +1410,23 @@ A role request with a limit (`--limit`, else the role's `default_limit`, C5; wit
 
 Cost per round: one indexed read of the open limited requests (delivered, limited, not escalated, not answered), plus one `LIMIT 1` card read per open request; a check-in or notice is one claim, one pin, one delivery and one stamp; a retry of a stopped daemon's claim adds up to two indexed admission probes. A notice with nobody to tell is retried each round, at one claim, one assignments read and one release per such request. No launch site and no timer.
 
+## Files: `pij send-file` (`POST /v1/files`, `POST /v1/files/inbound`)
+
+`pij send-file <to> <path> [--note] [--force --reason]` and `pij file list|accept <code> --to <path> [--force]|decline <code>` reach `POST /v1/files` as `{argv, caller}`, the caller resolved by the identity ladder as `pij requests` is. The daemon runs as the caller's user, so it reads the source and writes the target itself; a relative path is the caller's `cwd`'s. The recipient's daemon stores the file as `<state>/transfers/<code>` with `<code>.json` beside it (0600, folder 0700; no migration) and sends the recipient an ordinary message, msg id `file-<code>`, through the cold-wake guard. A code is 32 lowercase hex characters from OS entropy and the only thing a path is built from. To `seat@machine` the sender's daemon stages a snapshot, then streams it to the peer's `POST /v1/files/inbound` under the pairing's key (`no_proxy`, 30 s connect, 10 min total), describing it in one header, `x-pij-file` (hex-encoded JSON: from, to, name, size, sha256, note, force, reason); the snapshot is deleted when the peer answers, either way. The inbound route is the fourth peer route ([federation](pij-federation.md)); a local key is refused there. It checks the recipient, the cold wake and the disk floor before reading the body, stops at the described size, and keeps nothing whose size or sha256 differ. `accept` and `decline` answer only the seat the file was sent to; any other seat gets `E-RS-FILE-UNKNOWN`, as for a code that does not exist. Accept writes a hidden `O_EXCL|O_NOFOLLOW` file beside the target, checks its sha256, and links it into place (refusing an existing path or symlink) or, with `--force`, renames it over the target (replacing a symlink, never following it); then the stored copy is deleted. The sender gets an FYI on accept, decline or expiry (`file-<code>-<outcome>`; across machines, queued back over federation as from the recipient seat); the recipient also gets one on expiry. Full page: `pij docs get files`.
+
+| Refusal | When |
+|---|---|
+| `E-RS-FILE-TOO-LARGE` | over 50 MiB (52428800 bytes); the message names the size |
+| `E-RS-FILE-DISK-FLOOR` | storing it would leave free disk under `PIJ_DISK_FLOOR_GB` (GiB, default 25) |
+| `E-RS-FILE-SOURCE` | the source is not a readable regular file, or its name cannot be carried |
+| `E-RS-FILE-UNKNOWN` | no pending file with that code for the caller (next: `pij file list`) |
+| `E-RS-FILE-TARGET` | the target exists without `--force`, is a folder, or its folder is missing |
+| `E-RS-FILE-CORRUPT` | the bytes do not match the sha256 they were sent with; nothing is saved |
+| `E-RS-FILE-PEER` | the peer is not paired, cannot be reached, refused the file (its reason relayed), or the notice was refused |
+| `E-RS-ROLE-HOLDERS`, `E-RS-NOT-FOUND` | a `role:` address with several or no live holders; a file is never queued for a role |
+
+Expiry is a retention policy (Jordan's ruling, 2026-11-28): a file whose own `created_at` is 24 h old is deleted, at daemon start and on each send or inbound file; a request holding the code spares it. Orphans a crash left (a `.part`, or bytes with no record) go when their mtime is 24 h old; age only spares them. Cost: no loop, poll, timer or launch; each verb reads the transfers folder at most once; disk is bounded by 50 MiB per pending file, the expiry and the floor.
+
 ## Governance route inventory
 
 All POST families below use argv/caller unless the typed alternative is named. Unknown leaves refuse; unsupported flags are not dropped. These are the daemon routes, not invented `/v1/report/<leaf>` endpoints.

@@ -40,6 +40,7 @@ pub mod session_history;
 pub mod session_warmup;
 pub mod spawn_waits;
 mod supervise;
+pub mod transfers;
 
 // u-orchestration's git-facts gatherer: IO belongs at the runtime root, and a
 // ninth crate would have been a graph change for one module.
@@ -242,6 +243,9 @@ pub struct Services {
     /// F280: `<state>/harness-alts.toml`, read by a spawn with `--alt` and a
     /// revive of a seat with an alt, never on a tick.
     pub harness_alts: PathBuf,
+    /// `pij send-file`'s folder, `<state>/transfers`: files waiting for their
+    /// recipient on this machine.
+    pub transfers: Arc<transfers::Transfers>,
     /// Which Codex thread each pane runs, read from the pane's own Codex
     /// process (plan 181): the binder's evidence and a Codex caller's check.
     pub codex_threads: Arc<dyn codex_bind::CodexThreads>,
@@ -887,6 +891,12 @@ pub async fn build_services(config: &Config, pane_signal_dir: &Path) -> Result<S
         harness_alts: pij_harnesses::alts::path(
             pane_signal_dir.parent().unwrap_or_else(|| Path::new(".")),
         ),
+        transfers: Arc::new(transfers::Transfers::from_env(
+            pane_signal_dir
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join(transfers::DIR),
+        )),
         codex_threads,
         ddocs,
         community: community_writer,
@@ -1388,6 +1398,16 @@ pub async fn boot(config: &Config, state_dir: PathBuf) -> Result<Daemon> {
 
     let pane_observer = pane_observer.start();
     let federation_worker = Arc::clone(&federation).start();
+    // `pij send-file`: once at start, delete files unclaimed for 24 h and
+    // tell their senders. One read of the folder; no loop.
+    {
+        let (services, federation) = (services.clone(), Arc::clone(&federation));
+        tokio::spawn(async move {
+            if let Ok(now) = http::now_ms() {
+                http::files_prune(&services, Some(&federation), now).await;
+            }
+        });
+    }
     let bind_loop = start_resilient_binders(claude_binder, codex_binder, delivery_interval);
     let drain_loop =
         start_resilient_delivery_drain(drain, Arc::clone(&services.delivery), delivery_interval);

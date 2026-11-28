@@ -324,6 +324,11 @@ pub(super) async fn test_services(
     let store = services.governance.fixture_store();
     // Hermetic: no test reads the operator's real Claude process records.
     services.claude_homes = Arc::from([]);
+    // Nor writes into a shared temp folder, nor meets this machine's disk floor.
+    services.transfers = Arc::new(crate::transfers::Transfers::new(
+        pij_testkit::fresh_dir("pij-http-transfers").join(crate::transfers::DIR),
+        0,
+    ));
     // Nor the operator's real cache-proxy sidecar (plan 229): a closed port.
     services.cache_proxy = Arc::new(crate::cache_proxy::CacheProxy::new(
         "http://127.0.0.1:9".to_string(),
@@ -1348,7 +1353,7 @@ pub(super) fn config(local_key: &str, peers: &[(&str, &str)]) -> HttpConfig {
     }
 }
 
-fn federation_policy() -> FederationPolicy {
+pub(super) fn federation_policy() -> FederationPolicy {
     FederationPolicy {
         poll_interval: Duration::from_millis(10),
         max_retry_delay: Duration::from_millis(100),

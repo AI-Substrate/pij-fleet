@@ -275,6 +275,10 @@
           "kind": null
         },
         {
+          "name": "nix",
+          "kind": null
+        },
+        {
           "name": "hyper-util",
           "kind": null
         },

@@ -39,7 +39,9 @@ export interface RsNativeRoute extends RouteIdentity {
 		| "outputs"
 		| "pod"
 		| "project"
-		| "requests";
+		| "requests"
+		| "file"
+		| "send-file";
 }
 
 export interface RsUnportedRoute extends RouteIdentity {
@@ -360,6 +362,14 @@ export const RS_ROUTE_TABLE: readonly RsRouteRow[] = [
 			verb,
 			nativeCommand: verb,
 			why: "pij-rs owns this community verb's grammar, help and output",
+		}),
+	),
+	// pij send-file / pij file: pij-rs owns the grammar, help and output.
+	...(["send-file", "file"] as const).map(
+		(verb): RsNativeRoute => ({
+			verb,
+			nativeCommand: verb,
+			why: "pij-rs hands a file to a seat through the daemons",
 		}),
 	),
 	// PRD 009, plan 235: the docs bundled in pij-rs, read with no daemon.
